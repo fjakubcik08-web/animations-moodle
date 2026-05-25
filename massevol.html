@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Masse volumique – Labo virtuel</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #F0F4F8;
+  font-family: 'Segoe UI', sans-serif;
+  display: flex; flex-direction: column; align-items: center;
+  min-height: 100vh; padding: 18px 10px 30px;
+  user-select: none;
+}
+h2 { color: #2C4A6E; font-size: 1.15rem; font-weight: 600; margin-bottom: 5px; }
+.subtitle { color: #5A7A9A; font-size: 0.80rem; margin-bottom: 16px; }
+
+#scene {
+  position: relative;
+  width: 680px; height: 420px;
+  background: linear-gradient(180deg, #e8f0f7 0%, #d0e4ef 100%);
+  border-radius: 16px; border: 1.5px solid #b8cfe0;
+  box-shadow: 0 4px 18px rgba(44,74,110,0.10);
+  overflow: visible;
+}
+
+/* ---- FLASK ---- */
+#flask-wrap {
+  position: absolute; left: 32px; top: 130px;
+  width: 88px; height: 165px;
+  cursor: pointer;
+}
+#flask-svg {
+  display: block;
+  transform-origin: 15px 165px;
+  transition: transform 0.25s ease;
+}
+#flask-svg.tilt  { transform: rotate(42deg); }
+#flask-svg.shake { animation: shk 0.45s ease; }
+@keyframes shk {
+  0%   { transform: rotate(0deg);  }
+  15%  { transform: rotate(8deg);  }
+  35%  { transform: rotate(-8deg); }
+  55%  { transform: rotate(6deg);  }
+  75%  { transform: rotate(-5deg); }
+  90%  { transform: rotate(3deg);  }
+  100% { transform: rotate(0deg);  }
+}
+/* Pour indicator ring around flask */
+#flask-wrap .ring {
+  position: absolute; inset: -4px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  transition: border-color 0.2s;
+  pointer-events: none;
+}
+#flask-wrap.pouring .ring { border-color: rgba(93,202,165,0.55); }
+
+/* ---- ÉPROUVETTE ----
+   SVG viewBox = 0 0 82 290, displayed at 82×200px
+   → scale factor = 200/290 ≈ 0.6897
+   → base (socle bottom, SVG y=279) displayed at pixel 279*(200/290) ≈ 192px from top */
+#ep {
+  position: absolute; left: 200px; top: 50px;
+  width: 82px; height: 200px;
+  cursor: grab; z-index: 10;
+}
+#ep.dragging { cursor: grabbing; z-index: 50; }
+
+/* ---- BALANCE ---- */
+#balance-wrap {
+  position: absolute; left: 406px; top: 202px;
+  width: 168px; height: 180px;
+}
+
+/* ---- BUTTONS ---- */
+.btn-row { display: flex; gap: 10px; margin-top: 14px; }
+.btn {
+  padding: 7px 18px; border: none; border-radius: 8px;
+  font-size: 0.88rem; font-weight: 600; cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.10);
+}
+.btn:active { transform: scale(0.96); }
+#btn-minus { background: #F39C12; color: #fff; }
+#btn-minus:hover { background: #D68910; }
+#btn-vider { background: #7F8C8D; color: #fff; }
+#btn-vider:hover { background: #636E72; }
+.hint  { color: #6A8EAA; font-size: 0.76rem; margin-top: 7px; }
+#msg   { margin-top: 8px; font-size: 0.80rem; color: #c0392b; min-height: 16px; font-style: italic; }
+#no-code-msg { display: none; color: #999; font-size: 0.82rem; margin-top: 8px; font-style: italic; }
+</style>
+</head>
+<body>
+
+<h2>Mesure de la masse volumique d'un liquide</h2>
+<p class="subtitle">Maintenez le clic sur le flacon pour verser · Glissez l'éprouvette sur la balance</p>
+
+<div id="scene">
+
+  <!-- ===== FLASK ===== -->
+  <div id="flask-wrap">
+    <div class="ring"></div>
+    <svg id="flask-svg" width="88" height="165" viewBox="0 0 88 165" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <clipPath id="fclip">
+          <path d="M34,0 L34,70 L4,130 Q0,140 0,150 L0,165 L88,165 L88,150 Q88,140 84,130 L54,70 L54,0 Z"/>
+        </clipPath>
+      </defs>
+      <!-- liquid -->
+      <path id="fl" d="M2,148 Q8,155 44,155 Q80,155 86,148 L88,165 L0,165 Z"
+            fill="#5DCAA5" opacity="0.55" clip-path="url(#fclip)"/>
+      <path id="fs" d="M2,148 Q44,154 86,148"
+            fill="none" stroke="#1D9E75" stroke-width="1.5"/>
+      <!-- body -->
+      <path d="M34,0 L34,70 L4,130 Q0,140 0,150 Q0,162 10,164 L78,164 Q88,162 88,150 Q88,140 84,130 L54,70 L54,0"
+            fill="rgba(160,210,230,0.10)" stroke="#7AADCA" stroke-width="1.8" stroke-linejoin="round"/>
+      <!-- neck -->
+      <rect x="28" y="0" width="32" height="8" rx="3"
+            fill="rgba(160,210,230,0.12)" stroke="#7AADCA" stroke-width="1.6"/>
+      <!-- reflection -->
+      <path d="M14,115 Q10,135 8,155" fill="none" stroke="white" stroke-width="2.5" opacity="0.30" stroke-linecap="round"/>
+      <!-- label -->
+      <rect x="16" y="130" width="56" height="22" rx="4"
+            fill="rgba(255,255,255,0.22)" stroke="rgba(120,170,200,0.4)" stroke-width="0.8"/>
+      <text x="44" y="145" text-anchor="middle" font-size="8" fill="#5A8A9F" font-family="sans-serif">liquide</text>
+    </svg>
+  </div>
+
+  <!-- ===== ÉPROUVETTE (SVG viewBox 0 0 82 290, displayed 82×200) ===== -->
+  <div id="ep">
+    <svg id="ep-svg" width="82" height="200" viewBox="0 0 82 290"
+         xmlns="http://www.w3.org/2000/svg" style="overflow:visible;">
+      <defs>
+        <clipPath id="gc">
+          <rect x="28" y="12" width="24" height="243"/>
+        </clipPath>
+      </defs>
+      <!-- liquid rect (clips to cylinder) -->
+      <rect id="liq" x="28" y="272" width="24" height="280"
+            fill="#5DCAA5" opacity="0.55" clip-path="url(#gc)"/>
+      <!-- meniscus -->
+      <path id="men" d="" fill="none" stroke="#1D9E75" stroke-width="2"
+            clip-path="url(#gc)" display="none"/>
+      <!-- volume indicator (left side, outside glass) -->
+      <line id="vl" x1="-7" y1="252" x2="28" y2="252"
+            stroke="#1D9E75" stroke-width="1.2" opacity="0"/>
+      <text id="vt" x="-9" y="255" text-anchor="end"
+            font-size="9" font-weight="500" fill="#1D9E75" opacity="0">0</text>
+
+      <!-- socle (base trapezoid) -->
+      <path d="M28,255 L17,272 L15,279 L67,279 L65,272 L52,255 Z"
+            fill="rgba(160,205,230,0.18)" stroke="#888780" stroke-width="1.7" stroke-linejoin="round"/>
+      <!-- cylinder body fill -->
+      <rect x="28" y="12" width="24" height="243" fill="rgba(160,205,230,0.06)"/>
+      <!-- cylinder walls -->
+      <line x1="28" y1="12" x2="28" y2="255" stroke="#888780" stroke-width="1.7"/>
+      <line x1="52" y1="12" x2="52" y2="255" stroke="#888780" stroke-width="1.7"/>
+      <!-- shoulder lines -->
+      <line x1="22" y1="13" x2="28" y2="13" stroke="#888780" stroke-width="1.2"/>
+      <line x1="52" y1="13" x2="60" y2="13" stroke="#888780" stroke-width="1.2"/>
+      <!-- top rim (bec verseur) -->
+      <rect x="22" y="2" width="38" height="13" rx="5"
+            fill="rgba(160,205,230,0.09)" stroke="#888780" stroke-width="1.7"/>
+      <!-- glass reflection -->
+      <rect x="30" y="17" width="3" height="232" rx="1.5" fill="white" opacity="0.20"/>
+      <text x="54" y="11" font-size="7" fill="#888780">mL</text>
+
+      <!-- Major graduations (every 50 mL) — y = 252 - V*0.928 -->
+      <line x1="52" y1="20"  x2="64" y2="20"  stroke="#5F5E5A" stroke-width="1.3"/>
+      <text x="66" y="23"  font-size="8" fill="#5F5E5A">250</text>
+      <line x1="52" y1="67"  x2="64" y2="67"  stroke="#5F5E5A" stroke-width="1.3"/>
+      <text x="66" y="70"  font-size="8" fill="#5F5E5A">200</text>
+      <line x1="52" y1="113" x2="64" y2="113" stroke="#5F5E5A" stroke-width="1.3"/>
+      <text x="66" y="116" font-size="8" fill="#5F5E5A">150</text>
+      <line x1="52" y1="159" x2="64" y2="159" stroke="#5F5E5A" stroke-width="1.3"/>
+      <text x="66" y="162" font-size="8" fill="#5F5E5A">100</text>
+      <line x1="52" y1="206" x2="64" y2="206" stroke="#5F5E5A" stroke-width="1.3"/>
+      <text x="66" y="209" font-size="8" fill="#5F5E5A">50</text>
+
+      <!-- Minor graduations (every 10 mL) -->
+      <line x1="52" y1="29"  x2="58" y2="29"  stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="39"  x2="58" y2="39"  stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="48"  x2="58" y2="48"  stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="57"  x2="58" y2="57"  stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="76"  x2="58" y2="76"  stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="85"  x2="58" y2="85"  stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="95"  x2="58" y2="95"  stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="104" x2="58" y2="104" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="122" x2="58" y2="122" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="131" x2="58" y2="131" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="141" x2="58" y2="141" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="150" x2="58" y2="150" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="168" x2="58" y2="168" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="178" x2="58" y2="178" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="187" x2="58" y2="187" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="196" x2="58" y2="196" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="215" x2="58" y2="215" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="224" x2="58" y2="224" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="234" x2="58" y2="234" stroke="#5F5E5A" stroke-width="0.9"/>
+      <line x1="52" y1="243" x2="58" y2="243" stroke="#5F5E5A" stroke-width="0.9"/>
+    </svg>
+  </div>
+
+  <!-- ===== BALANCE ===== -->
+  <div id="balance-wrap">
+    <svg width="168" height="180" viewBox="0 0 168 180" xmlns="http://www.w3.org/2000/svg">
+      <!-- body -->
+      <rect x="0" y="28" width="168" height="152" rx="8"
+            fill="#D0D8DC" stroke="#A0AABA" stroke-width="1.5"/>
+      <!-- display -->
+      <rect x="10" y="38" width="148" height="52" rx="5"
+            fill="#1A2A1A" stroke="#3A5A3A" stroke-width="1.2"/>
+      <text x="84" y="54" text-anchor="middle" font-size="9"
+            fill="#5A9A6A" font-family="monospace">BALANCE</text>
+      <text id="bd" x="84" y="79" text-anchor="middle"
+            font-family="monospace" font-size="20" font-weight="bold" fill="#9FE1CB">0.00 g</text>
+      <!-- ON button -->
+      <rect x="60" y="105" width="48" height="22" rx="5"
+            fill="#3A7A50" stroke="#2A5A38" stroke-width="1"/>
+      <text x="84" y="120" text-anchor="middle" font-size="10" fill="white" font-weight="bold">ON</text>
+      <!-- pedestal -->
+      <rect x="59" y="21" width="50" height="10" rx="2"
+            fill="#B0BAC4" stroke="#8898A8" stroke-width="1"/>
+      <!-- platform (y=5 is the top surface reference) -->
+      <rect id="plat" x="9" y="5" width="150" height="16" rx="4"
+            fill="#C8D2DC" stroke="#8898A8" stroke-width="1.5"/>
+      <rect x="12" y="7" width="144" height="4" rx="2"
+            fill="rgba(255,255,255,0.35)"/>
+    </svg>
+  </div>
+
+</div><!-- end #scene -->
+
+<div class="btn-row">
+  <button class="btn" id="btn-minus">− 1 mL</button>
+  <button class="btn" id="btn-vider">↺ Vider</button>
+</div>
+<p class="hint">🧪 Cliquer et maintenir le flacon pour verser · Glisser l'éprouvette sur la balance</p>
+<div id="msg"></div>
+<div id="no-code-msg">⚠ Paramètre manquant – utilisez <code>?k=xxx</code> dans l'URL.</div>
+
+<script>
+// =============================================
+//  DÉCODAGE URL  (?k=abc)
+// =============================================
+// ?k=abc → rho (g/mL) : n=int(rho*1000), XOR 1523, offset 3000, base-26 x3
+function decodeK(code) {
+  const A = 'abcdefghijklmnopqrstuvwxyz';
+  if (!code || code.length !== 3) return null;
+  const v = code.toLowerCase().split('').map(c => A.indexOf(c));
+  if (v.some(x => x < 0)) return null;
+  const n = ((v[0]*676 + v[1]*26 + v[2]) - 3000) ^ 1523;
+  return (n < 700 || n > 1500) ? null : n / 1000;
+}
+// ?m=abc → masse vide (g) : n=int(m*10), XOR 743, offset 2500, base-26 x3
+function decodeM(code) {
+  const A = 'abcdefghijklmnopqrstuvwxyz';
+  if (!code || code.length !== 3) return null;
+  const v = code.toLowerCase().split('').map(c => A.indexOf(c));
+  if (v.some(x => x < 0)) return null;
+  const n = ((v[0]*676 + v[1]*26 + v[2]) - 2500) ^ 743;
+  return (n < 500 || n > 2000) ? null : n / 10;
+}
+const params   = new URLSearchParams(window.location.search);
+const DENS_RAW = decodeK(params.get('k'));
+const M0_RAW   = decodeM(params.get('m'));
+if (DENS_RAW === null || M0_RAW === null) {
+  document.getElementById('no-code-msg').style.display = 'block';
+}
+
+// =============================================
+//  CONSTANTES GÉOMÉTRIQUES
+// =============================================
+// Éprouvette SVG viewBox = 0 0 82 290, displayed at 82×200px
+// Scale = 200/290 ≈ 0.6897
+// Base (socle bottom) at SVG y=279 → pixel offset from ep div top:
+const EP_SVG_H   = 290;
+const EP_DISP_H  = 200;
+const EP_SCALE   = EP_DISP_H / EP_SVG_H;           // ≈ 0.6897
+const EP_BASE_PX = Math.round(279 * EP_SCALE);      // ≈ 192px
+
+// Graduation constants (SVG coordinates, scale applied by SVG renderer)
+const Y0 = 252;          // SVG y for 0 mL
+const SC = 232 / 250;    // SVG px per mL = 0.928
+
+// =============================================
+//  ÉTAT
+// =============================================
+const L = {
+  DENS:  DENS_RAW ?? 1.00,
+  M0:    M0_RAW   ?? 94.32,  // masse éprouvette vide (g)
+  vol:   0,
+  onBal: false,
+  pour:  false,
+  tm:    null
+};
+
+// =============================================
+//  COULEURS LIQUIDE
+// =============================================
+function lc(d) {
+  if (d < 0.90) return { f:'#EF9F27', s:'#BA7517' }; // ambre
+  if (d < 1.05) return { f:'#5DCAA5', s:'#1D9E75' }; // eau/vert
+  if (d < 1.20) return { f:'#378ADD', s:'#185FA5' }; // bleu
+  return              { f:'#D4537E', s:'#993556' };  // rose/dense
+}
+const COL = lc(L.DENS);
+(function applyColors() {
+  document.getElementById('liq').setAttribute('fill',   COL.f);
+  document.getElementById('men').setAttribute('stroke', COL.s);
+  document.getElementById('vl' ).setAttribute('stroke', COL.s);
+  document.getElementById('vt' ).setAttribute('fill',   COL.s);
+  document.getElementById('fl' ).setAttribute('fill',   COL.f);
+  document.getElementById('fs' ).setAttribute('stroke', COL.s);
+})();
+
+// =============================================
+//  MISE À JOUR ÉPROUVETTE
+// =============================================
+const elLiq = document.getElementById('liq');
+const elMen = document.getElementById('men');
+const elVl  = document.getElementById('vl');
+const elVt  = document.getElementById('vt');
+
+function updL() {
+  const yt = Y0 - L.vol * SC;
+  elLiq.setAttribute('y', yt);
+  if (L.vol > 0) {
+    elMen.setAttribute('d', `M28,${yt} Q40,${yt+3} 52,${yt}`);
+    elMen.removeAttribute('display');
+    elVl.setAttribute('y1', yt); elVl.setAttribute('y2', yt);
+    elVl.setAttribute('opacity', '1');
+    elVt.setAttribute('y', yt + 3);
+    elVt.textContent = L.vol.toFixed(0);
+    elVt.setAttribute('opacity', '1');
+  } else {
+    elMen.setAttribute('display', 'none');
+    elVl.setAttribute('opacity', '0');
+    elVt.setAttribute('opacity', '0');
+  }
+  if (L.onBal) updB();
+}
+
+// =============================================
+//  BALANCE
+// =============================================
+const elBd = document.getElementById('bd');
+function updB() {
+  elBd.textContent = L.onBal
+    ? (L.M0 + L.vol * L.DENS).toFixed(2) + ' g'
+    : '0.00 g';
+}
+
+// =============================================
+//  VERSEMENT — clic maintenu sur le flacon
+// =============================================
+const flaskWrap = document.getElementById('flask-wrap');
+const flaskSvg  = document.getElementById('flask-svg');
+
+function startPour() {
+  if (L.pour) return;
+  if (L.vol >= 250) { showMsg('Éprouvette pleine !'); return; }
+  if (L.onBal) {
+    // Secouer le flacon et bloquer
+    flaskSvg.classList.remove('shake');
+    void flaskSvg.offsetWidth; // force reflow pour relancer animation
+    flaskSvg.classList.add('shake');
+    showMsg("Retirez d'abord l'éprouvette de la balance.");
+    return;
+  }
+  clearMsg();
+  L.pour = true;
+  flaskWrap.classList.add('pouring');
+  flaskSvg.classList.add('tilt');
+  L.tm = setInterval(() => {
+    if (L.vol >= 250) { stopPour(); return; }
+    L.vol += 1;
+    updL();
+  }, 120);
+}
+
+function stopPour() {
+  if (!L.pour) return;
+  L.pour = false;
+  clearInterval(L.tm); L.tm = null;
+  flaskSvg.classList.remove('tilt');
+  flaskWrap.classList.remove('pouring');
+}
+
+flaskWrap.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  startPour();
+});
+document.addEventListener('mouseup', () => {
+  if (L.pour) stopPour();
+});
+
+// =============================================
+//  BOUTONS
+// =============================================
+document.getElementById('btn-minus').addEventListener('click', () => {
+  stopPour();
+  if (L.vol > 0) { L.vol = Math.max(0, L.vol - 1); updL(); }
+});
+document.getElementById('btn-vider').addEventListener('click', () => {
+  stopPour();
+  L.vol = 0; updL(); clearMsg();
+});
+
+// =============================================
+//  DRAG & DROP ÉPROUVETTE
+// =============================================
+const ep       = document.getElementById('ep');
+const scene    = document.getElementById('scene');
+const balWrap  = document.getElementById('balance-wrap');
+let drag = { active: false, ox: 0, oy: 0 };
+
+ep.addEventListener('mousedown', (e) => {
+  if (L.onBal) unsnap();        // désancrer si sur balance
+  drag.active = true;
+  ep.classList.add('dragging');
+  const r = ep.getBoundingClientRect();
+  drag.ox = e.clientX - r.left;
+  drag.oy = e.clientY - r.top;
+  e.preventDefault();
+  e.stopPropagation();          // ne pas déclencher le flask mousedown
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!drag.active) return;
+  const sr = scene.getBoundingClientRect();
+  let nx = e.clientX - sr.left - drag.ox;
+  let ny = e.clientY - sr.top  - drag.oy;
+  // limites souples
+  nx = Math.max(-30, Math.min(nx, scene.offsetWidth  - 52));
+  ny = Math.max(-50, Math.min(ny, scene.offsetHeight - 30));
+  ep.style.left = nx + 'px';
+  ep.style.top  = ny + 'px';
+});
+
+document.addEventListener('mouseup', () => {
+  if (!drag.active) return;
+  drag.active = false;
+  ep.classList.remove('dragging');
+  checkSnap();
+});
+
+// =============================================
+//  SNAP SUR LA BALANCE
+//  Platform top (SVG y=5) en coords scène = balance-wrap.top + 5
+//  Éprouvette base en coords scène  = ep.top + EP_BASE_PX (≈192px)
+//  Tolérance snap : ±55px en Y, centre ep dans largeur plateforme
+// =============================================
+function checkSnap() {
+  const pr = balWrap.getBoundingClientRect();
+  const sr = scene.getBoundingClientRect();
+  const er = ep.getBoundingClientRect();
+
+  const platTop   = pr.top  - sr.top  + 5;       // surface plateforme en coords scène
+  const platLeft  = pr.left - sr.left + 9;        // bord gauche plateforme
+  const platRight = platLeft + 150;               // bord droit plateforme
+  const epCenterX = er.left - sr.left + 41;       // centre ep (82/2 = 41px)
+  const epBase    = er.top  - sr.top  + EP_BASE_PX; // bas socle ep en coords scène
+
+  const inX = epCenterX > platLeft  && epCenterX < platRight;
+  const inY = Math.abs(epBase - platTop) < 55;
+
+  if (inX && inY) snapToBal();
+}
+
+function snapToBal() {
+  const pr = balWrap.getBoundingClientRect();
+  const sr = scene.getBoundingClientRect();
+  // position en coords scène
+  const platTop_sc  = pr.top  - sr.top  + 5;
+  const platCtrX_sc = pr.left - sr.left + 9 + 75; // centre de la plateforme (9 + 150/2)
+  ep.style.top  = (platTop_sc  - EP_BASE_PX) + 'px'; // base alignée sur la plateforme
+  ep.style.left = (platCtrX_sc - 41)         + 'px'; // centré
+  L.onBal = true;
+  updB();
+}
+
+function unsnap() {
+  L.onBal = false;
+  updB();
+}
+
+// =============================================
+//  MESSAGES
+// =================
