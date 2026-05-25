@@ -68,6 +68,28 @@ h2 { color: #2C4A6E; font-size: 1.15rem; font-weight: 600; margin-bottom: 5px; }
 }
 #ep.dragging { cursor: grabbing; z-index: 50; }
 
+/* ---- LECTURE VOLUME ---- */
+#vol-readout {
+  position: absolute;
+  left: -28px; top: 208px;        /* centré sous l'éprouvette */
+  width: 138px;
+  background: #1A2A1A;
+  border: 1.5px solid #3A7A50;
+  border-radius: 7px;
+  padding: 3px 8px 4px;
+  font-family: monospace;
+  text-align: center;
+  pointer-events: none;
+  display: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+}
+#vol-readout .vr-label {
+  font-size: 0.60rem; color: #5A9A6A; letter-spacing: 0.06em; display:block;
+}
+#vol-readout .vr-val {
+  font-size: 1.30rem; font-weight: bold; color: #9FE1CB; line-height: 1.15;
+}
+
 /* ---- BALANCE ---- */
 #balance-wrap {
   position: absolute; left: 406px; top: 202px;
@@ -130,6 +152,10 @@ h2 { color: #2C4A6E; font-size: 1.15rem; font-weight: 600; margin-bottom: 5px; }
 
   <!-- ===== ÉPROUVETTE (SVG viewBox 0 0 82 290, displayed 82×200) ===== -->
   <div id="ep">
+    <div id="vol-readout">
+      <span class="vr-label">VOLUME</span>
+      <span class="vr-val"><span id="vol-num">0</span> mL</span>
+    </div>
     <svg id="ep-svg" width="82" height="200" viewBox="0 0 82 290"
          xmlns="http://www.w3.org/2000/svg" style="overflow:visible;">
       <defs>
@@ -201,7 +227,7 @@ h2 { color: #2C4A6E; font-size: 1.15rem; font-weight: 600; margin-bottom: 5px; }
       <line x1="52" y1="234" x2="58" y2="234" stroke="#5F5E5A" stroke-width="0.9"/>
       <line x1="52" y1="243" x2="58" y2="243" stroke="#5F5E5A" stroke-width="0.9"/>
     </svg>
-  </div>
+  </div><!-- end #ep -->
 
   <!-- ===== BALANCE ===== -->
   <div id="balance-wrap">
@@ -319,10 +345,10 @@ const COL = lc(L.DENS);
 // =============================================
 //  MISE À JOUR ÉPROUVETTE
 // =============================================
-const elLiq = document.getElementById('liq');
-const elMen = document.getElementById('men');
-const elVl  = document.getElementById('vl');
-const elVt  = document.getElementById('vt');
+const elLiq     = document.getElementById('liq');
+const elMen     = document.getElementById('men');
+const elVolBox  = document.getElementById('vol-readout');
+const elVolNum  = document.getElementById('vol-num');
 
 function updL() {
   const yt = Y0 - L.vol * SC;
@@ -330,15 +356,11 @@ function updL() {
   if (L.vol > 0) {
     elMen.setAttribute('d', `M28,${yt} Q40,${yt+3} 52,${yt}`);
     elMen.removeAttribute('display');
-    elVl.setAttribute('y1', yt); elVl.setAttribute('y2', yt);
-    elVl.setAttribute('opacity', '1');
-    elVt.setAttribute('y', yt + 3);
-    elVt.textContent = L.vol.toFixed(0);
-    elVt.setAttribute('opacity', '1');
+    elVolBox.style.display = 'block';
+    elVolNum.textContent   = L.vol.toFixed(0);
   } else {
     elMen.setAttribute('display', 'none');
-    elVl.setAttribute('opacity', '0');
-    elVt.setAttribute('opacity', '0');
+    elVolBox.style.display = 'none';
   }
   if (L.onBal) updB();
 }
