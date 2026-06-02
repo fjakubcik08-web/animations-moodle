@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mesure de λ — Ultrasons</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;600;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0e1a; --panel: #0f1424; --border: #1e2a4a;
+    --ch1: #f5c842; --ch2: #3de8f5;
+    --emitter: #42d464;
+    --text: #c8d4f0; --dim: #4a5578;
+    --cur1: #ff4488; --cur2: #44ffaa;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Exo 2', sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; padding: 18px 12px; gap: 14px;
+  }
+  h1 { font-size: 1.05rem; font-weight: 300; letter-spacing: 0.22em; text-transform: uppercase; opacity: 0.7; }
+  h1 span { color: var(--ch1); font-weight: 700; opacity: 1; }
+  .main-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; width: 100%; max-width: 940px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .panel-label { font-family: 'Share Tech Mono', monospace; font-size: 0.62rem;
+    letter-spacing: 0.18em; color: var(--dim); margin-bottom: 8px; text-transform: uppercase; }
+  .oscillo-wrap { position: relative; }
+  #oscillo { width: 100%; display: block; border-radius: 6px; background: #050a10; border: 1px solid #0d1a0d; }
+  .vcursor { position: absolute; top: 0; width: 2px; cursor: ew-resize; touch-action: none; }
+  #cur1 { background: var(--cur1); }
+  #cur2 { background: var(--cur2); }
+  .cur-handle { position: absolute; top: 4px; width: 14px; height: 18px; border-radius: 3px;
+    transform: translateX(-6px); display: flex; align-items: center; justify-content: center;
+    font-size: 8px; color: #fff; font-family: 'Share Tech Mono', monospace; font-weight: bold; }
+  #cur1 .cur-handle { background: var(--cur1); }
+  #cur2 .cur-handle { background: var(--cur2); }
+  .ch-legend { display: flex; gap: 18px; margin-top: 6px; flex-wrap: wrap; }
+  .ch-item { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; font-family: 'Share Tech Mono', monospace; }
+  .ch-dot { width: 22px; height: 3px; border-radius: 2px; }
+  #dt-display { margin-top: 6px; font-family: 'Share Tech Mono', monospace; font-size: 0.8rem;
+    background: #0a0f1e; border: 1px solid #1e2a4a; border-radius: 6px;
+    padding: 5px 10px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .dt-val { font-weight: 700; }
+  .controls { display: flex; flex-direction: column; gap: 13px; justify-content: center; }
+  .ctrl-row { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl-row label { font-size: 0.68rem; font-family: 'Share Tech Mono', monospace; color: var(--dim); letter-spacing: 0.1em; }
+  .ctrl-row input[type=range] { width: 100%; accent-color: var(--ch1); cursor: pointer; }
+  .ctrl-val { font-family: 'Share Tech Mono', monospace; font-size: 1rem; font-weight: 700; }
+  .step-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .step-btn { background: #141a30; border: 1px solid #2a3860; border-radius: 6px;
+    color: #ff7a30; font-family: 'Share Tech Mono', monospace; font-size: 0.85rem;
+    padding: 6px 10px; cursor: pointer; user-select: none; flex-shrink: 0; }
+  .step-btn:hover { background: #1e2a48; border-color: #ff7a30; }
+  .step-btn:active { background: #ff7a3022; }
+  .step-dist { font-family: 'Share Tech Mono', monospace; font-size: 1rem; font-weight: 700;
+    color: #ff7a30; min-width: 68px; text-align: center; }
+  #device-wrap { width: 100%; max-width: 940px; }
+  #device-canvas { width: 100%; display: block; cursor: ew-resize; border-radius: 4px; }
+  /* badge f et v affiché en haut */
+</style>
+</head>
+<body>
+
+<h1>Mesure de <span>λ</span> — Ultrasons</h1>
+</div>
+
+<div class="main-grid">
+  <div class="panel">
+    <div class="panel-label">Oscilloscope — synchro CH1 &nbsp;|&nbsp; <span id="tb-label" style="color:#f5c842">base de temps : 5.0 µs/div</span></div>
+    <div class="oscillo-wrap" id="oscillo-wrap">
+      <canvas id="oscillo" height="230"></canvas>
+      <div class="vcursor" id="cur1"><div class="cur-handle">t1</div></div>
+      <div class="vcursor" id="cur2"><div class="cur-handle">t2</div></div>
+    </div>
+    <div id="dt-display">
+      <span style="color:var(--cur1)">t1 = <span id="t1-val" class="dt-val">—</span></span>
+      <span style="color:var(--cur2)">t2 = <span id="t2-val" class="dt-val">—</span></span>
+      <span style="color:#fff">Δt = <span id="dt-val" class="dt-val" style="color:#ffdd44">—</span></span>
+    </div>
+    <div class="ch-legend">
+      <div class="ch-item"><div class="ch-dot" style="background:var(--ch1)"></div>CH1 — Émetteur</div>
+      <div class="ch-item"><div class="ch-dot" style="background:var(--ch2)"></div>CH2 — Récepteur</div>
+    </div>
+  </div>
+
+  <div class="panel controls">
+    <div class="ctrl-row">
+      <label>⏱ Base de temps (µs/div)</label>
+      <input type="range" id="tb-slider" min="1" max="20" step="0.5" value="5">
+      <span class="ctrl-val" id="tb-val" style="color:#aabbff">5.0 µs/div</span>
+    </div>
+    <div class="ctrl-row">
+      <label>Position récepteur</label>
+      <div class="step-row">
+        <button class="step-btn" id="btn-minus">− 0.1</button>
+        <span class="step-dist" id="dist-display">40.5 cm</span>
+        <button class="step-btn" id="btn-plus">+ 0.1</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="device-wrap">
+  <div class="panel">
+    <div class="panel-label">Dispositif — cliquer-glisser le récepteur</div>
+    <canvas id="device-canvas" height="165"></canvas>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  ALGO CODAGE / DÉCODAGE  (KEY=[7,13,5], identique Python)
+// ═══════════════════════════════════════════════════════════
+const KEY   = [7, 13, 5];
+const ALPHA = 'abcdefghijklmnopqrstuvwxyz';
+
+function encode3(nInt) {
+  // nInt : entier 0-999
+  const digits = nInt.toString().padStart(3, '0');
+  let core = '';
+  for (let i = 0; i < 3; i++)
+    core += ALPHA[(parseInt(digits[i]) + KEY[i]) % 26];
+  let noise = '';
+  for (let i = 0; i < 5; i++)
+    noise += ALPHA[(core.charCodeAt(i % 3) + i * 3) % 26];
+  return core + noise;
+}
+
+function decode8(code) {
+  code = code.trim().toLowerCase().replace(/[^a-z]/g, '');
+  if (code.length < 8) return null;
+  const core = code.slice(0, 3);
+  let expected = '';
+  for (let i = 0; i < 5; i++)
+    expected += ALPHA[(core.charCodeAt(i % 3) + i * 3) % 26];
+  if (code.slice(3, 8) !== expected) return null;
+  let digits = '';
+  for (let i = 0; i < 3; i++) {
+    const pos = ALPHA.indexOf(core[i]);
+    if (pos < 0) return null;
+    digits += ((pos - KEY[i] + 26) % 26).toString();
+  }
+  return parseInt(digits);
+}
+
+// code_us(f, v) → {cf, cv}  — fonction exportée pour usage externe
+function code_us(f, v) {
+  return {
+    cf: encode3(Math.round(f / 100)),  // f en Hz / 100  ex. 40000 → 400
+    cv: encode3(Math.round(v))          // v en m/s entier ex. 340  → 340
+  };
+}
+
+// Lecture des paramètres URL ?f=xxxx&v=xxxx
+(function readParams() {
+  const p = new URLSearchParams(window.location.search);
+  let freqInit = 40000, speedInit = 340;
+
+  const pf = p.get('f');
+  if (pf) {
+    const val = decode8(pf);
+    if (val !== null && val >= 200 && val <= 800) freqInit = val * 100;
+  }
+  const pv = p.get('v');
+  if (pv) {
+    const val = decode8(pv);
+    if (val !== null && val >= 300 && val <= 380) speedInit = val;
+  }
+
+  window._initFreq  = freqInit;
+  window._initSpeed = speedInit;
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  ÉTAT
+// ═══════════════════════════════════════════════════════════
+const RULER_CM = 90;
+const N_DIVS   = 10;
+
+let freq        = window._initFreq;
+let SPEED       = window._initSpeed;   // fixe pendant la session
+let tbUsPerDiv  = 5;
+let receiverCm  = 40.5;
+let dragging    = false;
+
+let tReal       = 0;
+let lastTS      = null;
+let phaseOffset = 0;
+let lastFreq    = freq;
+
+// Affichage des paramètres
+
+// Bruit
+const NP = 100;
+const noise1 = new Float32Array(NP);
+const noise2 = new Float32Array(NP);
+let noiseTimer = 0;
+function tickNoise() {
+  for (let i = 0; i < NP; i++) {
+    noise1[i] += (Math.random() - 0.5) * 0.5; noise1[i] *= 0.90;
+    noise2[i] += (Math.random() - 0.5) * 0.5; noise2[i] *= 0.90;
+  }
+}
+
+function clampCm(v) { return +Math.max(0.1, Math.min(RULER_CM - 0.1, v)).toFixed(1); }
+function updateDistDisplay() { document.getElementById('dist-display').textContent = receiverCm.toFixed(1) + ' cm'; }
+
+// ═══════════════════════════════════════════════════════════
+//  SLIDERS
+// ═══════════════════════════════════════════════════════════
+document.getElementById('tb-slider').addEventListener('input', e => {
+  tbUsPerDiv = +e.target.value;
+  const lbl = tbUsPerDiv.toFixed(1) + ' µs/div';
+  document.getElementById('tb-val').textContent = lbl;
+  document.getElementById('tb-label').textContent = 'base de temps : ' + lbl;
+});
+
+// ═══════════════════════════════════════════════════════════
+//  BOUTONS ± 0.1 cm  — UN clic = UN pas
+// ═══════════════════════════════════════════════════════════
+document.getElementById('btn-minus').addEventListener('click', () => {
+  receiverCm = clampCm(receiverCm - 0.1);
+  updateDistDisplay();
+});
+document.getElementById('btn-plus').addEventListener('click', () => {
+  receiverCm = clampCm(receiverCm + 0.1);
+  updateDistDisplay();
+});
+updateDistDisplay();
+
+// ═══════════════════════════════════════════════════════════
+//  OSCILLOSCOPE
+// ═══════════════════════════════════════════════════════════
+const ocv  = document.getElementById('oscillo');
+const octx = ocv.getContext('2d');
+function resizeOscillo() { ocv.width = ocv.parentElement.clientWidth - 28; }
+
+function drawOscillo() {
+  const W = ocv.width, H = ocv.height, cx = octx;
+  cx.clearRect(0, 0, W, H);
+  cx.fillStyle = '#050a10'; cx.fillRect(0, 0, W, H);
+
+  cx.strokeStyle = '#0c1e14'; cx.lineWidth = 1;
+  for (let i = 0; i <= N_DIVS; i++) { cx.beginPath(); cx.moveTo(i*W/N_DIVS,0); cx.lineTo(i*W/N_DIVS,H); cx.stroke(); }
+  for (let j = 0; j <= 6; j++) { cx.beginPath(); cx.moveTo(0,j*H/6); cx.lineTo(W,j*H/6); cx.stroke(); }
+  cx.strokeStyle = '#162a1a'; cx.lineWidth = 1.5;
+  cx.beginPath(); cx.moveTo(0, H/2); cx.lineTo(W, H/2); cx.stroke();
+
+  const tWindow   = N_DIVS * tbUsPerDiv * 1e-6;
+  const phase0    = 2 * Math.PI * freq * tReal + phaseOffset;
+  const syncShift = phase0 % (2 * Math.PI);
+  const lambda    = SPEED / freq;
+  const phiDelay  = (2 * Math.PI * (receiverCm / 100)) / lambda;
+  const amp       = H * 0.35;
+  const cy        = H / 2;
+
+  // CH2
+  cx.beginPath(); cx.strokeStyle = 'rgba(61,232,245,0.85)'; cx.lineWidth = 2;
+  for (let px = 0; px < W; px++) {
+    const ph = 2*Math.PI*freq*(px/W*tWindow) + (phase0-syncShift) - phiDelay;
+    const y  = cy - amp*Math.sin(ph) + noise2[Math.floor(px/W*(NP-1))]*2.2;
+    px === 0 ? cx.moveTo(px,y) : cx.lineTo(px,y);
+  }
+  cx.stroke();
+
+  // CH1 — synchronisée
+  cx.beginPath(); cx.strokeStyle = 'rgba(245,200,66,0.95)'; cx.lineWidth = 2;
+  for (let px = 0; px < W; px++) {
+    const ph = 2*Math.PI*freq*(px/W*tWindow) + (phase0-syncShift);
+    const y  = cy - amp*Math.sin(ph) + noise1[Math.floor(px/W*(NP-1))]*2.2;
+    px === 0 ? cx.moveTo(px,y) : cx.lineTo(px,y);
+  }
+  cx.stroke();
+
+  cx.font = '11px "Share Tech Mono",monospace';
+  cx.fillStyle = '#f5c842'; cx.fillText('CH1', 6, 18);
+  cx.fillStyle = '#3de8f5'; cx.fillText('CH2', 6, 32);
+
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CURSEURS VERTICAUX
+// ═══════════════════════════════════════════════════════════
+let cur1Frac = 0.25, cur2Frac = 0.65;
+let dragCur  = null;
+
+const cur1El = document.getElementById('cur1');
+const cur2El = document.getElementById('cur2');
+
+function positionCursors() {
+  const rect = ocv.getBoundingClientRect();
+  const W = rect.width, H = rect.height;
+  cur1El.style.left   = (cur1Frac * W) + 'px';
+  cur1El.style.height = H + 'px';
+  cur2El.style.left   = (cur2Frac * W) + 'px';
+  cur2El.style.height = H + 'px';
+}
+
+function fmt(v) {
+  if (v < 1e-3) return (v * 1e6).toFixed(2) + ' µs';
+  return (v * 1e3).toFixed(3) + ' ms';
+}
+
+function updateCursorDisplay() {
+  const tWindow = N_DIVS * tbUsPerDiv * 1e-6;
+  const t1s = cur1Frac * tWindow;
+  const t2s = cur2Frac * tWindow;
+  document.getElementById('t1-val').textContent = fmt(t1s);
+  document.getElementById('t2-val').textContent = fmt(t2s);
+  document.getElementById('dt-val').textContent = fmt(Math.abs(t2s - t1s));
+}
+
+function getCursorFrac(clientX) {
+  const rect = ocv.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+}
+
+cur1El.addEventListener('mousedown',  e => { dragCur = 'cur1'; e.preventDefault(); e.stopPropagation(); });
+cur2El.addEventListener('mousedown',  e => { dragCur = 'cur2'; e.preventDefault(); e.stopPropagation(); });
+cur1El.addEventListener('touchstart', e => { dragCur = 'cur1'; e.preventDefault(); }, { passive: false });
+cur2El.addEventListener('touchstart', e => { dragCur = 'cur2'; e.preventDefault(); }, { passive: false });
+
+window.addEventListener('mousemove', e => {
+  if (!dragCur) return;
+  const f = getCursorFrac(e.clientX);
+  if (dragCur === 'cur1') cur1Frac = f; else cur2Frac = f;
+  positionCursors(); updateCursorDisplay();
+});
+window.addEventListener('mouseup',   () => dragCur = null);
+window.addEventListener('touchmove', e => {
+  if (!dragCur) return;
+  const f = getCursorFrac(e.touches[0].clientX);
+  if (dragCur === 'cur1') cur1Frac = f; else cur2Frac = f;
+  positionCursors(); updateCursorDisplay();
+}, { passive: false });
+window.addEventListener('touchend', () => dragCur = null);
+
+// ═══════════════════════════════════════════════════════════
+//  DISPOSITIF
+// ═══════════════════════════════════════════════════════════
+const dcv  = document.getElementById('device-canvas');
+const dctx = dcv.getContext('2d');
+function resizeDevice() { dcv.width = dcv.parentElement.clientWidth - 28; }
+
+const ML = 60, MR = 40;
+function ruleX(cm)    { return ML + (cm / RULER_CM) * (dcv.width - ML - MR); }
+function cmFromX(x,W) { return clampCm(((x - ML) / (W - ML - MR)) * RULER_CM); }
+
+function roundRect(ctx,x,y,w,h,r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath();
+}
+
+function drawDevice() {
+  const W = dcv.width, H = dcv.height, cx = dctx;
+  cx.clearRect(0,0,W,H); cx.fillStyle = '#080c18'; cx.fillRect(0,0,W,H);
+  const emX = ML, recX = ruleX(receiverCm), midY = H * 0.42;
+
+  if (recX > emX + 14) {
+    const lambdaPx = (SPEED / freq) / ((RULER_CM / 100) / (W - ML - MR));
+    cx.save(); cx.beginPath(); cx.rect(emX+2, midY-28, recX-emX-4, 56); cx.clip();
+    cx.strokeStyle = 'rgba(61,232,245,0.28)'; cx.lineWidth = 1.5; cx.beginPath();
+    for (let px = emX; px <= recX; px++) {
+      const ph = ((px-emX)/lambdaPx)*2*Math.PI - (2*Math.PI*freq*tReal + phaseOffset);
+      const y  = midY - 16*Math.sin(ph);
+      px === emX ? cx.moveTo(px,y) : cx.lineTo(px,y);
+    }
+    cx.stroke(); cx.restore();
+  }
+
+  cx.strokeStyle = '#181e30'; cx.lineWidth = 1; cx.setLineDash([4,4]);
+  cx.beginPath(); cx.moveTo(emX,midY); cx.lineTo(recX,midY); cx.stroke(); cx.setLineDash([]);
+
+  // Règle
+  const rY = H-28, rW = W-ML-MR;
+  cx.fillStyle = '#7a5c10'; cx.fillRect(ML-4,rY,rW+8,14);
+  cx.fillStyle = '#c8a840'; cx.fillRect(ML-4,rY,rW+8,2);
+  cx.font = '9px "Share Tech Mono",monospace';
+  for (let cm = 0; cm <= RULER_CM; cm += 10) {
+    const rx = ML + (cm/RULER_CM)*rW;
+    cx.strokeStyle = '#5a3a00'; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(rx,rY+2); cx.lineTo(rx,rY+14); cx.stroke();
+    cx.fillStyle = '#c8a840'; cx.textAlign = 'center';
+    cx.fillText(cm === 0 ? '0' : cm, rx, rY-2);
+  }
+  for (let cm = 5; cm < RULER_CM; cm += 10) {
+    const rx = ML + (cm/RULER_CM)*rW;
+    cx.strokeStyle = '#3a2500'; cx.lineWidth = 0.8;
+    cx.beginPath(); cx.moveTo(rx,rY+2); cx.lineTo(rx,rY+9); cx.stroke();
+  }
+  cx.fillStyle = '#c8a840'; cx.textAlign = 'left'; cx.fillText('cm', W-MR+3, rY-2);
+
+  // Flèche distance
+  const aY = rY-12;
+  cx.strokeStyle = '#ff7a30'; cx.lineWidth = 1.5;
+  cx.beginPath(); cx.moveTo(emX,aY); cx.lineTo(recX,aY); cx.stroke();
+  [[emX,1],[recX,-1]].forEach(([x,d]) => {
+    cx.beginPath(); cx.moveTo(x,aY); cx.lineTo(x+d*7,aY-3); cx.lineTo(x+d*7,aY+3);
+    cx.closePath(); cx.fillStyle = '#ff7a30'; cx.fill();
+  });
+  cx.font = 'bold 11px "Share Tech Mono",monospace'; cx.fillStyle = '#ff7a30'; cx.textAlign = 'center';
+  cx.fillText(`d = ${receiverCm.toFixed(1)} cm`, (emX+recX)/2, aY-5);
+
+  // ÉMETTEUR
+  const eW=48,eH=50,ex=emX-eW-2,ey=midY-eH/2;
+  cx.fillStyle='#0d2010'; cx.strokeStyle='#42d464'; cx.lineWidth=2;
+  roundRect(cx,ex,ey,eW,eH,6); cx.fill(); cx.stroke();
+  cx.font='bold 8px "Exo 2",sans-serif'; cx.fillStyle='#42d464'; cx.textAlign='center';
+  cx.fillText('ÉMETTEUR',ex+eW/2,ey+13);
+  cx.strokeStyle='#42d464'; cx.lineWidth=1.5; cx.beginPath();
+  for (let i=0;i<28;i++) {
+    const p = ex+5+(i/28)*(eW-10);
+    const q = midY-7*Math.sin((i/28)*4*Math.PI + 2*Math.PI*freq*tReal + phaseOffset);
+    i===0 ? cx.moveTo(p,q) : cx.lineTo(p,q);
+  }
+  cx.stroke();
+
+  // RÉCEPTEUR
+  const rW2=48,rHH=50,rx2=recX+2,ry=midY-rHH/2;
+  cx.fillStyle='#0d0d28'; cx.strokeStyle=dragging?'#aabbff':'#5577ff'; cx.lineWidth=2;
+  roundRect(cx,rx2,ry,rW2,rHH,6); cx.fill(); cx.stroke();
+  cx.font='bold 8px "Exo 2",sans-serif'; cx.fillStyle=dragging?'#aabbff':'#5577ff'; cx.textAlign='center';
+  cx.fillText('RÉCEPTEUR',rx2+rW2/2,ry+13);
+  const phi = (2*Math.PI*(receiverCm/100)) / (SPEED/freq);
+  cx.strokeStyle=dragging?'#aabbff':'#5577ff'; cx.lineWidth=1.5; cx.beginPath();
+  for (let i=0;i<28;i++) {
+    const p = rx2+5+(i/28)*(rW2-10);
+    const q = midY-7*Math.sin((i/28)*4*Math.PI + 2*Math.PI*freq*tReal + phaseOffset - phi);
+    i===0 ? cx.moveTo(p,q) : cx.lineTo(p,q);
+  }
+  cx.stroke();
+  cx.font='10px sans-serif'; cx.fillStyle='#3355cc'; cx.textAlign='center';
+  cx.fillText('⇔',rx2+rW2/2,ry+rHH-7); cx.textAlign='left';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAG récepteur
+// ═══════════════════════════════════════════════════════════
+function getX(e,cv) { const r=cv.getBoundingClientRect(); return ((e.touches?e.touches[0].clientX:e.clientX)-r.left)*(cv.width/r.width); }
+dcv.addEventListener('mousedown',  () => { if (!dragCur) dragging = true; });
+dcv.addEventListener('mousemove',  e  => { if (dragging && !dragCur) { receiverCm=cmFromX(getX(e,dcv),dcv.width); updateDistDisplay(); } });
+dcv.addEventListener('mouseup',    () => dragging = false);
+dcv.addEventListener('mouseleave', () => dragging = false);
+dcv.addEventListener('touchstart', e  => { dragging=true; e.preventDefault(); }, { passive:false });
+dcv.addEventListener('touchmove',  e  => { if(dragging){ receiverCm=cmFromX(getX(e,dcv),dcv.width); updateDistDisplay(); e.preventDefault(); } }, { passive:false });
+dcv.addEventListener('touchend',   () => dragging = false);
+
+// ═══════════════════════════════════════════════════════════
+//  LOOP
+// ═══════════════════════════════════════════════════════════
+function loop(ts) {
+  if (lastTS !== null) {
+    const dt = (ts - lastTS) / 1000;
+    tReal += dt; noiseTimer += dt;
+    if (noiseTimer > 0.04) { tickNoise(); noiseTimer = 0; }
+  }
+  lastTS = ts;
+  drawOscillo();
+  drawDevice();
+  positionCursors();
+  updateCursorDisplay();
+  requestAnimationFrame(loop);
+}
+
+function init() {
+  resizeOscillo(); resizeDevice();
+  positionCursors(); updateCursorDisplay();
+  requestAnimationFrame(loop);
+}
+window.addEventListener('resize', () => { resizeOscillo(); resizeDevice(); positionCursors(); });
+init();
+</script>
+</body>
+</html>
