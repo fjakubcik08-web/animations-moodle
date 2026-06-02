@@ -256,11 +256,14 @@ function drawOscillo() {
   const amp       = H * 0.35;
   const cy        = H / 2;
 
+  // Atténuation CH2 douce : ~100% à 0cm, ~40% à 90cm
+  const ampCH2 = amp * Math.max(0.4, 1 - (receiverCm / RULER_CM) * 0.6);
+
   // CH2
   cx.beginPath(); cx.strokeStyle = 'rgba(61,232,245,0.85)'; cx.lineWidth = 2;
   for (let px = 0; px < W; px++) {
     const ph = 2*Math.PI*freq*(px/W*tWindow) + (phase0-syncShift) - phiDelay;
-    const y  = cy - amp*Math.sin(ph) + noise2[Math.floor(px/W*(NP-1))]*2.2;
+    const y  = cy - ampCH2*Math.sin(ph) + noise2[Math.floor(px/W*(NP-1))]*2.2;
     px === 0 ? cx.moveTo(px,y) : cx.lineTo(px,y);
   }
   cx.stroke();
