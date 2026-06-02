@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Masse volumique d'un solide</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#e8ecf0; display:flex; flex-direction:column; align-items:center; }
+    #wrap { position:relative; width:720px; height:520px; overflow:hidden; }
+    canvas { display:block; }
+    #msg {
+      position:absolute; bottom:5px; left:0; right:0;
+      text-align:center; font:12px/1.4 Arial,sans-serif;
+      color:#333; pointer-events:none;
+      text-shadow:0 0 5px #e8ecf0,0 0 5px #e8ecf0;
+    }
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="720" height="520"></canvas>
+  <div id="msg">Cliquez sur la pisette pour remplir — Glissez les objets avec la souris</div>
+</div>
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   DÉCODAGE PARAMÈTRES URL
+   ?p=xxx  masse objet      (g)   50–500    factor 1   XOR 321  +1000
+   ?e=xxx  masse éprouvette (g)   80–200    factor 10  XOR 1337 +3000
+   ?v=xxx  volume objet    (mL)   5–100     factor 10  XOR 876  +2000
+══════════════════════════════════════════════════════════════════════════ */
+const A26 = 'abcdefghijklmnopqrstuvwxyz';
+function b26(s) {
+  if (!s || s.length !== 3) return null;
+  const v = s.toLowerCase().split('').map(c => A26.indexOf(c));
+  return v.some(x => x < 0) ? null : v[0]*676 + v[1]*26 + v[2];
+}
+function decP(s){ const r=b26(s); if(r==null)return null; const n=(r-1000)^321;  return n>=50&&n<=500   ? n    : null; }
+function decE(s){ const r=b26(s); if(r==null)return null; const n=(r-3000)^1337; return n>=800&&n<=2000 ? n/10 : null; }
+function decV(s){ const r=b26(s); if(r==null)return null; const n=(r-2000)^876;  return n>=50&&n<=1000  ? n/10 : null; }
+
+const Q  = new URLSearchParams(location.search);
+const MO = decP(Q.get('p')) ?? 120;   // masse objet (g)
+const ME = decE(Q.get('e')) ?? 95.5;  // masse éprouvette vide (g)
+const VO = decV(Q.get('v')) ?? 45.0;  // volume objet (mL)
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CANVAS
+══════════════════════════════════════════════════════════════════════════ */
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = 720, H = 520;
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CONSTANTES GÉOMÉTRIQUES
+══════════════════════════════════════════════════════════════════════════ */
+const TAB_Y = 390;
+
+// Éprouvette
+const EW    = 40;    // largeur intérieure px
+const EH    = 180;   // hauteur intérieure px (= 250 mL)
+const ETK   = 5;     // épaisseur paroi px
+const EFULL = 250;   // mL max
+const EOW   = EW + ETK*2;
+
+// Balance
+const BX    = 570;
+const BPY   = 315;
+const BPW   = 136;
+const BPH   = 9;
+
+// Pisette (fixe)
+const PIX   = 95;
+const PIY   = TAB_Y;
+
+// Boutons canvas
+const BTN = {
+  minus: { x:30,  y:413, w:80,  h:27 },
+  vider: { x:120, y:413, w:100, h:27 },
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ÉTAT
+══════════════════════════════════════════════════════════════════════════ */
+let waterMl  = 0;
+let objInErp = false;
+let objOnBal = false;
+let erpOnBal = false;
+
+let erpX = 280, erpBaseY = TAB_Y;
+let objX = 430, objY = TAB_Y - 16;
+
+let dragging  = null;
+let dOffX = 0, dOffY = 0;
+let pisActive = false;
+let pisTimeout = null;
+let pisTimer   = null;
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HELPERS
+══════════════════════════════════════════════════════════════════════════ */
+function setMsg(t){ document.getElementById('msg').textContent = t; }
+
+// Niveau apparent = ce que l'élève lit sur la graduation
+function apparent() {
+  if (waterMl === 0) return 0;
+  return waterMl + (objInErp ? VO : 0);
+}
+function fillPx() { return (Math.min(apparent(), EFULL) / EFULL) * EH; }
+
+function balMass() {
+  if (erpOnBal) return ME + waterMl + (objInErp ? MO : 0);
+  if (objOnBal) return MO;
+  return 0;
+}
+function erpPos() {
+  return erpOnBal ? { cx:BX, baseY:BPY } : { cx:erpX, baseY:erpBaseY };
+}
+function objEffPos() {
+  if (objOnBal) return { x:BX, y:BPY - 17 };
+  if (objInErp) {
+    const ep = erpPos();
+    return { x:ep.cx, y:ep.baseY - 14 };   // toujours au fond
+  }
+  return { x:objX, y:objY };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   UTILITAIRE roundRect
+══════════════════════════════════════════════════════════════════════════ */
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.arcTo(x+w,y, x+w,y+r, r);
+  ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w,y+h, x+w-r,y+h, r);
+  ctx.lineTo(x+r, y+h); ctx.arcTo(x,y+h, x,y+h-r, r);
+  ctx.lineTo(x, y+r); ctx.arcTo(x,y, x+r,y, r);
+  ctx.closePath();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DESSIN — FOND
+══════════════════════════════════════════════════════════════════════════ */
+function drawBg() {
+  // Mur
+  const gw = ctx.createLinearGradient(0,0,0,TAB_Y);
+  gw.addColorStop(0,'#c8d6e2'); gw.addColorStop(1,'#d8e4ee');
+  ctx.fillStyle = gw; ctx.fillRect(0,0,W,TAB_Y);
+  // Table
+  ctx.fillStyle = '#c4a265'; ctx.fillRect(0,TAB_Y,W,H-TAB_Y);
+  ctx.fillStyle = '#a88240'; ctx.fillRect(0,TAB_Y,W,7);
+  // Titre
+  ctx.fillStyle = '#2c3e50';
+  ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center';
+  ctx.fillText("Mesure de la masse volumique d'un solide", W/2, 22);
+  ctx.textAlign = 'left';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DESSIN — PISETTE (bouteille laveur de labo réaliste)
+══════════════════════════════════════════════════════════════════════════ */
+function drawPisette() {
+  ctx.save();
+  ctx.translate(PIX, PIY);   // base de la bouteille = table
+
+  // ── Corps de la bouteille ──
+  // Forme : large en bas, rétrécit vers l'épaule
+  function bodyPath() {
+    ctx.beginPath();
+    ctx.moveTo(-8, 0);
+    ctx.bezierCurveTo(-28, -8,  -30, -45, -20, -75);
+    ctx.lineTo(-9,  -90);
+    ctx.lineTo( 9,  -90);
+    ctx.bezierCurveTo( 20, -45,  28,  -8,  8,  0);
+    ctx.closePath();
+  }
+
+  // Remplissage blanc translucide avec gradient
+  bodyPath();
+  const bg = ctx.createLinearGradient(-30, -90, 30, 0);
+  bg.addColorStop(0,   'rgba(230,244,255,0.95)');
+  bg.addColorStop(0.5, 'rgba(245,252,255,0.92)');
+  bg.addColorStop(1,   'rgba(210,232,250,0.95)');
+  ctx.fillStyle = bg;
+  ctx.strokeStyle = '#5a9dc0';
+  ctx.lineWidth = 1.8;
+  ctx.fill(); ctx.stroke();
+
+  // Eau visible dans le bas du corps
+  ctx.save();
+  bodyPath(); ctx.clip();
+  ctx.fillStyle = 'rgba(50,130,215,0.28)';
+  ctx.fillRect(-32, -38, 64, 39);
+  ctx.restore();
+
+  // Reflet gauche (brillance verre)
+  ctx.save();
+  bodyPath(); ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.30)';
+  ctx.beginPath();
+  ctx.ellipse(-13, -48, 5, 22, -0.15, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // ── Bouchon / col ──
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#5a9dc0'; ctx.lineWidth = 1.5;
+  rr(-7, -103, 14, 14, 3); ctx.fill(); ctx.stroke();
+  // Filetage (lignes horizontales)
+  ctx.strokeStyle = 'rgba(90,157,192,0.5)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath(); ctx.moveTo(-6, -100+i*4); ctx.lineTo(6, -100+i*4); ctx.stroke();
+  }
+
+  // ── Tube bec (sort du col, monte, vire à droite) ──
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // Ombre tube
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(1, -103);
+  ctx.lineTo(1, -138);
+  ctx.quadraticCurveTo(1, -158, 24, -158);
+  ctx.lineTo(62, -158);
+  ctx.stroke();
+  // Tube principal
+  ctx.strokeStyle = '#6aaec8'; ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(0, -103);
+  ctx.lineTo(0, -137);
+  ctx.quadraticCurveTo(0, -157, 23, -157);
+  ctx.lineTo(62, -157);
+  ctx.stroke();
+  // Canal intérieur
+  ctx.strokeStyle = 'rgba(195,232,248,0.9)'; ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -103);
+  ctx.lineTo(0, -137);
+  ctx.quadraticCurveTo(0, -157, 23, -157);
+  ctx.lineTo(62, -157);
+  ctx.stroke();
+  // Reflet haut du tube
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-2, -103); ctx.lineTo(-2, -136); ctx.stroke();
+
+  // Embout / pointe
+  ctx.fillStyle = '#4a8eaa'; ctx.strokeStyle = '#3a7a99'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(62, -162); ctx.lineTo(68, -157); ctx.lineTo(62, -152);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+
+  // Goutte (quand actif)
+  if (pisActive) {
+    ctx.fillStyle = 'rgba(30,100,210,0.82)';
+    ctx.beginPath();
+    ctx.ellipse(66, -149, 3, 5.5, 0.2, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // ── Étiquette sur le corps ──
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.strokeStyle = '#5a9dc0'; ctx.lineWidth = 1;
+  rr(-16, -72, 32, 26, 3); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#1a4f6e';
+  ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('Eau', 0, -58);
+  ctx.font = '7.5px Arial';
+  ctx.fillText('distillée', 0, -48);
+  ctx.restore();
+
+  // Indication "cliquer"
+  ctx.fillStyle = 'rgba(40,80,120,0.55)';
+  ctx.font = '8px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('▶ cliquer', 0, 10);
+
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DESSIN — ÉPROUVETTE GRADUÉE
+══════════════════════════════════════════════════════════════════════════ */
+function drawEprouvette(ecx, eBaseY) {
+  const fp = fillPx();
+
+  ctx.save();
+  ctx.translate(ecx, eBaseY);
+
+  // ── Silhouette verre ──
+  ctx.beginPath();
+  ctx.moveTo(-EOW/2, -EH-ETK);
+  ctx.lineTo(-EOW/2, -ETK);
+  ctx.quadraticCurveTo(-EOW/2, ETK*2, 0, ETK*2+3);
+  ctx.quadraticCurveTo( EOW/2, ETK*2, EOW/2, -ETK);
+  ctx.lineTo( EOW/2, -EH-ETK);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(180,220,245,0.18)';
+  ctx.strokeStyle = '#4a8fb5'; ctx.lineWidth = 2;
+  ctx.fill(); ctx.stroke();
+
+  // ── Eau ──
+  if (fp > 0) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(-EW/2, -EH);
+    ctx.lineTo(-EW/2, 0);
+    ctx.quadraticCurveTo(-EW/2, ETK, 0, ETK+2);
+    ctx.quadraticCurveTo( EW/2, ETK, EW/2, 0);
+    ctx.lineTo( EW/2, -EH);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(50,130,220,0.50)';
+    ctx.fillRect(-EW/2, -fp, EW, fp);
+    ctx.fillStyle = 'rgba(160,210,255,0.38)';
+    ctx.fillRect(-EW/2, -fp, EW, 3);
+    ctx.strokeStyle = 'rgba(100,180,255,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-EW/2, -fp+1.5);
+    ctx.bezierCurveTo(-EW/4,-fp-1, EW/4,-fp+3, EW/2,-fp+1.5);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── Objet (toujours au fond — coule) ──
+  if (objInErp && dragging !== 'obj') {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-EW/2, -EH, EW, EH+ETK+5); ctx.clip();
+    drawRock(0, -14, 0.70);  // -14 = toujours au fond
+    ctx.restore();
+  }
+
+  // ── Parois verre ──
+  ctx.strokeStyle = '#4a8fb5'; ctx.lineWidth = ETK; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-EOW/2,-EH-ETK); ctx.lineTo(-EOW/2,-ETK); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo( EOW/2,-EH-ETK); ctx.lineTo( EOW/2,-ETK); ctx.stroke();
+
+  // ── Graduations ──
+  ctx.strokeStyle = '#336688'; ctx.lineWidth = 1;
+  ctx.fillStyle = '#225577'; ctx.font = '9px Arial'; ctx.textAlign = 'left';
+  for (let ml = 0; ml <= EFULL; ml += 50) {
+    const gy = -(ml/EFULL)*EH;
+    ctx.beginPath(); ctx.moveTo(EW/2,gy); ctx.lineTo(EW/2+10,gy); ctx.stroke();
+    if (ml > 0) ctx.fillText(ml, EW/2+12, gy+4);
+  }
+  for (let ml = 25; ml < EFULL; ml += 50) {
+    const gy = -(ml/EFULL)*EH;
+    ctx.beginPath(); ctx.moveTo(EW/2,gy); ctx.lineTo(EW/2+6,gy); ctx.stroke();
+  }
+
+  // ── Bord supérieur ──
+  ctx.strokeStyle = '#5599cc'; ctx.lineWidth = 3; ctx.lineCap = 'square';
+  ctx.beginPath(); ctx.moveTo(-EOW/2,-EH-ETK); ctx.lineTo(EOW/2,-EH-ETK); ctx.stroke();
+
+  // ── Affichage niveau (flèche rouge à gauche) ──
+  const lev = apparent();
+  if (lev > 0) {
+    const ly = -(lev/EFULL)*EH;
+    // Ligne horizontale
+    ctx.strokeStyle = '#c62828'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-EOW/2-22, ly); ctx.lineTo(-EOW/2-1, ly); ctx.stroke();
+    // Pointe de flèche
+    ctx.fillStyle = '#c62828';
+    ctx.beginPath();
+    ctx.moveTo(-EOW/2, ly-3); ctx.lineTo(-EOW/2+5, ly); ctx.lineTo(-EOW/2, ly+3);
+    ctx.fill();
+    // Valeur
+    ctx.font = 'bold 12px Arial'; ctx.textAlign = 'right';
+    ctx.fillText(lev.toFixed(0)+' mL', -EOW/2-24, ly+4);
+  }
+
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DESSIN — BALANCE (Mettler-Toledo)
+══════════════════════════════════════════════════════════════════════════ */
+function drawBalance() {
+  ctx.save(); ctx.translate(BX, 0);
+  ctx.fillStyle = '#555560'; ctx.fillRect(-68,TAB_Y-7,136,7);
+  ctx.fillStyle = '#888898'; ctx.fillRect(-5,BPY+BPH,10,TAB_Y-BPY-BPH-7);
+  const pg = ctx.createLinearGradient(-BPW/2,BPY,BPW/2,BPY+BPH);
+  pg.addColorStop(0,'#d8d8e0'); pg.addColorStop(1,'#b0b0c0');
+  ctx.fillStyle = pg; ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+  rr(-BPW/2,BPY,BPW,BPH,2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(-BPW/2+3,BPY+1,BPW-6,3);
+  ctx.fillStyle = '#1e1e2e'; rr(-54,BPY-88,108,66,7); ctx.fill();
+  ctx.fillStyle = '#00100a'; ctx.fillRect(-49,BPY-83,98,48);
+  const mass = balMass();
+  ctx.fillStyle = mass>0 ? '#22ff88' : '#003311';
+  ctx.font = "bold 28px 'Courier New',monospace"; ctx.textAlign = 'right';
+  ctx.fillText(mass>0 ? mass.toFixed(1) : '   0.0', 34, BPY-44);
+  ctx.fillStyle = '#11cc55'; ctx.font = 'bold 14px monospace';
+  ctx.fillText(' g', 48, BPY-44);
+  ctx.fillStyle = mass>0 ? '#ff4444' : '#440000';
+  ctx.beginPath(); ctx.arc(-42,BPY-72,3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#00cc44'; ctx.beginPath(); ctx.arc(-34,BPY-72,3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#aaa'; ctx.font = '8px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('METTLER TOLEDO', 0, BPY-28);
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DESSIN — OBJET (caillou / solide irrégulier)
+══════════════════════════════════════════════════════════════════════════ */
+function drawRock(rx, ry, scale) {
+  scale = scale || 1;
+  ctx.save(); ctx.translate(rx, ry); ctx.scale(scale, scale);
+  ctx.beginPath();
+  ctx.moveTo(-12,-7); ctx.lineTo(-14,5); ctx.lineTo(-8,14);
+  ctx.lineTo(9,14); ctx.lineTo(14,5); ctx.lineTo(13,-9);
+  ctx.lineTo(4,-15); ctx.lineTo(-5,-13); ctx.closePath();
+  ctx.fillStyle = '#7a6a55'; ctx.strokeStyle = '#4a3520';
+  ctx.lineWidth = 1.5/scale; ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-5,-13); ctx.lineTo(4,-15);
+  ctx.lineTo(6,-5); ctx.lineTo(-3,-3); ctx.closePath();
+  ctx.fillStyle = '#9d8d70'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(9,14); ctx.lineTo(14,5);
+  ctx.lineTo(13,-9); ctx.lineTo(16,2); ctx.lineTo(12,15); ctx.closePath();
+  ctx.fillStyle = '#5a4535'; ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  [[-6,3],[3,-4],[-9,-1],[5,8],[-1,10],[7,-1]].forEach(([dx,dy])=>{
+    ctx.beginPath(); ctx.arc(dx,dy,1.3,0,Math.PI*2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DESSIN — BOUTONS CANVAS
+══════════════════════════════════════════════════════════════════════════ */
+function drawButtons() {
+  const canUse = waterMl > 0;
+
+  // Bouton −1 mL
+  const bm = BTN.minus;
+  ctx.fillStyle = canUse ? '#e3f2fd' : '#e0e0e0';
+  rr(bm.x, bm.y, bm.w, bm.h, 5); ctx.fill();
+  ctx.strokeStyle = canUse ? '#1976d2' : '#bbb'; ctx.lineWidth = 1.5;
+  rr(bm.x, bm.y, bm.w, bm.h, 5); ctx.stroke();
+  ctx.fillStyle = canUse ? '#0d47a1' : '#999';
+  ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('− 1 mL', bm.x + bm.w/2, bm.y + 18);
+
+  // Bouton Vider
+  const bv = BTN.vider;
+  ctx.fillStyle = canUse ? '#fce4ec' : '#e0e0e0';
+  rr(bv.x, bv.y, bv.w, bv.h, 5); ctx.fill();
+  ctx.strokeStyle = canUse ? '#c62828' : '#bbb'; ctx.lineWidth = 1.5;
+  rr(bv.x, bv.y, bv.w, bv.h, 5); ctx.stroke();
+  ctx.fillStyle = canUse ? '#b71c1c' : '#999';
+  ctx.font = 'bold 12px Arial';
+  ctx.fillText('Vider', bv.x + bv.w/2, bv.y + 18);
+
+  ctx.textAlign = 'left';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RENDU PRINCIPAL
+══════════════════════════════════════════════════════════════════════════ */
+function render() {
+  ctx.clearRect(0,0,W,H);
+  drawBg();
+  drawPisette();
+  const ep = erpPos();
+  drawEprouvette(ep.cx, ep.baseY);
+  drawBalance();
+  drawButtons();
+  if (!objInErp || dragging === 'obj') {
+    const op = dragging === 'obj' ? {x:objX,y:objY} : objEffPos();
+    if (op) drawRock(op.x, op.y, 1);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HIT TESTS
+══════════════════════════════════════════════════════════════════════════ */
+function hitPisette(x, y) {
+  // Corps de la bouteille : translate à (PIX, PIY), corps centré vers y=-45
+  return Math.abs(x-PIX) < 32 && y > PIY-90 && y < PIY;
+}
+function hitBtn(key, x, y) {
+  const b = BTN[key];
+  return x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h;
+}
+function hitObj(x, y) {
+  const op = objEffPos();
+  return op && Math.hypot(x-op.x, y-op.y) < 22;
+}
+function hitErp(x, y) {
+  const ep = erpPos();
+  return Math.abs(x-ep.cx) < EOW/2+10
+      && y > ep.baseY-EH-ETK-10
+      && y < ep.baseY+10;
+}
+function onPlatform(x, y) {
+  return Math.abs(x-BX) < BPW/2+15 && y>BPY-30 && y<BPY+BPH+20;
+}
+function nearErpOpening(x, y) {
+  const ep = erpPos();
+  return Math.abs(x-ep.cx) < EOW/2+20
+      && y > ep.baseY-EH-ETK-60
+      && y < ep.baseY+10;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ÉVÉNEMENTS
+══════════════════════════════════════════════════════════════════════════ */
+function getXY(e) {
+  const r = canvas.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  return { x:t.clientX-r.left, y:t.clientY-r.top };
+}
+
+function addWater() {
+  if (erpOnBal) {
+    setMsg("⚠ Posez l'éprouvette sur la table pour la remplir.");
+    return false;
+  }
+  const maxW = EFULL - (objInErp ? VO : 0);
+  if (waterMl >= maxW) {
+    setMsg('Éprouvette pleine (250 mL).');
+    return false;
+  }
+  waterMl = Math.min(waterMl + 1, maxW);
+  render();
+  setMsg(`Eau : ${waterMl} mL — niveau lu : ${apparent().toFixed(0)} mL`);
+  return true;
+}
+
+function fillEprouvette() {
+  if (!addWater()) return;
+  pisActive = true;
+  render();
+  // Remplissage continu au maintien du clic (1 mL toutes les 80 ms)
+  pisTimer = setInterval(() => {
+    if (!addWater()) { stopPisette(); }
+  }, 80);
+}
+
+function stopPisette() {
+  if (pisTimer)   { clearInterval(pisTimer);  pisTimer   = null; }
+  if (pisTimeout) { clearTimeout(pisTimeout); pisTimeout = null; }
+  if (pisActive)  { pisActive = false; render(); }
+}
+
+function onDown(e) {
+  e.preventDefault();
+  const {x,y} = getXY(e);
+
+  // ── Pisette ──
+  if (hitPisette(x,y)) { fillEprouvette(); return; }
+
+  // ── Bouton −1 mL ──
+  if (hitBtn('minus',x,y)) {
+    const minW = Math.round(2 * VO);   // plancher = 2 × volume de l'objet
+    if (waterMl > minW) {
+      waterMl = Math.max(minW, waterMl - 1);
+      render();
+      setMsg(`Eau : ${waterMl} mL — niveau lu : ${apparent().toFixed(0)} mL`);
+    } else if (waterMl > 0 && waterMl <= minW) {
+      setMsg(`Minimum atteint — il faut au moins ${minW} mL pour immerger l'objet.`);
+    }
+    return;
+  }
+
+  // ── Bouton Vider ──
+  if (hitBtn('vider',x,y)) {
+    waterMl = 0;
+    render();
+    setMsg('Éprouvette vidée.');
+    return;
+  }
+
+  // ── Objet ──
+  if (hitObj(x,y)) {
+    dragging = 'obj';
+    const op = objEffPos();
+    dOffX = x-op.x; dOffY = y-op.y;
+    if (objOnBal) objOnBal = false;
+    // objInErp reste true pendant le drag : le niveau ne change qu'au drop
+    objX = op.x; objY = op.y;
+    setMsg("Déposez sur la balance ou dans l'éprouvette.");
+    render(); return;
+  }
+
+  // ── Éprouvette ──
+  if (hitErp(x,y)) {
+    dragging = 'erp';
+    const ep = erpPos();
+    dOffX = x-ep.cx; dOffY = y-ep.baseY;
+    if (erpOnBal) { erpX = ep.cx; erpBaseY = ep.baseY; erpOnBal = false; }
+    setMsg("Déposez sur la balance ou sur la table.");
+    render(); return;
+  }
+}
+
+function onMove(e) {
+  e.preventDefault();
+  if (!dragging) return;
+  const {x,y} = getXY(e);
+  if (dragging==='obj') { objX=x-dOffX; objY=y-dOffY; }
+  else                  { erpX=x-dOffX; erpBaseY=y-dOffY; }
+  render();
+}
+
+function onUp(e) {
+  stopPisette();
+  if (!dragging) return;
+  const {x,y} = getXY(e);
+
+  if (dragging==='obj') {
+    // Utiliser la position du centre de l'objet (pas la souris)
+    if (onPlatform(objX, objY) && !erpOnBal) {
+      objInErp = false;
+      objOnBal = true;
+      setMsg(`⚖ Objet sur la balance — masse = ${MO.toFixed(1)} g`);
+
+    } else if (nearErpOpening(x, y)) {
+      objInErp = true;
+      objOnBal = false;
+      const ep = erpPos();
+      objX = ep.cx; objY = ep.baseY - 14;
+      if (waterMl > 0) {
+        setMsg(`Objet immergé — lisez le nouveau niveau sur l'éprouvette.`);
+      } else {
+        setMsg("Objet dans l'éprouvette vide — remplissez d'eau pour mesurer le volume.");
+      }
+
+    } else {
+      objInErp = false;
+      objX = Math.max(30, Math.min(W-30, x));
+      objY = TAB_Y - 16;
+      setMsg('');
+    }
+
+  } else {
+    // Utiliser la position de la BASE de l'éprouvette (pas la souris)
+    if (onPlatform(erpX, erpBaseY)) {
+      erpOnBal = true;
+      const m = ME + waterMl + (objInErp ? MO : 0);
+      setMsg(`⚖ Éprouvette sur la balance — masse = ${m.toFixed(1)} g`);
+    } else {
+      erpX    = Math.max(60, Math.min(W-90, x));
+      erpBaseY = TAB_Y;
+      setMsg('');
+    }
+  }
+
+  dragging = null;
+  render();
+}
+
+function onLeave() {
+  stopPisette();
+  if (dragging) {
+    if (dragging==='obj') {
+      objX = Math.max(30, Math.min(W-30, objX));
+      objY = TAB_Y - 16;
+    } else {
+      erpX    = Math.max(60, Math.min(W-90, erpX));
+      erpBaseY = TAB_Y;
+    }
+    dragging = null; render();
+  }
+}
+
+canvas.addEventListener('mousedown',  onDown);
+canvas.addEventListener('mousemove',  onMove);
+canvas.addEventListener('mouseup',    onUp);
+canvas.addEventListener('mouseleave', onLeave);
+canvas.addEventListener('touchstart', onDown, {passive:false});
+canvas.addEventListener('touchmove',  onMove, {passive:false});
+canvas.addEventListener('touchend',   onUp,   {passive:false});
+
+render();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FONCTIONS PYTHON (côté professeur)
+
+   ALPHA = 'abcdefghijklmnopqrstuvwxyz'
+
+   def code_massevol_solide(masse_obj, masse_erp, volume_obj):
+       n1 = int(round(masse_obj))
+       e1 = (n1 ^ 321) + 1000
+       p = ALPHA[e1//676] + ALPHA[(e1//26)%26] + ALPHA[e1%26]
+       n2 = int(round(masse_erp * 10))
+       e2 = (n2 ^ 1337) + 3000
+       e = ALPHA[e2//676] + ALPHA[(e2//26)%26] + ALPHA[e2%26]
+       n3 = int(round(volume_obj * 10))
+       e3 = (n3 ^ 876) + 2000
+       v = ALPHA[e3//676] + ALPHA[(e3//26)%26] + ALPHA[e3%26]
+       return p, e, v
+
+   BASE = 'https://fjakubcik08-web.github.io/animations-moodle/massevol_solide.html'
+
+   def iframe_massevol_solide(masse_obj, masse_erp, volume_obj, w=720, h=520):
+       p, e, v = code_massevol_solide(masse_obj, masse_erp, volume_obj)
+       return (f'<iframe src="{BASE}?p={p}&e={e}&v={v}" '
+               f'width="{w}" height="{h}" frameborder="0" scrolling="no"></iframe>')
+══════════════════════════════════════════════════════════════════════════ */
+</script>
+</body>
+</html>
