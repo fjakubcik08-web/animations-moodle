@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spectre d'étoile</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#07071a;font-family:Arial,sans-serif;overflow:hidden;}
+#scene{position:relative;width:100%;height:100vh;overflow:hidden;}
+#sky{position:absolute;inset:0;background:linear-gradient(180deg,#03030e 0%,#08082a 55%,#10102e 75%,#1a1008 100%);}
+
+/* Étoiles de fond */
+.sbg{position:absolute;background:white;border-radius:50%;animation:twk var(--d) var(--dl) infinite alternate;}
+@keyframes twk{0%{opacity:.3;transform:scale(.7);}100%{opacity:1;transform:scale(1.3);}}
+
+/* Étoiles filantes */
+.shooting{
+  position:absolute;
+  width:var(--len);height:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.95),rgba(255,255,255,0));
+  border-radius:2px;
+  transform-origin:left center;
+  transform:rotate(var(--angle));
+  opacity:0;
+  pointer-events:none;
+  animation:shoot var(--spd) ease-out forwards;
+}
+@keyframes shoot{
+  0%  {opacity:0; translate:0 0;}
+  8%  {opacity:1;}
+  85% {opacity:.6;}
+  100%{opacity:0; translate:var(--dx) var(--dy);}
+}
+
+/* Paysage */
+#landscape{position:absolute;bottom:0;left:0;width:100%;pointer-events:none;}
+
+/* Dôme */
+#obs{position:absolute;bottom:0;left:50%;transform:translateX(-50%);}
+#obs-base{width:200px;height:65px;background:#252535;border-radius:4px 4px 0 0;margin:0 auto;}
+#obs-dome{width:180px;height:90px;background:#303048;border-radius:90px 90px 0 0;border:1.5px solid #505068;margin:0 auto;position:relative;}
+#obs-slit{position:absolute;left:50%;transform:translateX(-50%);top:0;width:34px;height:90px;background:rgba(0,0,0,.55);border-radius:17px 17px 0 0;}
+#telescope{position:absolute;bottom:16px;left:50%;transform:translateX(-50%) rotate(-15deg);width:13px;height:72px;background:#aaa;border-radius:5px 5px 3px 3px;transform-origin:bottom center;transition:transform 1s ease;}
+
+/* Étoiles spéciales */
+.sstar{position:absolute;cursor:pointer;transform:translate(-50%,-50%);}
+.sstar .halo{border-radius:50%;transition:box-shadow .25s,transform .25s;}
+.sstar:hover .halo{transform:scale(1.3);}
+.sstar.sel .halo{animation:pulse 1.2s infinite alternate;}
+@keyframes pulse{0%{box-shadow:0 0 10px 4px var(--sc);}100%{box-shadow:0 0 22px 8px var(--sc);}}
+.sstar .lbl{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);font-size:12px;color:rgba(220,235,255,.95);white-space:nowrap;background:rgba(0,0,10,.7);padding:2px 8px;border-radius:4px;pointer-events:none;opacity:0;transition:opacity .2s;}
+.sstar:hover .lbl,.sstar.sel .lbl{opacity:1;}
+
+/* Bouton analyser */
+#btn-ana{
+  position:absolute;bottom:22px;right:22px;
+  padding:10px 24px;border-radius:7px;font-size:14px;font-weight:bold;
+  background:#18202e;color:#445566;
+  border:1.5px solid #2a3a4a;
+  cursor:default;pointer-events:none;
+  transition:all .3s;
+  letter-spacing:.3px;
+}
+#btn-ana.on{
+  background:#0d3a5c;color:#7dd4ff;
+  border-color:#2a7aaa;
+  cursor:pointer;pointer-events:all;
+  box-shadow:0 0 12px rgba(50,150,220,.25);
+}
+#btn-ana.on:hover{background:#1a4f7a;}
+
+/* Panneau spectre */
+#panel{
+  position:absolute;inset:0;
+  background:#060614;
+  display:none;flex-direction:column;
+  padding:14px 18px 10px;
+}
+#panel.show{display:flex;}
+
+#btn-back{
+  align-self:flex-start;margin-bottom:10px;
+  padding:8px 18px;border-radius:6px;font-size:13px;font-weight:bold;
+  background:#e8f0ff;color:#0a1a30;
+  border:none;cursor:pointer;
+  transition:background .2s;
+}
+#btn-back:hover{background:#ffffff;}
+
+#loading-wrap{display:flex;flex-direction:column;gap:6px;margin-bottom:8px;}
+#loading-bar{width:100%;height:5px;background:#111128;border-radius:3px;overflow:hidden;}
+#loading-fill{height:100%;width:0%;background:linear-gradient(90deg,#1a5a8a,#5ab4dd);border-radius:3px;transition:width .15s linear;}
+#loading-msg{font-size:12px;color:#3a6888;text-align:center;min-height:16px;}
+
+#spectrum-wrap{flex:1;display:none;flex-direction:column;overflow:hidden;}
+#spectrum-wrap.show{display:flex;}
+#spec-title{font-size:13px;color:#6a9dbb;margin-bottom:6px;flex-shrink:0;}
+#spec-container{position:relative;flex:1;overflow:visible;}
+canvas#spec-canvas{display:block;position:absolute;inset:0;}
+
+/* Curseur */
+#vcursor{
+  position:absolute;top:28px;bottom:30px;
+  width:2px;background:rgba(255,255,255,.88);
+  cursor:ew-resize;left:12%;
+  touch-action:none;
+}
+#vcursor::before{
+  content:'';position:absolute;top:0;left:-8px;right:-8px;bottom:0;
+}
+#vlbl{
+  position:absolute;top:-20px;left:50%;transform:translateX(-50%);
+  font-size:12px;color:#fff;white-space:nowrap;
+  background:rgba(0,0,20,.85);padding:2px 8px;border-radius:4px;
+  border:1px solid rgba(80,160,255,.3);
+  pointer-events:none;
+}
+#hint{font-size:10px;color:#2a3f52;text-align:center;margin-top:3px;}
+</style>
+</head>
+<body>
+<div id="scene">
+  <div id="sky"></div>
+
+  <!-- Paysage SVG -->
+  <svg id="landscape" viewBox="0 0 1000 120" preserveAspectRatio="none" style="height:120px;">
+    <path d="M0,120 Q100,40 200,70 Q310,95 420,50 Q540,10 660,55 Q780,90 900,40 L1000,60 L1000,120Z" fill="#0c0c20"/>
+    <path d="M0,120 Q150,80 280,95 Q400,108 520,80 Q640,58 760,85 Q870,100 1000,72 L1000,120Z" fill="#10102a"/>
+    <!-- Quelques arbres stylisés -->
+    <polygon points="80,95 90,60 100,95" fill="#0a0a1e"/>
+    <polygon points="75,95 90,50 105,95" fill="#0d0d22"/>
+    <polygon points="870,90 882,55 894,90" fill="#0a0a1e"/>
+    <polygon points="865,90 882,44 899,90" fill="#0d0d22"/>
+    <polygon points="920,88 930,62 940,88" fill="#0a0a1e"/>
+  </svg>
+
+  <!-- Observatoire -->
+  <div id="obs">
+    <div id="obs-dome">
+      <div id="obs-slit"></div>
+      <div id="telescope"></div>
+    </div>
+    <div id="obs-base"></div>
+  </div>
+
+  <!-- Étoiles spéciales — injectées par JS -->
+
+  <button id="btn-ana" onclick="startAnalyse()">⚡ Analyser le spectre</button>
+
+  <!-- Panneau spectre -->
+  <div id="panel">
+    <button id="btn-back" onclick="retour()">◀ Retour au télescope</button>
+    <div id="loading-wrap">
+      <div id="loading-bar"><div id="loading-fill"></div></div>
+      <div id="loading-msg"></div>
+    </div>
+    <div id="spectrum-wrap">
+      <div id="spec-title"></div>
+      <div id="spec-container">
+        <canvas id="spec-canvas"></canvas>
+        <div id="vcursor"><div id="vlbl">— nm</div></div>
+      </div>
+      <div id="hint">← Glisser le curseur pour lire la longueur d'onde →</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Décodeur de paramètres animation Moodle ───────────────────────────────────
+const _ANIM_KEY=[83,17,204,61,128,42,75,199,33,91,156,47,113,8,240,66];
+function _animDecrypt(b64url){
+  let b64=b64url.replace(/-/g,'+').replace(/_/g,'/');
+  while(b64.length%4)b64+='=';
+  const bin=atob(b64);
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  const dec=bytes.map((b,i)=>b^_ANIM_KEY[i%_ANIM_KEY.length]);
+  return JSON.parse(new TextDecoder().decode(dec));
+}
+function getAnimParams(){
+  const code=new URLSearchParams(location.search).get('param');
+  return code?_animDecrypt(code):{};
+}
+const PARAMS=getAnimParams();
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Étoiles par défaut si pas de param
+const raw={
+  n1: PARAMS.n1||'Bételgeuse', T1: PARAMS.T1||3100,
+  n2: PARAMS.n2||'Sirius',     T2: PARAMS.T2||8800,
+  n3: PARAMS.n3||'Véga',       T3: PARAMS.T3||9600
+};
+const STARS=[
+  {name:raw.n1, T:+raw.T1},
+  {name:raw.n2, T:+raw.T2},
+  {name:raw.n3, T:+raw.T3}
+];
+
+// Couleur selon température
+function tempColor(T){
+  if(T>=25000)return'#b0c8ff';
+  if(T>=10000)return'#ccdeff';
+  if(T>=7500) return'#e8f0ff';
+  if(T>=6000) return'#fff8e0';
+  if(T>=5000) return'#ffee88';
+  if(T>=3500) return'#ffaa44';
+  return'#ff6633';
+}
+function tempGlow(T){
+  const c=tempColor(T);
+  return c+'99';
+}
+
+// Positions des 3 étoiles dans le ciel (en %)
+const POSITIONS=[
+  {lp:18, tp:20},
+  {lp:52, tp:12},
+  {lp:78, tp:24}
+];
+
+// Angles télescope
+const ANGLES=[-44, 5, 32];
+
+let selected=null, dragging=false;
+
+// ── Étoiles de fond ──
+const sky=document.getElementById('sky');
+for(let i=0;i<110;i++){
+  const d=document.createElement('div');
+  d.className='sbg';
+  const r=(Math.random()*1.2+0.3).toFixed(1);
+  const dur=(Math.random()*2.5+1.2).toFixed(1);
+  const del=(Math.random()*3).toFixed(1);
+  d.style.cssText=`left:${Math.random()*100}%;top:${Math.random()*70}%;width:${r*2}px;height:${r*2}px;--d:${dur}s;--dl:${del}s;`;
+  sky.appendChild(d);
+}
+
+// ── Étoiles spéciales ──
+STARS.forEach((s,i)=>{
+  const pos=POSITIONS[i];
+  const col=tempColor(s.T);
+  const sz=14+Math.random()*4;
+  const div=document.createElement('div');
+  div.className='sstar';
+  div.id='ss'+i;
+  div.style.cssText=`left:${pos.lp}%;top:${pos.tp}%;--sc:${col};`;
+  div.innerHTML=`
+    <div class="lbl">${s.name}</div>
+    <div class="halo" style="width:${sz}px;height:${sz}px;background:${col};box-shadow:0 0 8px 3px ${col}66;"></div>
+  `;
+  div.onclick=()=>selectStar(i);
+  sky.appendChild(div);
+});
+
+// ── Étoiles filantes ──
+function launchShootingStar(){
+  const el=document.createElement('div');
+  el.className='shooting';
+  // Angle diagonal descendant (25°–45°)
+  const angle=25+Math.random()*20;
+  const rad=angle*Math.PI/180;
+  // Longueur entre 120 et 260px
+  const len=120+Math.random()*140;
+  // Déplacement total selon l'angle
+  const dx=Math.cos(rad)*len*4;
+  const dy=Math.sin(rad)*len*4;
+  // Position de départ : haut gauche/milieu du ciel
+  const startX=Math.random()*75;
+  const startY=Math.random()*35;
+  const spd=(0.7+Math.random()*0.8).toFixed(2);
+  el.style.cssText=`
+    left:${startX}%;top:${startY}%;
+    --len:${len}px;
+    --angle:${angle}deg;
+    --dx:${dx}px;--dy:${dy}px;
+    --spd:${spd}s;
+  `;
+  sky.appendChild(el);
+  el.addEventListener('animationend',()=>el.remove());
+}
+
+function scheduleShootingStar(){
+  // Intervalle aléatoire entre 3s et 9s
+  const delay=3000+Math.random()*6000;
+  setTimeout(()=>{
+    // Ne pas lancer si le panneau spectre est visible
+    if(!document.getElementById('panel').classList.contains('show')){
+      launchShootingStar();
+      // Parfois 2 d'affilée
+      if(Math.random()<0.25) setTimeout(launchShootingStar, 300+Math.random()*400);
+    }
+    scheduleShootingStar();
+  },delay);
+}
+scheduleShootingStar();
+
+function selectStar(i){
+  selected=i;
+  document.querySelectorAll('.sstar').forEach((el,j)=>el.classList.toggle('sel',j===i));
+  document.getElementById('telescope').style.transform=`translateX(-50%) rotate(${ANGLES[i]}deg)`;
+  const btn=document.getElementById('btn-ana');
+  btn.classList.add('on');
+}
+
+// ── Analyse ──
+function startAnalyse(){
+  if(selected===null)return;
+  document.getElementById('panel').classList.add('show');
+  document.getElementById('spectrum-wrap').classList.remove('show');
+  document.getElementById('loading-fill').style.width='0%';
+  const msgs=[
+    'Initialisation du spectroscope…',
+    'Ouverture de la fente de diffraction…',
+    'Calibration du réseau…',
+    'Acquisition du flux lumineux…',
+    'Décomposition spectrale…',
+    'Normalisation de l\'intensité…',
+    'Rendu du spectre…'
+  ];
+  let step=0;
+  document.getElementById('loading-msg').textContent=msgs[0];
+  const iv=setInterval(()=>{
+    step++;
+    if(step<msgs.length){
+      document.getElementById('loading-msg').textContent=msgs[step];
+      document.getElementById('loading-fill').style.width=((step+1)/msgs.length*100)+'%';
+    }else{
+      clearInterval(iv);
+      document.getElementById('loading-msg').textContent='Analyse terminée ✓';
+      setTimeout(showSpectrum,400);
+    }
+  },500);
+}
+
+// ── Spectre ──
+function planck(lnm,T){
+  const h=6.626e-34,c=3e8,k=1.38e-23,l=lnm*1e-9;
+  return (2*h*c*c/Math.pow(l,5))/(Math.exp(h*c/(l*k*T))-1);
+}
+
+function showSpectrum(){
+  const star=STARS[selected];
+  document.getElementById('spec-title').textContent=
+    `Spectre de rayonnement — ${star.name}`;
+  document.getElementById('spectrum-wrap').classList.add('show');
+
+  // Laisser le layout flex se stabiliser avant de dessiner
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    drawSpectrum(star);
+    positionCursor(380);
+  }));
+}
+
+function drawSpectrum(star){
+  const container=document.getElementById('spec-container');
+  const rect=container.getBoundingClientRect();
+  const W=Math.round(rect.width);
+  const H=Math.round(rect.height);
+  const canvas=document.getElementById('spec-canvas');
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  canvas.width=W; canvas.height=H;
+  const ctx=canvas.getContext('2d');
+
+  const padL=50,padR=18,padT=16,padB=38;
+  const gw=W-padL-padR, gh=H-padT-padB;
+  const lmin=100, lmax=2600;
+
+  // Valeurs Planck
+  const vals=[];
+  for(let l=lmin;l<=lmax;l+=5)vals.push(planck(l,star.T));
+  const maxV=Math.max(...vals);
+
+  function lToX(l){return padL+(l-lmin)/(lmax-lmin)*gw;}
+  function iToY(v){return padT+gh-Math.min(v/maxV,1.0)*gh*0.92;}
+
+  const pts=[];
+  for(let l=lmin;l<=lmax;l+=3)pts.push([lToX(l),iToY(planck(l,star.T))]);
+
+  // Fond
+  ctx.fillStyle='#060614'; ctx.fillRect(0,0,W,H);
+
+  // ── Instruments en arrière-plan ──
+  drawOscillo(ctx, padL+8,   padT+8,  96, 62, 0.4);
+  drawOscillo(ctx, padL+gw-102, padT+6,  90, 58, 1.3);
+  drawOscillo(ctx, padL+gw/2-44, padT+gh-70, 88, 54, 2.2);
+  drawMonitor(ctx, padL+118, padT+4,  118, 66, 'SPEC_ANALYZER v2.1');
+  drawMonitor(ctx, padL+gw-240, padT+gh-78, 128, 60, 'DATA_STREAM 14.4k');
+
+  // Grille
+  ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=0.5;
+  [500,1000,1500,2000,2500].forEach(l=>{
+    const x=lToX(l);
+    ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+gh);ctx.stroke();
+  });
+  [.25,.5,.75,1].forEach(f=>{
+    const y=padT+gh-f*gh*.92;
+    ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(padL+gw,y);ctx.stroke();
+  });
+
+  // Remplissage arc-en-ciel (visible 380–780 nm)
+  const xV0=lToX(380), xV1=lToX(780);
+  const rg=ctx.createLinearGradient(xV0,0,xV1,0);
+  [[380,'#5500bb'],[420,'#3300ff'],[450,'#0044ff'],[490,'#00aaff'],
+   [520,'#00ff88'],[560,'#aaff00'],[590,'#ffdd00'],
+   [620,'#ff6600'],[660,'#ff0000'],[700,'#cc0000'],[780,'#770000']]
+    .forEach(([l,c])=>rg.addColorStop((l-380)/400,c));
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(xV0,padT+gh);
+  pts.filter(p=>p[0]>=xV0&&p[0]<=xV1).forEach(p=>ctx.lineTo(p[0],p[1]));
+  ctx.lineTo(xV1,padT+gh); ctx.closePath();
+  ctx.fillStyle=rg; ctx.globalAlpha=.78; ctx.fill();
+  ctx.restore();
+
+  // Courbe principale
+  ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+  pts.forEach(p=>ctx.lineTo(p[0],p[1]));
+  ctx.strokeStyle='rgba(255,255,255,.88)'; ctx.lineWidth=2.2; ctx.stroke();
+
+  // Axes
+  ctx.strokeStyle='rgba(255,255,255,.28)'; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(padL,padT); ctx.lineTo(padL,padT+gh); ctx.lineTo(padL+gw,padT+gh);
+  ctx.stroke();
+
+  // Labels axe X
+  ctx.fillStyle='rgba(140,175,210,.85)'; ctx.font='10px Arial'; ctx.textAlign='center';
+  [200,500,1000,1500,2000,2500].forEach(l=>{
+    ctx.fillText(l+'',lToX(l),padT+gh+15);
+  });
+  ctx.fillText('Longueur d\'onde (nm)',padL+gw/2,padT+gh+30);
+
+  // Labels axe Y
+  ctx.textAlign='right';
+  ['0','0.25','0.5','0.75','1.0'].forEach((v,i)=>{
+    ctx.fillText(v,padL-6,padT+gh-i*.25*gh*.92+3);
+  });
+  ctx.save();
+  ctx.translate(13,padT+gh/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center';
+  ctx.fillText('Intensité normalisée',0,0);
+  ctx.restore();
+
+  // Label "visible"
+  ctx.fillStyle='rgba(200,200,200,.28)'; ctx.font='9px Arial'; ctx.textAlign='center';
+  ctx.fillText('visible',(xV0+xV1)/2,padT+8);
+}
+
+function drawOscillo(ctx,x,y,w,h,phase){
+  ctx.save(); ctx.globalAlpha=.11;
+  ctx.fillStyle='#001208'; ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle='rgba(0,60,20,.9)'; ctx.lineWidth=.4;
+  for(let gx=x;gx<=x+w;gx+=w/6){ctx.beginPath();ctx.moveTo(gx,y);ctx.lineTo(gx,y+h);ctx.stroke();}
+  for(let gy=y;gy<=y+h;gy+=h/4){ctx.beginPath();ctx.moveTo(x,gy);ctx.lineTo(x+w,gy);ctx.stroke();}
+  ctx.strokeStyle='rgba(0,255,130,.85)'; ctx.lineWidth=1.3; ctx.globalAlpha=.14;
+  ctx.beginPath();
+  for(let i=0;i<=w;i++){
+    const px=x+i;
+    const t=i/w*4*Math.PI+phase;
+    const py=y+h/2-Math.sin(t)*h*.33-Math.sin(t*2.4)*h*.1;
+    i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+  }
+  ctx.stroke();
+  ctx.globalAlpha=.09; ctx.strokeStyle='rgba(0,255,100,.5)'; ctx.lineWidth=.5;
+  ctx.strokeRect(x,y,w,h);
+  ctx.restore();
+}
+
+function drawMonitor(ctx,x,y,w,h,label){
+  ctx.save(); ctx.globalAlpha=.10;
+  ctx.fillStyle='#000814'; ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle='rgba(30,70,130,.5)'; ctx.lineWidth=.5; ctx.strokeRect(x,y,w,h);
+  ctx.strokeStyle='rgba(0,80,170,.35)'; ctx.lineWidth=.4;
+  for(let row=0;row<7;row++){
+    ctx.beginPath();ctx.moveTo(x+5,y+9+row*8);ctx.lineTo(x+w-5,y+9+row*8);ctx.stroke();
+  }
+  ctx.fillStyle='rgba(0,100,200,.45)'; ctx.fillRect(x,y,w,3);
+  ctx.fillStyle='rgba(0,180,255,.4)'; ctx.font=`${Math.max(9,Math.round(h*.13))}px monospace`;
+  ctx.textAlign='left'; ctx.fillText(label,x+4,y+h-5);
+  ctx.restore();
+}
+
+// ── Curseur ──
+function positionCursor(lnm){
+  const container=document.getElementById('spec-container');
+  const W=container.clientWidth;
+  const padL=50,padR=18,gw=W-padL-padR,lmin=100,lmax=2600;
+  const x=padL+(lnm-lmin)/(lmax-lmin)*gw;
+  document.getElementById('vcursor').style.left=(x/W*100)+'%';
+  document.getElementById('vlbl').textContent=Math.round(lnm)+' nm';
+}
+
+const vc=document.getElementById('vcursor');
+vc.addEventListener('mousedown',e=>{dragging=true;e.preventDefault();});
+vc.addEventListener('touchstart',e=>{dragging=true;e.preventDefault();},{passive:false});
+
+document.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  moveCursor(e.clientX);
+});
+document.addEventListener('touchmove',e=>{
+  if(!dragging)return;
+  moveCursor(e.touches[0].clientX);
+},{passive:false});
+document.addEventListener('mouseup',()=>{dragging=false;});
+document.addEventListener('touchend',()=>{dragging=false;});
+
+function moveCursor(clientX){
+  const c=document.getElementById('spec-container');
+  const rect=c.getBoundingClientRect();
+  const W=c.clientWidth;
+  const padL=50,padR=18,gw=W-padL-padR,lmin=100,lmax=2600;
+  let x=clientX-rect.left;
+  x=Math.max(padL,Math.min(padL+gw,x));
+  document.getElementById('vcursor').style.left=(x/W*100)+'%';
+  document.getElementById('vlbl').textContent=Math.round(lmin+(x-padL)/gw*(lmax-lmin))+' nm';
+}
+
+function retour(){
+  document.getElementById('panel').classList.remove('show');
+}
+</script>
+</body>
+</html>
