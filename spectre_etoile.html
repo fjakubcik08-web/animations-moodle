@@ -223,6 +223,8 @@ const POSITIONS=[
 const ANGLES=[-44, 5, 32];
 
 let selected=null, dragging=false;
+// Paramètres de dessin — partagés entre drawSpectrum et moveCursor
+let _sp = {padL:50, padR:18, lmin:100, lmax:2600, W:0};
 
 // ── Étoiles de fond ──
 const sky=document.getElementById('sky');
@@ -365,6 +367,7 @@ function drawSpectrum(star){
   const padL=50,padR=18,padT=16,padB=38;
   const gw=W-padL-padR, gh=H-padT-padB;
   const lmin=100, lmax=2600;
+  _sp={padL,padR,lmin,lmax,W,gw};
 
   // Valeurs Planck
   const vals=[];
@@ -482,9 +485,7 @@ function drawMonitor(ctx,x,y,w,h,label){
 
 // ── Curseur ──
 function positionCursor(lnm){
-  const container=document.getElementById('spec-container');
-  const W=container.clientWidth;
-  const padL=50,padR=18,gw=W-padL-padR,lmin=100,lmax=2600;
+  const {padL,lmin,lmax,W,gw}=_sp;
   const x=padL+(lnm-lmin)/(lmax-lmin)*gw;
   document.getElementById('vcursor').style.left=(x/W*100)+'%';
   document.getElementById('vlbl').textContent=Math.round(lnm)+' nm';
@@ -508,9 +509,12 @@ document.addEventListener('touchend',()=>{dragging=false;});
 function moveCursor(clientX){
   const c=document.getElementById('spec-container');
   const rect=c.getBoundingClientRect();
-  const W=c.clientWidth;
-  const padL=50,padR=18,gw=W-padL-padR,lmin=100,lmax=2600;
+  // Utiliser exactement les mêmes paramètres que drawSpectrum
+  const {padL,lmin,lmax,W,gw}=_sp;
   let x=clientX-rect.left;
+  // Recaler x selon le ratio CSS/canvas (zoom navigateur)
+  const scale=W/rect.width;
+  x=x*scale;
   x=Math.max(padL,Math.min(padL+gw,x));
   document.getElementById('vcursor').style.left=(x/W*100)+'%';
   document.getElementById('vlbl').textContent=Math.round(lmin+(x-padL)/gw*(lmax-lmin))+' nm';
