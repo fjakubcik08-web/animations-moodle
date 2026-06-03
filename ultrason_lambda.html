@@ -54,8 +54,20 @@
     padding: 6px 10px; cursor: pointer; user-select: none; flex-shrink: 0; }
   .step-btn:hover { background: #1e2a48; border-color: #ff7a30; }
   .step-btn:active { background: #ff7a3022; }
+  .emit-btn { width: 100%; padding: 10px; border-radius: 8px; font-family: 'Share Tech Mono', monospace;
+    font-size: 1rem; font-weight: bold; cursor: pointer; border: 2px solid #333; transition: all 0.2s; letter-spacing: 0.1em; }
+  .emit-btn.off { background: #1a0a0a; border-color: #552222; color: #885555; }
+  .emit-btn.on  { background: #0a2a0a; border-color: #42d464; color: #42d464;
+    box-shadow: 0 0 14px #42d46466, 0 0 4px #42d464; }
+  .sync-btn { width: 100%; padding: 8px; border-radius: 8px; font-family: 'Share Tech Mono', monospace;
+    font-size: 0.85rem; font-weight: bold; cursor: pointer; border: 2px solid #333; transition: all 0.2s; letter-spacing: 0.08em; }
+  .sync-btn.off { background: #0a0a1a; border-color: #223; color: #446; }
+  .sync-btn.on  { background: #0a1a2a; border-color: #f5c842; color: #f5c842;
+    box-shadow: 0 0 10px #f5c84255, 0 0 3px #f5c842; }
   .step-dist { font-family: 'Share Tech Mono', monospace; font-size: 1rem; font-weight: 700;
     color: #ff7a30; min-width: 68px; text-align: center; }
+  .step-row { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .step-col { display: flex; flex-direction: column; gap: 5px; }
   #device-wrap { width: 100%; max-width: 940px; }
   #device-canvas { width: 100%; display: block; cursor: ew-resize; border-radius: 4px; }
   /* badge f et v affiché en haut */
@@ -92,11 +104,25 @@
       <span class="ctrl-val" id="tb-val" style="color:#aabbff">5.0 µs/div</span>
     </div>
     <div class="ctrl-row">
+      <button class="emit-btn off" id="btn-emit">⏻ ÉMISSION OFF</button>
+    </div>
+    <div class="ctrl-row">
+      <button class="sync-btn off" id="btn-sync" disabled>⟳ SYNCHRO CH1 OFF</button>
+    </div>
+    <div class="ctrl-row">
       <label>Position récepteur</label>
       <div class="step-row">
-        <button class="step-btn" id="btn-minus">− 0.1</button>
-        <span class="step-dist" id="dist-display">40.5 cm</span>
-        <button class="step-btn" id="btn-plus">+ 0.1</button>
+        <div class="step-col">
+          <button class="step-btn" id="btn-m02">− 0.2 cm</button>
+          <button class="step-btn" id="btn-m01">− 0.1 cm</button>
+          <button class="step-btn" id="btn-m005">− 0.05 cm</button>
+        </div>
+        <span class="step-dist" id="dist-display">40.50 cm</span>
+        <div class="step-col">
+          <button class="step-btn" id="btn-p02">+ 0.2 cm</button>
+          <button class="step-btn" id="btn-p01">+ 0.1 cm</button>
+          <button class="step-btn" id="btn-p005">+ 0.05 cm</button>
+        </div>
       </div>
     </div>
   </div>
@@ -180,6 +206,9 @@ const RULER_CM = 90;
 const N_DIVS   = 10;
 
 let freq        = window._initFreq;
+let emitting    = false;   // émission OFF au départ
+let syncOn      = false;   // synchro CH1 OFF au départ
+
 let SPEED       = window._initSpeed;   // fixe pendant la session
 let tbUsPerDiv  = 5;
 let receiverCm  = 40.5;
@@ -204,12 +233,38 @@ function tickNoise() {
   }
 }
 
-function clampCm(v) { return +Math.max(0.1, Math.min(RULER_CM - 0.1, v)).toFixed(1); }
-function updateDistDisplay() { document.getElementById('dist-display').textContent = receiverCm.toFixed(1) + ' cm'; }
+function clampCm(v) { return +Math.max(0.05, Math.min(RULER_CM - 0.05, v)).toFixed(2); }
+function updateDistDisplay() { document.getElementById('dist-display').textContent = receiverCm.toFixed(2) + ' cm'; }
 
 // ═══════════════════════════════════════════════════════════
 //  SLIDERS
 // ═══════════════════════════════════════════════════════════
+document.getElementById('btn-emit').addEventListener('click', () => {
+  emitting = !emitting;
+  const btn = document.getElementById('btn-emit');
+  if (emitting) {
+    btn.textContent = '⏻ ÉMISSION ON';
+    btn.className = 'emit-btn on';
+    document.getElementById('btn-sync').disabled = false;
+  } else {
+    btn.textContent = '⏻ ÉMISSION OFF';
+    btn.className = 'emit-btn off';
+    // coupe aussi la synchro
+    syncOn = false;
+    const sb = document.getElementById('btn-sync');
+    sb.textContent = '⟳ SYNCHRO CH1 OFF';
+    sb.className = 'sync-btn off';
+    sb.disabled = true;
+  }
+});
+
+document.getElementById('btn-sync').addEventListener('click', () => {
+  syncOn = !syncOn;
+  const sb = document.getElementById('btn-sync');
+  sb.textContent = syncOn ? '⟳ SYNCHRO CH1 ON' : '⟳ SYNCHRO CH1 OFF';
+  sb.className   = syncOn ? 'sync-btn on' : 'sync-btn off';
+});
+
 document.getElementById('tb-slider').addEventListener('input', e => {
   tbUsPerDiv = +e.target.value;
   const lbl = tbUsPerDiv.toFixed(1) + ' µs/div';
@@ -220,13 +275,18 @@ document.getElementById('tb-slider').addEventListener('input', e => {
 // ═══════════════════════════════════════════════════════════
 //  BOUTONS ± 0.1 cm  — UN clic = UN pas
 // ═══════════════════════════════════════════════════════════
-document.getElementById('btn-minus').addEventListener('click', () => {
-  receiverCm = clampCm(receiverCm - 0.1);
-  updateDistDisplay();
-});
-document.getElementById('btn-plus').addEventListener('click', () => {
-  receiverCm = clampCm(receiverCm + 0.1);
-  updateDistDisplay();
+[
+  ['btn-m02',  -0.2],
+  ['btn-m01',  -0.1],
+  ['btn-m005', -0.05],
+  ['btn-p005', +0.05],
+  ['btn-p01',  +0.1],
+  ['btn-p02',  +0.2],
+].forEach(([id, step]) => {
+  document.getElementById(id).addEventListener('click', () => {
+    receiverCm = clampCm(+(receiverCm + step).toFixed(2));
+    updateDistDisplay();
+  });
 });
 updateDistDisplay();
 
@@ -250,7 +310,17 @@ function drawOscillo() {
 
   const tWindow   = N_DIVS * tbUsPerDiv * 1e-6;
   const phase0    = 2 * Math.PI * freq * tReal + phaseOffset;
-  const syncShift = phase0 % (2 * Math.PI);
+
+  // Synchro OFF : défilement pur, vitesse constante (omega visuel fixe)
+  // Synchro ON  : CH1 figée sur front montant
+  const omega_vis = 2 * Math.PI * 2.5;   // 2.5 cycles visuels/s
+  let phaseBase;
+  if (syncOn) {
+    const syncShift = phase0 % (2 * Math.PI);
+    phaseBase = (px) => 2*Math.PI*freq*(px/W*tWindow) + (phase0 - syncShift);
+  } else {
+    phaseBase = (px) => 2*Math.PI*freq*(px/W*tWindow) - omega_vis * tReal;
+  }
   const lambda    = SPEED / freq;
   const phiDelay  = (2 * Math.PI * (receiverCm / 100)) / lambda;
   const amp       = H * 0.35;
@@ -259,19 +329,30 @@ function drawOscillo() {
   // Atténuation CH2 douce : ~100% à 0cm, ~40% à 90cm
   const ampCH2 = amp * Math.max(0.4, 1 - (receiverCm / RULER_CM) * 0.6);
 
+  if (!emitting) {
+    // Oscillo vide
+    cx.fillStyle = '#f5c842'; cx.font = '11px "Share Tech Mono",monospace';
+    cx.fillText('CH1', 6, 18);
+    cx.fillStyle = '#3de8f5'; cx.fillText('CH2', 6, 32);
+    cx.fillStyle = '#2a3a2a'; cx.font = '13px "Share Tech Mono",monospace'; cx.textAlign='center';
+    cx.fillText('— ÉMISSION COUPÉE —', W/2, H/2);
+    cx.textAlign='left';
+    return;
+  }
+
   // CH2
   cx.beginPath(); cx.strokeStyle = 'rgba(61,232,245,0.85)'; cx.lineWidth = 2;
   for (let px = 0; px < W; px++) {
-    const ph = 2*Math.PI*freq*(px/W*tWindow) + (phase0-syncShift) - phiDelay;
+    const ph = phaseBase(px) - phiDelay;
     const y  = cy - ampCH2*Math.sin(ph) + noise2[Math.floor(px/W*(NP-1))]*2.2;
     px === 0 ? cx.moveTo(px,y) : cx.lineTo(px,y);
   }
   cx.stroke();
 
-  // CH1 — synchronisée
+  // CH1
   cx.beginPath(); cx.strokeStyle = 'rgba(245,200,66,0.95)'; cx.lineWidth = 2;
   for (let px = 0; px < W; px++) {
-    const ph = 2*Math.PI*freq*(px/W*tWindow) + (phase0-syncShift);
+    const ph = phaseBase(px);
     const y  = cy - amp*Math.sin(ph) + noise1[Math.floor(px/W*(NP-1))]*2.2;
     px === 0 ? cx.moveTo(px,y) : cx.lineTo(px,y);
   }
@@ -365,16 +446,38 @@ function drawDevice() {
   cx.clearRect(0,0,W,H); cx.fillStyle = '#080c18'; cx.fillRect(0,0,W,H);
   const emX = ML, recX = ruleX(receiverCm), midY = H * 0.42;
 
-  if (recX > emX + 14) {
+  if (emitting && recX > emX + 14) {
     const lambdaPx = (SPEED / freq) / ((RULER_CM / 100) / (W - ML - MR));
-    cx.save(); cx.beginPath(); cx.rect(emX+2, midY-28, recX-emX-4, 56); cx.clip();
-    cx.strokeStyle = 'rgba(61,232,245,0.28)'; cx.lineWidth = 1.5; cx.beginPath();
-    for (let px = emX; px <= recX; px++) {
-      const ph = ((px-emX)/lambdaPx)*2*Math.PI - (2*Math.PI*freq*tReal + phaseOffset);
-      const y  = midY - 16*Math.sin(ph);
-      px === emX ? cx.moveTo(px,y) : cx.lineTo(px,y);
+    const N_FILAMENTS = 5;
+    cx.save(); cx.beginPath(); cx.rect(emX+2, midY-30, recX-emX-4, 60); cx.clip();
+
+    for (let fi = 0; fi < N_FILAMENTS; fi++) {
+      // chaque filament a un léger décalage vertical et de phase
+      const yOff   = (fi - (N_FILAMENTS-1)/2) * 7;
+      const phOff  = fi * 0.35;
+      const alpha  = fi === Math.floor(N_FILAMENTS/2) ? 0.9 : 0.45;
+      const lw     = fi === Math.floor(N_FILAMENTS/2) ? 2.5 : 1.2;
+
+      // glow : dessiner 3 fois avec blur croissant
+      for (let pass = 0; pass < 3; pass++) {
+        const blurAlpha = [alpha, alpha*0.4, alpha*0.15][pass];
+        const blurLW    = [lw, lw*2.5, lw*5][pass];
+        cx.beginPath();
+        cx.strokeStyle = `rgba(61,232,245,${blurAlpha})`;
+        cx.lineWidth = blurLW;
+        for (let px = emX; px <= recX; px++) {
+          const ph = ((px-emX)/lambdaPx)*2*Math.PI - (2*Math.PI*freq*tReal + phaseOffset) + phOff;
+          // amplitude qui diminue légèrement avec la distance
+          // pulsation : modulation lente de l'amplitude (3 Hz)
+      const pulse = 0.6 + 0.4*Math.abs(Math.sin(Math.PI * 3 * tReal + fi * 0.7));
+      const att = pulse * (1 - 0.35*(px-emX)/(recX-emX));
+          const y   = midY + yOff - 13*att*Math.sin(ph);
+          px === emX ? cx.moveTo(px,y) : cx.lineTo(px,y);
+        }
+        cx.stroke();
+      }
     }
-    cx.stroke(); cx.restore();
+    cx.restore();
   }
 
   cx.strokeStyle = '#181e30'; cx.lineWidth = 1; cx.setLineDash([4,4]);
@@ -416,13 +519,15 @@ function drawDevice() {
   roundRect(cx,ex,ey,eW,eH,6); cx.fill(); cx.stroke();
   cx.font='bold 8px "Exo 2",sans-serif'; cx.fillStyle='#42d464'; cx.textAlign='center';
   cx.fillText('ÉMETTEUR',ex+eW/2,ey+13);
-  cx.strokeStyle='#42d464'; cx.lineWidth=1.5; cx.beginPath();
-  for (let i=0;i<28;i++) {
-    const p = ex+5+(i/28)*(eW-10);
-    const q = midY-7*Math.sin((i/28)*4*Math.PI + 2*Math.PI*freq*tReal + phaseOffset);
-    i===0 ? cx.moveTo(p,q) : cx.lineTo(p,q);
+  if (emitting) {
+    cx.strokeStyle='#42d464'; cx.lineWidth=1.5; cx.beginPath();
+    for (let i=0;i<28;i++) {
+      const p = ex+5+(i/28)*(eW-10);
+      const q = midY-7*Math.sin((i/28)*4*Math.PI + 2*Math.PI*freq*tReal + phaseOffset);
+      i===0 ? cx.moveTo(p,q) : cx.lineTo(p,q);
+    }
+    cx.stroke();
   }
-  cx.stroke();
 
   // RÉCEPTEUR
   const rW2=48,rHH=50,rx2=recX+2,ry=midY-rHH/2;
