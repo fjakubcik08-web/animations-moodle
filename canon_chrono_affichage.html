@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chronophotographie — boulet de canon</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { overflow: hidden; background: #b8dff0; font-family: sans-serif; }
+    canvas { display: block; cursor: crosshair; }
+    #bar {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 6px 12px; background: #f4f4f2;
+      border-top: 1px solid #ddd; font-size: 12px; color: #666;
+    }
+    .pill {
+      background: #eee; border: 0.5px solid #ccc;
+      border-radius: 6px; padding: 3px 9px;
+      font-family: monospace; font-size: 12px; color: #222;
+    }
+    button.btn {
+      padding: 5px 14px; font-size: 12px; font-weight: 600;
+      border-radius: 6px; cursor: pointer; border: 1px solid #ccc; background: #fff;
+    }
+    #fire { background: #c0392b; color: white; border-color: #a93226; }
+    #fire:hover { background: #a93226; }
+    #fire:disabled { background: #999; border-color: #888; cursor: default; }
+    #coords { font-family: monospace; font-size: 12px; color: #555; margin-left: auto; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="bar">
+  <button class="btn" id="fire">&#9654; Tirer</button>
+  <button class="btn" id="reset">&#8635; Reset</button>
+  <span class="pill" id="dtInfo">&#916;t = &#8212; s</span>
+  <span class="pill" id="rangeInfo">port&#233;e &#8212; m</span>
+
+  <span id="coords">x : &#8212; m &nbsp;|&nbsp; y : &#8212; m</span>
+</div>
+<script>
+// === DECODEUR PARAMETRES URL (XOR + base64url) ===
+// Usage : ?param=<encoded>  — encodé par anim_iframe() côté Python
+const _ANIM_KEY=[83,17,204,61,128,42,75,199,33,91,156,47,113,8,240,66];
+function _animDecrypt(b64url){
+  let b64=b64url.replace(/-/g,'+').replace(/_/g,'/');
+  while(b64.length%4)b64+='=';
+  const bin=atob(b64);
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  const dec=bytes.map((b,i)=>b^_ANIM_KEY[i%_ANIM_KEY.length]);
+  return JSON.parse(new TextDecoder().decode(dec));
+}
+function getAnimParams(){
+  const code=new URLSearchParams(location.search).get('param');
+  return code?_animDecrypt(code):{};
+}
+const PARAMS=getAnimParams();
+
+const ALPHA_DEG = +(PARAMS.angle ?? 32);
+const V0        = +(PARAMS.v0    ?? 45);
+const M         = +(PARAMS.m     ?? 5);    // masse du boulet en kg
+const K         = +(PARAMS.K     ?? 0);    // coef de frottement par unité de masse (s⁻¹)
+// Force de frottement : F = -m·K·v  =>  accélération : a = -K·v  (m se simplifie)
+
+const G = 9.81, a0 = ALPHA_DEG * Math.PI / 180;
+const vx0 = V0 * Math.cos(a0), vy0 = V0 * Math.sin(a0);
+
+function simulate(k) {
+  const dt = 0.002; let x=0,y=0,vx=vx0,vy=vy0,t=0;
+  const pts = [[0,0,0]];
+  for (let i=0;i<100000;i++) {
+    vx+=(-k*vx)*dt; vy+=(-G-k*vy)*dt; x+=vx*dt; y+=vy*dt; t+=dt;
+    if (y<0){ const p=pts[pts.length-1],f=p[1]/(p[1]-y); pts.push([p[0]+f*(x-p[0]),0,p[2]+f*(t-p[2])]); break; }
+    if (i%5===0) pts.push([x,y,t]);
+  }
+  return pts;
+}
+function calcDt(T) {
+  let dt=Math.round(T/12*100)/100; dt=Math.max(dt,0.01);
+  const n=Math.floor(T/dt);
+  if(n>15) dt=Math.round(T/10*100)/100;
+  if(n<10) dt=Math.round(T/14*100)/100;
+  return Math.max(dt,0.01);
+}
+
+const simPts=simulate(K), T_flight=simPts[simPts.length-1][2];
+const xMax=simPts[simPts.length-1][0], yMax=Math.max(...simPts.map(p=>p[1]));
+const DT=calcDt(T_flight), N_PTS=Math.floor(T_flight/DT);
+document.getElementById('dtInfo').textContent='Δt='+DT.toFixed(2)+'s ('+N_PTS+'pts)';
+document.getElementById('rangeInfo').textContent='portée '+xMax.toFixed(1)+'m';
+
+const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+const PAD={l:58,r:28,t:36,b:44};
+let W,H,OX,OY,SX,SY;
+
+function resize(){
+  W=window.innerWidth; H=window.innerHeight-document.getElementById('bar').offsetHeight;
+  canvas.width=W; canvas.height=H;
+  SX=(W-PAD.l-PAD.r)/(xMax*1.08); SY=(H-PAD.t-PAD.b)/(yMax*1.22);
+  OX=PAD.l; OY=H-PAD.b; draw();
+}
+const px=mx=>OX+mx*SX, py=my=>OY-my*SY;
+const toMx=cx=>(cx-OX)/SX, toMy=cy=>(OY-cy)/SY;
+
+function niceTicks(maxV,n){
+  const raw=maxV/n,mag=Math.pow(10,Math.floor(Math.log10(raw)));
+  const step=[1,2,5,10].reduce((b,s)=>Math.abs(s*mag-raw)<Math.abs(b-raw)?s*mag:b,mag);
+  const r=[]; for(let v=0;v<=maxV*1.12;v+=step) r.push(Math.round(v*100)/100); return r;
+}
+
+function drawSun(){
+  const sx=W-90,sy=PAD.t+20,sr=20;
+  ctx.beginPath(); ctx.arc(sx,sy,sr,0,Math.PI*2); ctx.fillStyle='#f9d03f'; ctx.fill();
+  ctx.strokeStyle='#e8b820'; ctx.lineWidth=1.5; ctx.stroke();
+  for(let i=0;i<12;i++){
+    const ang=(i/12)*Math.PI*2;
+    ctx.beginPath(); ctx.moveTo(sx+Math.cos(ang)*(sr+4),sy+Math.sin(ang)*(sr+4));
+    ctx.lineTo(sx+Math.cos(ang)*(sr+11),sy+Math.sin(ang)*(sr+11));
+    ctx.strokeStyle='#f0c020'; ctx.lineWidth=2; ctx.stroke();
+  }
+}
+
+function drawCastle(){
+  const baseY=OY, cx=px(xMax*0.72);
+  // Palette
+  const cStone='#b0bec5', cStoneDk='#78909c', cStoneLt='#cfd8dc';
+  const cRoof='#5d4037', cRoofDk='#3e2723', cGate='#1a1208';
+
+  // Dimensions relatives à l'espace canvas
+  const unit=Math.min(SX*6, SY*6, 18); // unité de base
+
+  // --- Corps central ---
+  const bodyW=unit*8, bodyH=unit*11;
+  const bodyX=cx-bodyW/2, bodyY=baseY-bodyH;
+  // Ombre latérale droite
+  ctx.fillStyle=cStoneDk;
+  ctx.fillRect(bodyX+bodyW*0.6, bodyY, bodyW*0.4, bodyH);
+  ctx.fillStyle=cStone;
+  ctx.fillRect(bodyX, bodyY, bodyW*0.62, bodyH);
+  // Ligne de séparation pierres (horizontales)
+  ctx.strokeStyle='rgba(0,0,0,0.1)'; ctx.lineWidth=0.7;
+  for(let ry=bodyY+unit; ry<baseY; ry+=unit*1.4){
+    ctx.beginPath(); ctx.moveTo(bodyX,ry); ctx.lineTo(bodyX+bodyW,ry); ctx.stroke();
+  }
+
+  // Créneaux du corps central
+  const mW=unit*1.1, mH=unit*1.5, mGap=unit*0.7;
+  const nM=Math.floor(bodyW/(mW+mGap));
+  const mTotalW=nM*(mW+mGap)-mGap, mStartX=bodyX+(bodyW-mTotalW)/2;
+  ctx.fillStyle=cStone;
+  for(let i=0;i<nM;i++){
+    const mx2=mStartX+i*(mW+mGap);
+    ctx.fillRect(mx2, bodyY-mH, mW, mH);
+  }
+  // Couronnement plat (ligne de base créneaux)
+  ctx.fillStyle=cStoneDk;
+  ctx.fillRect(bodyX, bodyY-unit*0.4, bodyW, unit*0.4);
+
+  // --- Porte (arc brisé) ---
+  const gW=unit*2.2, gH=unit*4.5, gX=cx-gW/2, gY=baseY-gH;
+  ctx.fillStyle=cGate;
+  ctx.fillRect(gX, gY+gH*0.38, gW, gH*0.62);
+  // Arc brisé
+  ctx.beginPath();
+  ctx.moveTo(gX, gY+gH*0.38);
+  ctx.quadraticCurveTo(gX, gY-gH*0.05, cx, gY-gH*0.12);
+  ctx.quadraticCurveTo(gX+gW, gY-gH*0.05, gX+gW, gY+gH*0.38);
+  ctx.fill();
+  // Herse (grille)
+  ctx.strokeStyle='rgba(60,40,20,0.55)'; ctx.lineWidth=1;
+  for(let gi=1;gi<4;gi++){
+    const gy2=gY+gH*0.38+gi*(gH*0.62/4);
+    ctx.beginPath(); ctx.moveTo(gX+2,gy2); ctx.lineTo(gX+gW-2,gy2); ctx.stroke();
+  }
+  for(let gi=1;gi<3;gi++){
+    const gx2=gX+gi*(gW/3);
+    ctx.beginPath(); ctx.moveTo(gx2,gY+gH*0.38); ctx.lineTo(gx2,baseY); ctx.stroke();
+  }
+
+  // --- Tour gauche ---
+  const t1W=unit*4.5, t1H=unit*15, t1X=bodyX-t1W*0.72, t1Y=baseY-t1H;
+  ctx.fillStyle=cStoneDk;
+  ctx.fillRect(t1X+t1W*0.55, t1Y, t1W*0.45, t1H);
+  ctx.fillStyle=cStone;
+  ctx.fillRect(t1X, t1Y, t1W*0.58, t1H);
+  // Pierres tour gauche
+  ctx.strokeStyle='rgba(0,0,0,0.09)'; ctx.lineWidth=0.6;
+  for(let ry=t1Y+unit;ry<baseY;ry+=unit*1.3){
+    ctx.beginPath(); ctx.moveTo(t1X,ry); ctx.lineTo(t1X+t1W,ry); ctx.stroke();
+  }
+  // Créneaux tour gauche
+  const nt1=4, mc1W=t1W/nt1*0.55, mc1H=unit*1.4;
+  ctx.fillStyle=cStone;
+  for(let i=0;i<nt1;i++){
+    const mx2=t1X+i*(t1W/nt1)+(t1W/nt1-mc1W)/2;
+    ctx.fillRect(mx2, t1Y-mc1H, mc1W, mc1H);
+  }
+  ctx.fillStyle=cStoneDk;
+  ctx.fillRect(t1X, t1Y-unit*0.35, t1W, unit*0.35);
+  // Toit conique tour gauche
+  ctx.fillStyle=cRoof;
+  ctx.beginPath();
+  ctx.moveTo(t1X+t1W/2, t1Y-mc1H-unit*6);
+  ctx.lineTo(t1X-unit*0.5, t1Y-mc1H);
+  ctx.lineTo(t1X+t1W+unit*0.5, t1Y-mc1H);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle=cRoofDk;
+  ctx.beginPath();
+  ctx.moveTo(t1X+t1W/2, t1Y-mc1H-unit*6);
+  ctx.lineTo(t1X+t1W/2, t1Y-mc1H);
+  ctx.lineTo(t1X+t1W+unit*0.5, t1Y-mc1H);
+  ctx.closePath(); ctx.fill();
+  // Fenêtre tour gauche
+  ctx.fillStyle=cGate;
+  const fw=unit*0.8, fh=unit*1.6;
+  ctx.fillRect(t1X+t1W/2-fw/2, t1Y+t1H*0.3, fw, fh);
+  ctx.beginPath(); ctx.arc(t1X+t1W/2, t1Y+t1H*0.3, fw/2, Math.PI, 0); ctx.fill();
+
+  // --- Tour droite ---
+  const t2W=unit*3.8, t2H=unit*12.5, t2X=bodyX+bodyW-t2W*0.28, t2Y=baseY-t2H;
+  ctx.fillStyle=cStoneDk;
+  ctx.fillRect(t2X+t2W*0.55, t2Y, t2W*0.45, t2H);
+  ctx.fillStyle=cStoneLt;
+  ctx.fillRect(t2X, t2Y, t2W*0.6, t2H);
+  ctx.strokeStyle='rgba(0,0,0,0.08)'; ctx.lineWidth=0.6;
+  for(let ry=t2Y+unit;ry<baseY;ry+=unit*1.3){
+    ctx.beginPath(); ctx.moveTo(t2X,ry); ctx.lineTo(t2X+t2W,ry); ctx.stroke();
+  }
+  // Créneaux tour droite
+  const nt2=3, mc2W=t2W/nt2*0.55, mc2H=unit*1.3;
+  ctx.fillStyle=cStoneLt;
+  for(let i=0;i<nt2;i++){
+    const mx2=t2X+i*(t2W/nt2)+(t2W/nt2-mc2W)/2;
+    ctx.fillRect(mx2, t2Y-mc2H, mc2W, mc2H);
+  }
+  ctx.fillStyle=cStoneDk;
+  ctx.fillRect(t2X, t2Y-unit*0.35, t2W, unit*0.35);
+  // Toit conique tour droite
+  ctx.fillStyle=cRoof;
+  ctx.beginPath();
+  ctx.moveTo(t2X+t2W/2, t2Y-mc2H-unit*5);
+  ctx.lineTo(t2X-unit*0.4, t2Y-mc2H);
+  ctx.lineTo(t2X+t2W+unit*0.4, t2Y-mc2H);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle=cRoofDk;
+  ctx.beginPath();
+  ctx.moveTo(t2X+t2W/2, t2Y-mc2H-unit*5);
+  ctx.lineTo(t2X+t2W/2, t2Y-mc2H);
+  ctx.lineTo(t2X+t2W+unit*0.4, t2Y-mc2H);
+  ctx.closePath(); ctx.fill();
+  // Fenêtre tour droite
+  ctx.fillStyle=cGate;
+  const fw2=unit*0.7, fh2=unit*1.4;
+  ctx.fillRect(t2X+t2W/2-fw2/2, t2Y+t2H*0.28, fw2, fh2);
+  ctx.beginPath(); ctx.arc(t2X+t2W/2, t2Y+t2H*0.28, fw2/2, Math.PI, 0); ctx.fill();
+
+  // --- Mur de courtine (relie tours au corps) ---
+  const wallH=unit*5.5;
+  // Gauche
+  ctx.fillStyle=cStoneDk;
+  ctx.fillRect(t1X+t1W, baseY-wallH, bodyX-(t1X+t1W), wallH);
+  // Créneaux mur gauche
+  const nwl=3, wlcW=(bodyX-(t1X+t1W))/nwl*0.5, wlcH=unit*1.1;
+  ctx.fillStyle=cStone;
+  for(let i=0;i<nwl;i++){
+    const seg=(bodyX-(t1X+t1W))/nwl;
+    ctx.fillRect(t1X+t1W+i*seg+seg*0.25, baseY-wallH-wlcH, wlcW, wlcH);
+  }
+
+  // --- Drapeau ---
+  const flagBaseX=t1X+t1W/2, flagBaseY=t1Y-mc1H-unit*6;
+  ctx.strokeStyle='#555'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(flagBaseX, flagBaseY); ctx.lineTo(flagBaseX, flagBaseY-unit*4); ctx.stroke();
+  ctx.fillStyle='#c0392b';
+  ctx.beginPath();
+  ctx.moveTo(flagBaseX, flagBaseY-unit*4);
+  ctx.lineTo(flagBaseX+unit*3, flagBaseY-unit*3);
+  ctx.lineTo(flagBaseX, flagBaseY-unit*2);
+  ctx.closePath(); ctx.fill();
+}
+
+function drawCannon(){
+  const cx=OX,cy=OY,va=Math.atan(Math.tan(a0)*SY/SX);
+  ctx.beginPath(); ctx.arc(cx,cy,16,0,Math.PI*2); ctx.fillStyle='#777'; ctx.fill();
+  ctx.strokeStyle='#444'; ctx.lineWidth=1.8; ctx.stroke();
+  for(let i=0;i<6;i++){
+    const sa=(i/6)*Math.PI*2;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(sa)*13,cy+Math.sin(sa)*13);
+    ctx.strokeStyle='#555'; ctx.lineWidth=1.2; ctx.stroke();
+  }
+  ctx.save(); ctx.translate(cx,cy); ctx.rotate(-va);
+  ctx.fillStyle='#c0392b'; ctx.strokeStyle='#7b241c'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.rect(4,-5,42,10); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#e74c3c'; ctx.fillRect(42,-5,6,10); ctx.restore();
+}
+
+function drawZoom(mx,my){
+  const ZX=2*SX,ZY=2*SY,IW=178,IHZ=116,IHL=26,IH=IHZ+IHL,IX=W-IW-8,IY=6;
+  const iz=(x,y)=>[IX+IW/2+(x-mx)*ZX, IY+IHL+IHZ/2-(y-my)*ZY];
+  ctx.fillStyle='rgba(8,18,38,0.38)'; ctx.fillRect(IX,IY,IW,IH);
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(IX,IY,IW,IHL);
+  ctx.fillStyle='#fff'; ctx.font='bold 12px monospace'; ctx.textAlign='center';
+  ctx.fillText('x='+Math.max(0,mx).toFixed(2)+'  y='+Math.max(0,my).toFixed(2), IX+IW/2, IY+17);
+  ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=0.8;
+  ctx.beginPath(); ctx.moveTo(IX+6,IY+IHL); ctx.lineTo(IX+IW-6,IY+IHL); ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.rect(IX,IY+IHL,IW,IHZ); ctx.clip();
+  const [,gyG]=iz(mx,0);
+  if(gyG<IY+IHL+IHZ){
+    const gt=Math.max(gyG,IY+IHL);
+    ctx.fillStyle='rgba(74,122,44,0.35)'; ctx.fillRect(IX,gt,IW,IY+IHL+IHZ-gt);
+    ctx.strokeStyle='rgba(90,138,60,0.9)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(IX,gyG); ctx.lineTo(IX+IW,gyG); ctx.stroke();
+  }
+  const gStep=5;
+  ctx.setLineDash([2,3]); ctx.lineWidth=0.7;
+  const gx0=Math.ceil((mx-IW/(2*ZX))/gStep)*gStep;
+  for(let gx=gx0;gx<=mx+IW/(2*ZX)+gStep;gx+=gStep){
+    const [cgx]=iz(gx,0); if(cgx<IX||cgx>IX+IW) continue;
+    ctx.strokeStyle='rgba(255,255,255,0.22)';
+    ctx.beginPath(); ctx.moveTo(cgx,IY+IHL); ctx.lineTo(cgx,IY+IH); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(gx.toFixed(0),cgx,IY+IH-3);
+  }
+  const gy0=Math.ceil((my-IHZ/(2*ZY))/gStep)*gStep;
+  for(let gy=gy0;gy<=my+IHZ/(2*ZY)+gStep;gy+=gStep){
+    if(gy<0) continue; const [,cgy]=iz(0,gy); if(cgy<IY+IHL||cgy>IY+IH) continue;
+    ctx.strokeStyle='rgba(255,255,255,0.22)';
+    ctx.beginPath(); ctx.moveTo(IX,cgy); ctx.lineTo(IX+IW,cgy); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='9px sans-serif'; ctx.textAlign='right';
+    ctx.fillText(gy.toFixed(0),IX+IW-3,cgy-2);
+  }
+  ctx.setLineDash([]);
+  ctx.beginPath(); let ff=true;
+  for(const [bx,by] of simPts){
+    const [ipx,ipy]=iz(bx,by); if(ipx<IX-30||ipx>IX+IW+30){ff=true;continue;}
+    ff?ctx.moveTo(ipx,ipy):ctx.lineTo(ipx,ipy); ff=false;
+  }
+  ctx.strokeStyle='rgba(130,160,255,0.65)'; ctx.lineWidth=1.5; ctx.setLineDash([3,4]); ctx.stroke(); ctx.setLineDash([]);
+  st.chrono.forEach(([bx,by])=>{
+    const [ipx,ipy]=iz(bx,by);
+    ctx.beginPath(); ctx.arc(ipx,ipy,5,0,Math.PI*2);
+    ctx.fillStyle='rgba(220,50,20,0.92)'; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.75)'; ctx.lineWidth=1.2; ctx.stroke();
+  });
+  const [cpx,cpy]=iz(mx,my);
+  ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cpx,IY+IHL); ctx.lineTo(cpx,IY+IH); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(IX,cpy); ctx.lineTo(IX+IW,cpy); ctx.stroke();
+  ctx.strokeStyle='#ff4444'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(cpx-7,cpy); ctx.lineTo(cpx+7,cpy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cpx,cpy-7); ctx.lineTo(cpx,cpy+7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cpx,cpy,2.5,0,Math.PI*2); ctx.fillStyle='#ff4444'; ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1.2; ctx.strokeRect(IX,IY,IW,IH);
+  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='bold 9px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('x2',IX+4,IY+IHL+11);
+}
+
+function drawTooltip(mx, my, cx, cy) {
+  const label = '(' + mx.toFixed(3) + ' ; ' + my.toFixed(3) + ')';
+  const pad = 7, fontSize = 12;
+  ctx.font = 'bold ' + fontSize + 'px monospace';
+  const tw = ctx.measureText(label).width;
+  const bw = tw + pad * 2, bh = fontSize + pad * 2;
+  let bx = cx + 12, by = cy - bh - 6;
+  if (bx + bw > W - PAD.r) bx = cx - bw - 12;
+  if (by < PAD.t) by = cy + 10;
+  ctx.fillStyle = 'rgba(20,20,35,0.88)';
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 5);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'left';
+  ctx.fillText(label, bx + pad, by + pad + fontSize - 2);
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#b8dff0'; ctx.fillRect(0,0,W,OY);
+  ctx.fillStyle='#5a8a3c'; ctx.fillRect(0,OY,W,H-OY);
+  ctx.fillStyle='#4a7a2c'; ctx.fillRect(OX,OY-1,W-OX-PAD.r,3);
+  drawSun(); drawCastle();
+  const xT=niceTicks(xMax,7),yT=niceTicks(yMax,5);
+  ctx.setLineDash([3,4]); ctx.strokeStyle='rgba(0,0,0,0.07)'; ctx.lineWidth=0.8;
+  xT.forEach(v=>{const c=px(v);if(c<OX||c>W-PAD.r+4)return;ctx.beginPath();ctx.moveTo(c,PAD.t);ctx.lineTo(c,OY);ctx.stroke();});
+  yT.forEach(v=>{const c=py(v);if(c>OY||c<PAD.t-4)return;ctx.beginPath();ctx.moveTo(OX,c);ctx.lineTo(W-PAD.r,c);ctx.stroke();});
+  ctx.setLineDash([]);
+  ctx.strokeStyle='#444'; ctx.lineWidth=1.8;
+  ctx.beginPath();ctx.moveTo(OX,OY);ctx.lineTo(W-PAD.r,OY);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(OX,OY);ctx.lineTo(OX,PAD.t);ctx.stroke();
+  ctx.fillStyle='#444';
+  ctx.beginPath();ctx.moveTo(W-PAD.r+7,OY);ctx.lineTo(W-PAD.r,OY-4);ctx.lineTo(W-PAD.r,OY+4);ctx.fill();
+  ctx.beginPath();ctx.moveTo(OX,PAD.t-7);ctx.lineTo(OX-4,PAD.t);ctx.lineTo(OX+4,PAD.t);ctx.fill();
+  ctx.font='11px sans-serif'; ctx.fillStyle='#555'; ctx.textAlign='center';
+  xT.forEach(v=>{if(v===0)return;const c=px(v);if(c<OX+8||c>W-PAD.r+2)return;ctx.beginPath();ctx.moveTo(c,OY-3);ctx.lineTo(c,OY+3);ctx.strokeStyle='#555';ctx.lineWidth=1;ctx.stroke();ctx.fillText(v,c,OY+13);});
+  ctx.textAlign='right';
+  yT.forEach(v=>{if(v===0)return;const c=py(v);if(c>OY-4||c<PAD.t)return;ctx.beginPath();ctx.moveTo(OX-3,c);ctx.lineTo(OX+3,c);ctx.strokeStyle='#555';ctx.lineWidth=1;ctx.stroke();ctx.fillText(v%1===0?v:v.toFixed(1),OX-6,c+4);});
+  ctx.fillStyle='#333'; ctx.font='bold 13px sans-serif';
+  ctx.textAlign='left'; ctx.fillText('x (m)',W-PAD.r-2,OY-10); ctx.fillText('y (m)',OX+6,PAD.t+2);
+  ctx.fillStyle='#666'; ctx.font='11px sans-serif'; ctx.textAlign='center'; ctx.fillText('O',OX-10,OY+14);
+  if(st.phase==='idle'||st.phase==='done'){
+    ctx.beginPath(); let f=true;
+    for(const [bx,by] of simPts){const c=[px(bx),py(Math.max(by,0))];f?ctx.moveTo(...c):ctx.lineTo(...c);f=false;}
+    ctx.strokeStyle='rgba(70,70,180,0.25)'; ctx.lineWidth=1.5; ctx.setLineDash([5,6]); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if(st.trail.length>1){
+    ctx.beginPath(); ctx.moveTo(px(st.trail[0][0]),py(st.trail[0][1]));
+    for(let i=1;i<st.trail.length;i++) ctx.lineTo(px(st.trail[i][0]),py(st.trail[i][1]));
+    ctx.strokeStyle='rgba(255,140,30,0.45)'; ctx.lineWidth=2; ctx.stroke();
+  }
+  st.chrono.forEach(([bx,by], idx)=>{
+    ctx.beginPath(); ctx.arc(px(bx),py(by),5.5,0,Math.PI*2);
+    const isHovered = hoveredPt === idx;
+    const isPinned = pinnedPt === idx;
+    ctx.fillStyle = (isPinned||isHovered) ? 'rgba(255,80,20,1)' : 'rgba(200,35,15,0.88)';
+    ctx.fill();
+    ctx.strokeStyle = (isPinned||isHovered) ? '#fff' : 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = (isPinned||isHovered) ? 2 : 1.2;
+    ctx.stroke();
+    if (isPinned || isHovered) {
+      drawTooltip(bx, by, px(bx), py(by));
+    }
+  });
+  if(st.phase==='flying'){
+    ctx.beginPath(); ctx.arc(px(st.bx),py(st.by),11,0,Math.PI*2); ctx.fillStyle='rgba(255,120,0,0.15)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(px(st.bx),py(st.by),7,0,Math.PI*2); ctx.fillStyle='#1a1a1a'; ctx.fill();
+    ctx.beginPath(); ctx.arc(px(st.bx)-2,py(st.by)-2,2.2,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.fill();
+  }
+  if(st.landAnim>0){
+    const r=(1-st.landAnim)*38,cx2=px(st.bx),cy2=py(0);
+    ctx.beginPath(); ctx.arc(cx2,cy2,r,0,Math.PI*2); ctx.fillStyle=`rgba(255,110,0,${st.landAnim*0.45})`; ctx.fill();
+    for(let i=0;i<8;i++){
+      const ang=(i/8)*Math.PI*2; ctx.beginPath(); ctx.moveTo(cx2,cy2);
+      ctx.lineTo(cx2+Math.cos(ang)*r*1.7,cy2+Math.sin(ang)*r*1.7);
+      ctx.strokeStyle=`rgba(255,200,0,${st.landAnim*0.7})`; ctx.lineWidth=2; ctx.stroke();
+    }
+  }
+  drawCannon();
+  if(mousePos){
+    const {cx,cy}=mousePos;
+    ctx.strokeStyle='rgba(0,0,0,0.7)'; ctx.lineWidth=1; ctx.setLineDash([5,4]);
+    ctx.beginPath();ctx.moveTo(cx,PAD.t);ctx.lineTo(cx,OY);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(OX,cy);ctx.lineTo(W-PAD.r,cy);ctx.stroke();
+    ctx.setLineDash([]);
+    drawZoom(mousePos.mx,mousePos.my);
+  }
+}
+
+let st={phase:'idle',t:0,bx:0,by:0,trail:[],chrono:[],nextT:DT,landAnim:0};
+let mousePos=null,animId=null,lastTs=null,hoveredPt=null,pinnedPt=null;
+
+function fire(){
+  if(animId) cancelAnimationFrame(animId);
+  st={phase:'flying',t:0,bx:0,by:0,trail:[],chrono:[],nextT:DT,landAnim:0};
+  hoveredPt=null; pinnedPt=null;
+  document.getElementById('fire').disabled=true; lastTs=null; let simIdx=0;
+  function step(ts){
+    if(!lastTs) lastTs=ts;
+    const dtA=Math.min((ts-lastTs)/1000,0.05); lastTs=ts; st.t+=dtA*1.5;
+    while(simIdx<simPts.length-1&&simPts[simIdx][2]<st.t) simIdx++;
+    const [bx,by]=simPts[Math.min(simIdx,simPts.length-1)];
+    st.bx=bx; st.by=Math.max(by,0); st.trail.push([bx,Math.max(by,0)]);
+    if(st.trail.length>80) st.trail.shift();
+    if(by>=0&&st.t>=st.nextT){st.chrono.push([bx,Math.max(by,0)]);st.nextT+=DT;}
+    if((by<0||simIdx>=simPts.length-1)&&st.phase==='flying'){st.phase='landing';st.landAnim=1;}
+    if(st.phase==='landing'){
+      st.landAnim-=dtA*2.2;
+      if(st.landAnim<=0){st.landAnim=0;st.phase='done';document.getElementById('fire').disabled=false;draw();return;}
+    }
+    draw(); animId=requestAnimationFrame(step);
+  }
+  animId=requestAnimationFrame(step);
+}
+document.getElementById('fire').addEventListener('click',fire);
+document.getElementById('reset').addEventListener('click',()=>{
+  if(animId) cancelAnimationFrame(animId);
+  st={phase:'idle',t:0,bx:0,by:0,trail:[],chrono:[],nextT:DT,landAnim:0};
+  hoveredPt=null; pinnedPt=null;
+  document.getElementById('fire').disabled=false; draw();
+});
+canvas.addEventListener('mousemove',e=>{
+  const r=canvas.getBoundingClientRect();
+  const cx=(e.clientX-r.left)*(canvas.width/r.width),cy=(e.clientY-r.top)*(canvas.height/r.height);
+  const mx=toMx(cx),my=toMy(cy); mousePos={cx,cy,mx,my};
+  document.getElementById('coords').textContent='x:'+Math.max(0,mx).toFixed(2)+'m  y:'+Math.max(0,my).toFixed(2)+'m';
+  // Detect hover on chrono points
+  const RADIUS = 10;
+  let found = null;
+  st.chrono.forEach(([bx,by], idx) => {
+    const dx = cx - px(bx), dy = cy - py(by);
+    if (Math.sqrt(dx*dx+dy*dy) < RADIUS) found = idx;
+  });
+  const prev = hoveredPt;
+  hoveredPt = found;
+  canvas.style.cursor = found !== null ? 'pointer' : 'crosshair';
+  if(st.phase==='idle'||st.phase==='done'||prev!==hoveredPt) draw();
+});
+
+canvas.addEventListener('click',e=>{
+  const r=canvas.getBoundingClientRect();
+  const cx=(e.clientX-r.left)*(canvas.width/r.width),cy=(e.clientY-r.top)*(canvas.height/r.height);
+  const RADIUS = 10;
+  let found = null;
+  st.chrono.forEach(([bx,by], idx) => {
+    const dx = cx - px(bx), dy = cy - py(by);
+    if (Math.sqrt(dx*dx+dy*dy) < RADIUS) found = idx;
+  });
+  if (found !== null) {
+    pinnedPt = (pinnedPt === found) ? null : found; // toggle
+  } else {
+    pinnedPt = null;
+  }
+  if(st.phase==='idle'||st.phase==='done') draw();
+});
+canvas.addEventListener('mouseleave',()=>{
+  mousePos=null; hoveredPt=null;
+  document.getElementById('coords').textContent='x:—m  y:—m';
+  if(st.phase==='idle'||st.phase==='done') draw();
+});
+resize(); window.addEventListener('resize',resize);
+</script>
+</body>
+</html>
