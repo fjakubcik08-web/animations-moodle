@@ -26,6 +26,8 @@
     #fire:hover { background: #a93226; }
     #fire:disabled { background: #999; border-color: #888; cursor: default; }
     #coords { font-family: monospace; font-size: 12px; color: #555; margin-left: auto; }
+    #toggleMode { background: #fff; color: #333; border-color: #ccc; }
+    #toggleMode.active { background: #1a6ea8; color: #fff; border-color: #155a8a; }
   </style>
 </head>
 <body>
@@ -33,6 +35,7 @@
 <div id="bar">
   <button class="btn" id="fire">&#9654; Tirer</button>
   <button class="btn" id="reset">&#8635; Reset</button>
+  <button class="btn" id="toggleMode">Position</button>
   <span class="pill" id="dtInfo">&#916;t = &#8212; s</span>
   <span class="pill" id="rangeInfo">port&#233;e &#8212; m</span>
 
@@ -68,11 +71,15 @@ const vx0 = V0 * Math.cos(a0), vy0 = V0 * Math.sin(a0);
 
 function simulate(k) {
   const dt = 0.002; let x=0,y=0,vx=vx0,vy=vy0,t=0;
-  const pts = [[0,0,0]];
+  const pts = [[0,0,0,vx0,vy0]];
   for (let i=0;i<100000;i++) {
     vx+=(-k*vx)*dt; vy+=(-G-k*vy)*dt; x+=vx*dt; y+=vy*dt; t+=dt;
-    if (y<0){ const p=pts[pts.length-1],f=p[1]/(p[1]-y); pts.push([p[0]+f*(x-p[0]),0,p[2]+f*(t-p[2])]); break; }
-    if (i%5===0) pts.push([x,y,t]);
+    if (y<0){
+      const p=pts[pts.length-1],f=p[1]/(p[1]-y);
+      pts.push([p[0]+f*(x-p[0]),0,p[2]+f*(t-p[2]),p[3]+f*(vx-p[3]),p[4]+f*(vy-p[4])]);
+      break;
+    }
+    if (i%5===0) pts.push([x,y,t,vx,vy]);
   }
   return pts;
 }
@@ -357,11 +364,28 @@ function drawZoom(mx,my){
   ctx.fillText('x2',IX+4,IY+IHL+11);
 }
 
-function drawTooltip(mx, my, cx, cy) {
-  const label = '(' + mx.toFixed(3) + ' ; ' + my.toFixed(3) + ')';
+function drawTooltipVitesse(spd, cx, cy) {
+  const label = 'v = ' + spd.toFixed(3) + ' m/s';
   const pad = 7, fontSize = 12;
   ctx.font = 'bold ' + fontSize + 'px monospace';
   const tw = ctx.measureText(label).width;
+  const bw = tw + pad * 2, bh = fontSize + pad * 2;
+  let bx = cx + 12, by = cy - bh - 6;
+  if (bx + bw > W - PAD.r) bx = cx - bw - 12;
+  if (by < PAD.t) by = cy + 10;
+  ctx.fillStyle = 'rgba(20,20,35,0.88)';
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 5); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#7df'; ctx.textAlign = 'left';
+  ctx.fillText(label, bx + pad, by + pad + fontSize - 1);
+}
+
+function drawTooltip(mx, my, spd, cx, cy) {
+  if (displayMode === 'vitesse') { drawTooltipVitesse(spd, cx, cy); return; }
+  const line1 = '(' + mx.toFixed(3) + ' ; ' + my.toFixed(3) + ')';
+  const pad = 7, fontSize = 12;
+  ctx.font = 'bold ' + fontSize + 'px monospace';
+  const tw = ctx.measureText(line1).width;
   const bw = tw + pad * 2, bh = fontSize + pad * 2;
   let bx = cx + 12, by = cy - bh - 6;
   if (bx + bw > W - PAD.r) bx = cx - bw - 12;
@@ -375,7 +399,7 @@ function drawTooltip(mx, my, cx, cy) {
   ctx.stroke();
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'left';
-  ctx.fillText(label, bx + pad, by + pad + fontSize - 2);
+  ctx.fillText(line1, bx + pad, by + pad + fontSize - 1);
 }
 
 function draw(){
@@ -412,7 +436,7 @@ function draw(){
     for(let i=1;i<st.trail.length;i++) ctx.lineTo(px(st.trail[i][0]),py(st.trail[i][1]));
     ctx.strokeStyle='rgba(255,140,30,0.45)'; ctx.lineWidth=2; ctx.stroke();
   }
-  st.chrono.forEach(([bx,by], idx)=>{
+  st.chrono.forEach(([bx,by,spd], idx)=>{
     ctx.beginPath(); ctx.arc(px(bx),py(by),5.5,0,Math.PI*2);
     const isHovered = hoveredPt === idx;
     const isPinned = pinnedPt === idx;
@@ -422,7 +446,7 @@ function draw(){
     ctx.lineWidth = (isPinned||isHovered) ? 2 : 1.2;
     ctx.stroke();
     if (isPinned || isHovered) {
-      drawTooltip(bx, by, px(bx), py(by));
+      drawTooltip(bx, by, spd, px(bx), py(by));
     }
   });
   if(st.phase==='flying'){
@@ -451,6 +475,7 @@ function draw(){
 }
 
 let st={phase:'idle',t:0,bx:0,by:0,trail:[],chrono:[],nextT:DT,landAnim:0};
+let displayMode='position'; // 'position' | 'vitesse'
 let mousePos=null,animId=null,lastTs=null,hoveredPt=null,pinnedPt=null;
 
 function fire(){
@@ -462,10 +487,10 @@ function fire(){
     if(!lastTs) lastTs=ts;
     const dtA=Math.min((ts-lastTs)/1000,0.05); lastTs=ts; st.t+=dtA*1.5;
     while(simIdx<simPts.length-1&&simPts[simIdx][2]<st.t) simIdx++;
-    const [bx,by]=simPts[Math.min(simIdx,simPts.length-1)];
+    const [bx,by,,bvx,bvy]=simPts[Math.min(simIdx,simPts.length-1)];
     st.bx=bx; st.by=Math.max(by,0); st.trail.push([bx,Math.max(by,0)]);
     if(st.trail.length>80) st.trail.shift();
-    if(by>=0&&st.t>=st.nextT){st.chrono.push([bx,Math.max(by,0)]);st.nextT+=DT;}
+    if(by>=0&&st.t>=st.nextT){const spd=Math.sqrt(bvx*bvx+bvy*bvy);st.chrono.push([bx,Math.max(by,0),spd]);st.nextT+=DT;}
     if((by<0||simIdx>=simPts.length-1)&&st.phase==='flying'){st.phase='landing';st.landAnim=1;}
     if(st.phase==='landing'){
       st.landAnim-=dtA*2.2;
@@ -520,6 +545,13 @@ canvas.addEventListener('mouseleave',()=>{
   mousePos=null; hoveredPt=null;
   document.getElementById('coords').textContent='x:—m  y:—m';
   if(st.phase==='idle'||st.phase==='done') draw();
+});
+document.getElementById('toggleMode').addEventListener('click', () => {
+  displayMode = displayMode === 'position' ? 'vitesse' : 'position';
+  const btn = document.getElementById('toggleMode');
+  btn.textContent = displayMode === 'position' ? 'Position' : 'Vitesse';
+  btn.classList.toggle('active', displayMode === 'vitesse');
+  if (st.phase === 'idle' || st.phase === 'done') draw();
 });
 resize(); window.addEventListener('resize',resize);
 </script>
