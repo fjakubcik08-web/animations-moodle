@@ -63,7 +63,7 @@ const PARAMS=getAnimParams();
 const ALPHA_DEG = +(PARAMS.angle ?? 32);
 const V0        = +(PARAMS.v0    ?? 45);
 const M         = +(PARAMS.m     ?? 5);    // masse du boulet en kg
-const K         = +(PARAMS.K     ?? 0);    // coef de frottement par unité de masse (s⁻¹)
+const K         = +(PARAMS.K ?? PARAMS.k ?? 0); // coef de frottement par unité de masse (s⁻¹)
 // Force de frottement : F = -m·K·v  =>  accélération : a = -K·v  (m se simplifie)
 
 const G = 9.81, a0 = ALPHA_DEG * Math.PI / 180;
