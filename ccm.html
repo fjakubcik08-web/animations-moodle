@@ -7,7 +7,7 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
-    width: 400px; height: 580px;
+    width: 500px; height: 580px;
     overflow: hidden;
     background: #d8d5cf;
     font-family: Arial, sans-serif;
@@ -27,7 +27,7 @@
     position: relative;
   }
   button {
-    padding: 7px 20px;
+    padding: 7px 22px;
     border: 1.5px solid #666;
     background: #f5f4f0;
     border-radius: 8px;
@@ -103,39 +103,37 @@ const MEL_IDX = MEL_STR.split(',')
 // ── Canvas ────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
-const W = 400, H = 522;
+const W = 500, H = 522;
 canvas.width = W; canvas.height = H;
 
 // ── Géométrie ─────────────────────────────────────────────────────────────
 
-// Cuve en verre
-const JAR_X  = 52,  JAR_Y  = 46;
-const JAR_W  = 262, JAR_H  = 398;
-const JAR_BOT = JAR_Y + JAR_H;            // 444
+// Cuve en verre (plus large)
+const JAR_X  = 50,  JAR_Y  = 46;
+const JAR_W  = 340, JAR_H  = 398;
+const JAR_BOT = JAR_Y + JAR_H;           // 444
 
 // Couvercle
-const LID_X = JAR_X - 14, LID_W = JAR_W + 28;
+const LID_X = JAR_X - 16, LID_W = JAR_W + 32;
 const LID_Y = JAR_Y - 38, LID_H = 40;
 
-// Plaque CCM (centrée dans la cuve)
-const PX = JAR_X + 50;                    // 102
-const PW = JAR_W - 100;                   // 162
-const PY = JAR_Y + 14;                    // 60
+// Plaque CCM (plus large)
+const PX = JAR_X + 50;                   // 100
+const PW = JAR_W - 100;                  // 240
+const PY = JAR_Y + 14;                   // 60
 const PH = 330;
-const PBOT = PY + PH;                     // 390
+const PBOT = PY + PH;                    // 390
 
-// Lignes de référence sur la plaque
-const PTOP = PY + 10;                     // 70  (max position du front)
-const DEPY = PBOT - 46;                   // 344 (ligne de dépôt)
-const MAX_TRAVEL = DEPY - PTOP;           // 274 px
-
+const PTOP = PY + 10;                    // 70
+const DEPY = PBOT - 46;                  // 344
+const MAX_TRAVEL = DEPY - PTOP;          // 274 px
 const PX_PER_CM  = MAX_TRAVEL / H_CM;
 
-// Solvant au fond de la cuve (statique)
-const SOLV_SURFACE = PBOT + 8;            // 398 (surface du solvant, sous la ligne de dépôt)
+// Solvant
+const SOLV_SURFACE = PBOT + 8;           // 398
 
-// Règle graduée (droite de la cuve)
-const RX = JAR_X + JAR_W + 20;           // 334
+// Règle
+const RX = JAR_X + JAR_W + 20;          // 410
 
 // ── État ──────────────────────────────────────────────────────────────────
 let frontY   = DEPY;
@@ -144,9 +142,9 @@ let cursorY   = DEPY - Math.round(MAX_TRAVEL * 0.40);
 let dragging  = false;
 
 // ── Diffusion gaussienne ──────────────────────────────────────────────────
-const R0 = 5.0, K_DIFF = 0.52;
-function spotY(rf)       { return DEPY - (DEPY - frontY) * rf; }
-function spotRadius(t)   { return R0 + K_DIFF * Math.sqrt(Math.max(0, t)); }
+const R0 = 5.5, K_DIFF = 0.54;
+function spotY(rf)     { return DEPY - (DEPY - frontY) * rf; }
+function spotRadius(t) { return R0 + K_DIFF * Math.sqrt(Math.max(0, t)); }
 
 function hexToRgb(hex) {
   const h = hex.replace('#','');
@@ -187,75 +185,79 @@ function drawMelMarker(x) {
   ctx.strokeStyle = 'rgba(60,60,60,0.35)'; ctx.lineWidth = 1.2; ctx.stroke();
 }
 
+// Label vertical (rotation 90°, lecture de bas en haut)
+function drawLabelVertical(x, text, color, italic) {
+  ctx.save();
+  ctx.translate(x, DEPY + 4);
+  ctx.rotate(Math.PI / 2);          // lecture de haut en bas (vers le bas de la plaque)
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.font = (italic ? 'bold italic ' : 'bold ') + '10px Arial';
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
+}
+
 function depX(i) { return PX + PW * (i + 1) / (N + 1); }
 
 // ── Rendu ─────────────────────────────────────────────────────────────────
 function draw() {
   ctx.clearRect(0, 0, W, H);
 
-  // ── 1. Fond général ───────────────────────────────────────────────────
+  // Fond
   ctx.fillStyle = '#d5d2cc';
   ctx.fillRect(0, 0, W, H);
 
-  // ── 2. Remplissage cuve (verre transparent) ───────────────────────────
+  // Cuve : remplissage transparent
   ctx.fillStyle = 'rgba(195,215,230,0.22)';
   ctx.beginPath();
   ctx.roundRect(JAR_X, JAR_Y, JAR_W, JAR_H, [0, 0, 18, 18]);
   ctx.fill();
 
-  // ── 3. Solvant au fond ────────────────────────────────────────────────
-  // Corps du solvant
+  // Solvant au fond
   const solvH = JAR_BOT - 7 - SOLV_SURFACE;
   ctx.fillStyle = 'rgba(145,192,112,0.55)';
   ctx.beginPath();
-  ctx.roundRect(JAR_X + 2, SOLV_SURFACE, JAR_W - 4, solvH, [0, 0, 16, 16]);
+  ctx.roundRect(JAR_X+2, SOLV_SURFACE, JAR_W-4, solvH, [0,0,16,16]);
   ctx.fill();
-  // Ligne de surface (légère ondulation simulée)
   ctx.beginPath();
-  ctx.moveTo(JAR_X + 4, SOLV_SURFACE);
-  ctx.bezierCurveTo(
-    JAR_X + JAR_W*0.3, SOLV_SURFACE - 3,
-    JAR_X + JAR_W*0.7, SOLV_SURFACE + 2,
-    JAR_X + JAR_W - 4, SOLV_SURFACE
-  );
-  ctx.strokeStyle = 'rgba(95,148,72,0.45)'; ctx.lineWidth = 1; ctx.stroke();
-  // Reflet sur le solvant
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.beginPath();
-  ctx.roundRect(JAR_X + 8, SOLV_SURFACE + 4, 40, solvH - 10, 4);
-  ctx.fill();
+  ctx.moveTo(JAR_X+4, SOLV_SURFACE);
+  ctx.bezierCurveTo(JAR_X+JAR_W*0.3, SOLV_SURFACE-3,
+                    JAR_X+JAR_W*0.7, SOLV_SURFACE+2,
+                    JAR_X+JAR_W-4,   SOLV_SURFACE);
+  ctx.strokeStyle='rgba(95,148,72,0.45)'; ctx.lineWidth=1; ctx.stroke();
 
-  // ── 4. Plaque : ombre ─────────────────────────────────────────────────
+  // Plaque : ombre
   ctx.fillStyle = 'rgba(0,0,0,0.07)';
-  ctx.fillRect(PX + 2, PY + 2, PW, PH);
+  ctx.fillRect(PX+2, PY+2, PW, PH);
 
-  // ── 5. Plaque : fond ──────────────────────────────────────────────────
+  // Plaque : fond
   ctx.fillStyle = '#f9f8f2';
   ctx.fillRect(PX, PY, PW, PH);
 
-  // ── 6. Zone éluant sur la plaque (entre front et ligne de dépôt) ──────
+  // Zone éluant sur la plaque
   if (frontY < DEPY) {
     ctx.fillStyle = 'rgba(135,182,255,0.18)';
-    ctx.fillRect(PX + 1, frontY, PW - 2, DEPY - frontY);
+    ctx.fillRect(PX+1, frontY, PW-2, DEPY-frontY);
   }
 
-  // ── 7. Bordure plaque ─────────────────────────────────────────────────
+  // Bordure plaque
   ctx.strokeStyle = '#b2b2a2'; ctx.lineWidth = 0.8;
   ctx.strokeRect(PX, PY, PW, PH);
 
-  // ── 8. Ligne de dépôt ─────────────────────────────────────────────────
+  // Ligne de dépôt
   ctx.beginPath();
-  ctx.moveTo(PX, DEPY); ctx.lineTo(PX + PW, DEPY);
+  ctx.moveTo(PX, DEPY); ctx.lineTo(PX+PW, DEPY);
   ctx.strokeStyle = '#c8c7b8'; ctx.lineWidth = 0.8; ctx.stroke();
 
-  // ── 9. Taches ─────────────────────────────────────────────────────────
+  // ── Taches ────────────────────────────────────────────────────────────
   const xD1 = depX(0);
 
   if (MODE === 'rf') {
     drawSpot(xD1, spotY(RF1), COL1);
     if (frontY >= DEPY - 3) {
-      ctx.beginPath(); ctx.rect(xD1 - 8, DEPY - 9, 16, 16);
-      ctx.strokeStyle = 'rgba(80,80,80,0.28)'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.rect(xD1-8, DEPY-9, 16, 16);
+      ctx.strokeStyle='rgba(80,80,80,0.28)'; ctx.lineWidth=0.8;
       ctx.setLineDash([2,2]); ctx.stroke(); ctx.setLineDash([]);
     }
   } else {
@@ -264,106 +266,94 @@ function draw() {
   }
 
   for (let i = 0; i < N_REF; i++) {
-    drawSpot(depX(i + 1), spotY(RF_REF[i]), COL_REF[i]);
+    drawSpot(depX(i+1), spotY(RF_REF[i]), COL_REF[i]);
   }
 
-  // ── 10. Front du solvant sur la plaque ────────────────────────────────
+  // ── Front ─────────────────────────────────────────────────────────────
   if (frontY < DEPY) {
     ctx.beginPath();
-    ctx.moveTo(PX, frontY); ctx.lineTo(PX + PW, frontY);
+    ctx.moveTo(PX, frontY); ctx.lineTo(PX+PW, frontY);
     ctx.strokeStyle = 'rgba(55,128,240,0.88)';
-    ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineWidth=1.5; ctx.setLineDash([5,3]); ctx.stroke(); ctx.setLineDash([]);
   }
 
-  // ── 11. Parois de la cuve (dessinées PAR-DESSUS le contenu) ──────────
+  // ── Parois cuve (par-dessus le contenu) ───────────────────────────────
   ctx.strokeStyle = '#8898aa'; ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(JAR_X, JAR_Y, JAR_W, JAR_H, [0, 0, 18, 18]);
+  ctx.roundRect(JAR_X, JAR_Y, JAR_W, JAR_H, [0,0,18,18]);
   ctx.stroke();
-  // Reflet vertical gauche (verre)
   ctx.fillStyle = 'rgba(255,255,255,0.11)';
   ctx.beginPath();
-  ctx.roundRect(JAR_X + 5, JAR_Y + 22, 14, JAR_H - 50, 6);
+  ctx.roundRect(JAR_X+5, JAR_Y+22, 14, JAR_H-50, 6);
   ctx.fill();
 
-  // ── 12. Couvercle ─────────────────────────────────────────────────────
-  // Corps du couvercle
+  // ── Couvercle ─────────────────────────────────────────────────────────
   ctx.fillStyle = 'rgba(175,185,200,0.75)';
   ctx.beginPath();
-  ctx.roundRect(LID_X, LID_Y, LID_W, LID_H, [7, 7, 2, 2]);
+  ctx.roundRect(LID_X, LID_Y, LID_W, LID_H, [7,7,2,2]);
   ctx.fill();
   ctx.strokeStyle = '#7888aa'; ctx.lineWidth = 1.5; ctx.stroke();
-  // Rainure décorative
   ctx.beginPath();
-  ctx.roundRect(LID_X + 8, LID_Y + 7, LID_W - 16, LID_H - 14, [4, 4, 1, 1]);
-  ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 0.8; ctx.stroke();
-  // Reflet sur le couvercle
-  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.roundRect(LID_X+8, LID_Y+7, LID_W-16, LID_H-14, [4,4,1,1]);
+  ctx.strokeStyle='rgba(255,255,255,0.28)'; ctx.lineWidth=0.8; ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.14)';
   ctx.beginPath();
-  ctx.roundRect(LID_X + 12, LID_Y + 4, LID_W * 0.4, 8, 3);
+  ctx.roundRect(LID_X+12, LID_Y+4, LID_W*0.38, 8, 3);
   ctx.fill();
 
-  // ── 13. Labels "dépôt" et "front" (sur la plaque) ────────────────────
-  ctx.font = '9px Arial'; ctx.textAlign = 'right';
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('dépôt', PX - 5, DEPY + 3);
+  // ── Labels "dépôt" / "front" ──────────────────────────────────────────
+  ctx.font='9px Arial'; ctx.textAlign='right';
+  ctx.fillStyle='#aaa';
+  ctx.fillText('dépôt', PX-5, DEPY+3);
   if (frontY < DEPY) {
-    ctx.fillStyle = 'rgba(55,128,240,0.90)';
-    ctx.fillText('front', PX - 5, frontY + 3);
+    ctx.fillStyle='rgba(55,128,240,0.90)';
+    ctx.fillText('front', PX-5, frontY+3);
   }
 
-  // ── 14. Noms des dépôts ───────────────────────────────────────────────
-  const fs = N > 4 ? 9 : 11;
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#555';
-  ctx.font = `bold italic ${fs}px Arial`;
-  ctx.fillText(NOM_DEP1, xD1, DEPY + 14);
-  ctx.font = `bold ${fs}px Arial`;
+  // ── Noms des dépôts (verticaux) ───────────────────────────────────────
+  drawLabelVertical(xD1, NOM_DEP1, '#444', true);
   for (let i = 0; i < N_REF; i++) {
-    ctx.fillStyle = '#777';
-    ctx.fillText(NOM_REF[i], depX(i + 1), DEPY + 14);
+    drawLabelVertical(depX(i+1), NOM_REF[i], '#777', false);
   }
 
-  // ── 15. Règle graduée (droite de la cuve) ─────────────────────────────
-  ctx.strokeStyle = '#aaa'; ctx.lineWidth = 0.8;
+  // ── Règle graduée ─────────────────────────────────────────────────────
+  ctx.strokeStyle='#aaa'; ctx.lineWidth=0.8;
   ctx.beginPath(); ctx.moveTo(RX, DEPY); ctx.lineTo(RX, PTOP); ctx.stroke();
-  for (let i = 0; i <= H_CM; i++) {
-    const ry = DEPY - i * PX_PER_CM;
-    if (ry < PTOP - 2) break;
-    const tw = (i % 2 === 0) ? 7 : 4;
-    ctx.beginPath(); ctx.moveTo(RX, ry); ctx.lineTo(RX + tw, ry); ctx.stroke();
-    if (i % 2 === 0) {
-      ctx.fillStyle = '#aaa'; ctx.font = '9px Arial'; ctx.textAlign = 'left';
-      ctx.fillText(i + '', RX + 10, ry + 3);
+  for (let i=0; i<=H_CM; i++) {
+    const ry = DEPY - i*PX_PER_CM;
+    if (ry < PTOP-2) break;
+    const tw = (i%2===0) ? 7 : 4;
+    ctx.beginPath(); ctx.moveTo(RX,ry); ctx.lineTo(RX+tw,ry); ctx.stroke();
+    if (i%2===0) {
+      ctx.fillStyle='#aaa'; ctx.font='9px Arial'; ctx.textAlign='left';
+      ctx.fillText(i+'', RX+10, ry+3);
     }
   }
-  ctx.fillStyle = '#aaa'; ctx.font = '9px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('cm', RX + 9, PTOP - 4);
+  ctx.fillStyle='#aaa'; ctx.font='9px Arial'; ctx.textAlign='left';
+  ctx.fillText('cm', RX+9, PTOP-4);
 
-  // ── 16. Curseur de mesure ─────────────────────────────────────────────
-  const cL = PX - 26, cR = PX + PW + 8;
+  // ── Curseur de mesure ─────────────────────────────────────────────────
+  const cL = PX-28, cR = PX+PW+10;
 
   ctx.beginPath();
   ctx.moveTo(cL, cursorY); ctx.lineTo(cR, cursorY);
-  ctx.strokeStyle = '#e63946'; ctx.lineWidth = 1.3;
-  ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle='#e63946'; ctx.lineWidth=1.3;
+  ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
 
-  // Poignée gauche
-  ctx.fillStyle = '#e63946';
-  ctx.beginPath(); ctx.roundRect(cL - 22, cursorY - 9, 20, 18, 3); ctx.fill();
-  ctx.fillStyle = 'white'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('↕', cL - 12, cursorY + 5);
+  ctx.fillStyle='#e63946';
+  ctx.beginPath(); ctx.roundRect(cL-22, cursorY-9, 20, 18, 3); ctx.fill();
+  ctx.fillStyle='white'; ctx.font='bold 12px Arial'; ctx.textAlign='center';
+  ctx.fillText('↕', cL-12, cursorY+5);
 
-  // Valeur en cm (à droite de la règle)
   if (cursorY <= DEPY) {
-    const cm = ((DEPY - cursorY) / PX_PER_CM).toFixed(2);
-    ctx.fillStyle = '#e63946'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'left';
-    ctx.fillText(cm + ' cm', RX + 22, cursorY + 4);
+    const cm = ((DEPY-cursorY)/PX_PER_CM).toFixed(2);
+    ctx.fillStyle='#e63946'; ctx.font='bold 11px Arial'; ctx.textAlign='left';
+    ctx.fillText(cm+' cm', RX+22, cursorY+4);
   }
 
-  // ── 17. Label "cuve à chromatographie" ───────────────────────────────
-  ctx.fillStyle = '#aaa'; ctx.font = '10px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('cuve à chromatographie', JAR_X + JAR_W / 2, JAR_BOT + 14);
+  // ── Label cuve ────────────────────────────────────────────────────────
+  ctx.fillStyle='#aaa'; ctx.font='10px Arial'; ctx.textAlign='center';
+  ctx.fillText('cuve à chromatographie', JAR_X+JAR_W/2, JAR_BOT+14);
 }
 
 // ── Animation ─────────────────────────────────────────────────────────────
@@ -394,40 +384,40 @@ function startElution() {
 
 function newPlate() {
   cancelAnimationFrame(rafId);
-  animating = false; done = false; frontY = DEPY;
-  document.getElementById('status').textContent = '';
-  document.getElementById('btnStart').innerHTML = 'Démarrer<br>l\'élution';
-  document.getElementById('btnStart').disabled = false;
+  animating=false; done=false; frontY=DEPY;
+  document.getElementById('status').textContent='';
+  document.getElementById('btnStart').innerHTML='Démarrer<br>l\'élution';
+  document.getElementById('btnStart').disabled=false;
   draw();
 }
 
-// ── Curseur souris ────────────────────────────────────────────────────────
+// ── Interactions curseur ───────────────────────────────────────────────────
 canvas.addEventListener('mousedown', e => {
-  const r = canvas.getBoundingClientRect();
-  const my = (e.clientY - r.top) * (H / r.height);
-  if (Math.abs(my - cursorY) < 14) dragging = true;
+  const r=canvas.getBoundingClientRect();
+  const my=(e.clientY-r.top)*(H/r.height);
+  if(Math.abs(my-cursorY)<14) dragging=true;
 });
 canvas.addEventListener('mousemove', e => {
-  const r = canvas.getBoundingClientRect();
-  const my = (e.clientY - r.top) * (H / r.height);
-  if (dragging) { cursorY = Math.max(PTOP, Math.min(DEPY, my)); draw(); }
-  canvas.style.cursor = Math.abs(my - cursorY) < 14 ? 'ns-resize' : 'default';
+  const r=canvas.getBoundingClientRect();
+  const my=(e.clientY-r.top)*(H/r.height);
+  if(dragging){ cursorY=Math.max(PTOP,Math.min(DEPY,my)); draw(); }
+  canvas.style.cursor=Math.abs(my-cursorY)<14?'ns-resize':'default';
 });
-canvas.addEventListener('mouseup',    () => { dragging = false; });
-canvas.addEventListener('mouseleave', () => { dragging = false; });
+canvas.addEventListener('mouseup',    ()=>{ dragging=false; });
+canvas.addEventListener('mouseleave', ()=>{ dragging=false; });
 
-canvas.addEventListener('touchstart', e => {
-  const r = canvas.getBoundingClientRect();
-  const my = (e.touches[0].clientY - r.top) * (H / r.height);
-  if (Math.abs(my - cursorY) < 20) { dragging = true; e.preventDefault(); }
-}, { passive: false });
-canvas.addEventListener('touchmove', e => {
-  if (!dragging) return; e.preventDefault();
-  const r = canvas.getBoundingClientRect();
-  const my = (e.touches[0].clientY - r.top) * (H / r.height);
-  cursorY = Math.max(PTOP, Math.min(DEPY, my)); draw();
-}, { passive: false });
-canvas.addEventListener('touchend', () => { dragging = false; });
+canvas.addEventListener('touchstart', e=>{
+  const r=canvas.getBoundingClientRect();
+  const my=(e.touches[0].clientY-r.top)*(H/r.height);
+  if(Math.abs(my-cursorY)<20){ dragging=true; e.preventDefault(); }
+},{ passive:false });
+canvas.addEventListener('touchmove', e=>{
+  if(!dragging) return; e.preventDefault();
+  const r=canvas.getBoundingClientRect();
+  const my=(e.touches[0].clientY-r.top)*(H/r.height);
+  cursorY=Math.max(PTOP,Math.min(DEPY,my)); draw();
+},{ passive:false });
+canvas.addEventListener('touchend', ()=>{ dragging=false; });
 
 draw();
 </script>
