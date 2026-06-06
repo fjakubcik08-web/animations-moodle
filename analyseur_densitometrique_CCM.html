@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyseur Densitométrique CCM</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #111827;
+            color: #e5e7eb;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── En-tête ─────────────────────────────────────────── */
+        #header {
+            background: #1f2937;
+            padding: 7px 16px;
+            border-bottom: 1px solid #374151;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        #header h1  { font-size: 0.95rem; color: #f87171; font-weight: 700; }
+        #header .sub { font-size: 0.7rem; color: #9ca3af; }
+
+        /* ── Zone centrale ───────────────────────────────────── */
+        #main {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 12px;
+            gap: 5px;
+        }
+
+        /* Drop zone ─────────────────────────────────────────── */
+        #drop-zone {
+            width: 600px;
+            max-width: 100%;
+            height: 180px;
+            border: 2px dashed #374151;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #drop-zone:hover, #drop-zone.drag-over {
+            border-color: #f87171;
+            background: rgba(248, 113, 113, 0.05);
+        }
+
+        /* Conteneur image ───────────────────────────────────── */
+        #image-wrapper {
+            display: none;          /* affiché après chargement */
+            flex-direction: column;
+            align-items: center;
+        }
+        #displayCanvas {
+            display: block;
+            border: 1px solid #374151;
+            border-radius: 4px 4px 0 0;
+        }
+
+        /* Bande d'info ──────────────────────────────────────── */
+        #info-strip {
+            display: none;
+            gap: 20px;
+            font-size: 0.74rem;
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-top: none;
+            border-bottom: none;
+            padding: 3px 12px;
+            width: 100%;            /* sera contraint par JS à la largeur du canvas */
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .info-item  { color: #9ca3af; }
+        .green  { color: #34d399; font-weight: 700; }
+        .yellow { color: #fbbf24; font-weight: 700; }
+
+        /* Graphique ─────────────────────────────────────────── */
+        #graph-wrapper {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+        }
+        #graphCanvas {
+            display: block;
+            border: 1px solid #374151;
+            border-radius: 0 0 4px 4px;
+            cursor: ew-resize;
+        }
+
+        /* Légende + bouton reset ─────────────────────────────── */
+        #controls-bar {
+            display: none;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: center;
+            font-size: 0.68rem;
+            color: #9ca3af;
+            margin-top: 2px;
+        }
+        .leg  { display: flex; align-items: center; gap: 4px; }
+        .sw   { width: 16px; height: 0; }
+
+        button.act {
+            background: #374151;
+            color: #e5e7eb;
+            border: 1px solid #6b7280;
+            border-radius: 4px;
+            padding: 3px 10px;
+            font-size: 0.72rem;
+            cursor: pointer;
+        }
+        button.act:hover { background: #4b5563; }
+
+        #browse-btn {
+            background: #374151;
+            color: #e5e7eb;
+            border: 1px solid #f87171;
+            border-radius: 6px;
+            padding: 5px 16px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        #browse-btn:hover { background: #f87171; color: #111; }
+    </style>
+</head>
+<body>
+
+<!-- ── En-tête ─────────────────────────────────────────────────── -->
+<div id="header">
+    <h1>🔬 Analyseur Densitométrique CCM</h1>
+    <span class="sub">Orientation horizontale · dépôt ← gauche · front → droite</span>
+</div>
+
+<!-- ── Zone centrale ────────────────────────────────────────────── -->
+<div id="main">
+
+    <!-- Zone de dépôt (visible au démarrage) -->
+    <div id="drop-zone">
+        <div style="font-size:2.4rem">📂</div>
+        <div style="color:#9ca3af;font-size:0.88rem">Glisser-déposer votre image CCM ici</div>
+        <div style="color:#6b7280;font-size:0.72rem">PNG ou JPG — plaque orientée horizontalement</div>
+        <button id="browse-btn">Parcourir…</button>
+    </div>
+    <input type="file" id="fileInput" accept="image/png,image/jpeg" style="display:none">
+
+    <!-- Image + lignes superposées -->
+    <div id="image-wrapper">
+        <canvas id="displayCanvas"></canvas>
+    </div>
+
+    <!-- Bande d'info entre image et graphique -->
+    <div id="info-strip">
+        <span class="info-item">Curseur image : <b class="green" id="row-label">—</b></span>
+        <span class="info-item">Curseur graphique : <b class="yellow" id="gcursor-label">—</b></span>
+    </div>
+
+    <!-- Graphique d'absorption -->
+    <div id="graph-wrapper">
+        <canvas id="graphCanvas"></canvas>
+    </div>
+
+    <!-- Légende + reset -->
+    <div id="controls-bar">
+        <div class="leg">
+            <div class="sw" style="border-top:2px solid #34d399;"></div>
+            <span>Curseur analyse ↕</span>
+        </div>
+        <div class="leg">
+            <div class="sw" style="border-top:2px dashed #f87171;"></div>
+            <span>0 cm – dépôt ↔</span>
+        </div>
+        <div class="leg">
+            <div class="sw" style="border-top:2px dashed #60a5fa;"></div>
+            <span>10 cm – front ↔</span>
+        </div>
+        <div class="leg">
+            <div class="sw" style="border-top:2px solid #fbbf24;"></div>
+            <span>Curseur graphique ↔</span>
+        </div>
+        <button class="act" id="reset-btn">↺ Nouvelle image</button>
+    </div>
+
+</div>
+
+<!--
+    Canvas SOURCE caché — résolution native de l'image.
+    Tous les appels getImageData se font sur ce canvas pour éviter
+    toute distorsion liée à la mise à l'échelle du canvas display.
+-->
+<canvas id="sourceCanvas" style="display:none;"></canvas>
+
+<script>
+/* ================================================================
+   ANALYSEUR DENSITOMÉTRIQUE CCM — v2
+   ----------------------------------------------------------------
+   Nouveautés v2 :
+     · Curseur d'analyse HORIZONTAL sur l'image (↕)
+       → lit la ligne de pixels de gauche à droite à la hauteur Y
+     · Graphique SOUS l'image, même orientation que la plaque
+       (axe X = position 0→10 cm, axe Y = absorption 0→100 %)
+     · Curseur vertical JAUNE sur le graphique (↔)
+       → tooltip cm + absorption en temps réel
+   Formules :
+     Luminance = 0.299·R + 0.587·G + 0.114·B  (ITU-R BT.601)
+     Absorption = 100 − (Luminance / 255 × 100)
+     Position   = (xCurseur − xZéro) / (xDix − xZéro) × 10
+   ================================================================ */
+
+// ── Références DOM ───────────────────────────────────────────────
+const dropZone      = document.getElementById('drop-zone');
+const fileInput     = document.getElementById('fileInput');
+const browseBtn     = document.getElementById('browse-btn');
+const imageWrapper  = document.getElementById('image-wrapper');
+const displayCanvas = document.getElementById('displayCanvas');
+const sourceCanvas  = document.getElementById('sourceCanvas');
+const graphCanvas   = document.getElementById('graphCanvas');
+const graphWrapper  = document.getElementById('graph-wrapper');
+const infoStrip     = document.getElementById('info-strip');
+const controlsBar   = document.getElementById('controls-bar');
+const rowLabel      = document.getElementById('row-label');
+const gcursorLabel  = document.getElementById('gcursor-label');
+const resetBtn      = document.getElementById('reset-btn');
+
+const dispCtx = displayCanvas.getContext('2d');
+const srcCtx  = sourceCanvas.getContext('2d', { willReadFrequently: true });
+const gCtx    = graphCanvas.getContext('2d');
+
+// ── État global ──────────────────────────────────────────────────
+const S = {
+    loaded   : false,
+    srcW     : 0,  srcH    : 0,     // résolution de l'image native
+    dispW    : 0,  dispH   : 0,     // résolution du canvas d'affichage
+    scaleX   : 1,  scaleY  : 1,     // facteur source ÷ display
+
+    // Image : curseur horizontal d'analyse + lignes de calibration verticales
+    cursorY  : 0,   // ligne horizontale verte (px display, direction ↕)
+    zeroX    : 0,   // ligne de dépôt  0 cm  (px display, direction ↔)
+    tenX     : 0,   // front de l'éluant 10 cm (px display, direction ↔)
+
+    // Graphique : curseur vertical jaune
+    gCursorX : 0,   // position dans l'espace display (0…dispW-1)
+
+    dragging : null,    // 'cursorY' | 'zeroX' | 'tenX' | 'gCursor' | null
+    HIT      : 8,       // tolérance de détection (px)
+    GRAPH_H  : 165,     // hauteur fixe du graphique
+};
+
+// ── Chargement de l'image ─────────────────────────────────────────
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f && f.type.startsWith('image/')) loadImageFile(f);
+});
+browseBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { if (e.target.files[0]) loadImageFile(e.target.files[0]); });
+resetBtn.addEventListener('click', resetApp);
+
+/**
+ * Charge un fichier image localement via FileReader.
+ * Aucune requête réseau → aucune restriction CORS.
+ */
+function loadImageFile(file) {
+    const reader = new FileReader();
+    reader.onload = evt => {
+        const img = new Image();
+        img.onload = () => initImage(img);
+        img.src    = evt.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+/**
+ * Initialise les canvas source et display, positionne les lignes
+ * par défaut, et bascule l'interface vers la vue d'analyse.
+ */
+function initImage(img) {
+    // 1. Canvas SOURCE à résolution native (getImageData sans distorsion)
+    sourceCanvas.width  = img.naturalWidth;
+    sourceCanvas.height = img.naturalHeight;
+    srcCtx.drawImage(img, 0, 0);
+    S.srcW = img.naturalWidth;
+    S.srcH = img.naturalHeight;
+
+    // 2. Calcul de la taille du canvas d'affichage
+    //    Réserve : header + infoStrip + graphique + légende + marges
+    const headerH  = document.getElementById('header').offsetHeight;
+    const reserved = headerH + S.GRAPH_H + 24 + 32 + 40;
+    const maxW     = window.innerWidth  - 24;
+    const maxH     = window.innerHeight - reserved;
+    const ratio    = S.srcW / S.srcH;
+    let dW = maxW, dH = dW / ratio;
+    if (dH > maxH) { dH = maxH; dW = dH * ratio; }
+
+    displayCanvas.width  = S.dispW = Math.round(dW);
+    displayCanvas.height = S.dispH = Math.round(dH);
+    S.scaleX = S.srcW / S.dispW;
+    S.scaleY = S.srcH / S.dispH;
+
+    // 3. Positions initiales des lignes
+    S.cursorY  = Math.round(S.dispH * 0.50);   // milieu vertical de l'image
+    S.zeroX    = Math.round(S.dispW * 0.05);    // 5 % gauche = ligne de dépôt
+    S.tenX     = Math.round(S.dispW * 0.95);    // 95 % droite = front
+    S.gCursorX = Math.round(S.dispW * 0.50);    // curseur graphique au milieu
+
+    // 4. Canvas graphique : même largeur que le canvas display
+    graphCanvas.width  = S.dispW;
+    graphCanvas.height = S.GRAPH_H;
+
+    // 5. Aligner la bande d'info sur la largeur du canvas
+    infoStrip.style.width = S.dispW + 'px';
+
+    // 6. Révéler les éléments
+    dropZone.style.display       = 'none';
+    imageWrapper.style.display   = 'flex';
+    infoStrip.style.display      = 'flex';
+    graphWrapper.style.display   = 'flex';
+    controlsBar.style.display    = 'flex';
+    S.loaded = true;
+
+    render();
+}
+
+function resetApp() {
+    S.loaded = false;
+    dropZone.style.display       = 'flex';
+    imageWrapper.style.display   = 'none';
+    infoStrip.style.display      = 'none';
+    graphWrapper.style.display   = 'none';
+    controlsBar.style.display    = 'none';
+    fileInput.value              = '';
+    rowLabel.textContent         = '—';
+    gcursorLabel.textContent     = '—';
+}
+
+// ── Rendu de l'image ──────────────────────────────────────────────
+
+/**
+ * Redessine le canvas display (image + lignes) et met à jour le graphique.
+ */
+function render() {
+    if (!S.loaded) return;
+
+    // Recopier depuis le canvas source (calcul de mise à l'échelle propre)
+    dispCtx.clearRect(0, 0, S.dispW, S.dispH);
+    dispCtx.drawImage(sourceCanvas, 0, 0, S.dispW, S.dispH);
+
+    // Lignes de calibration verticales (pointillées)
+    drawVerticalDash(S.zeroX, '#f87171', '0 cm');
+    drawVerticalDash(S.tenX,  '#60a5fa', '10 cm');
+
+    // Curseur d'analyse horizontal (plein)
+    drawHorizontalCursor(S.cursorY, '#34d399');
+
+    // Curseur vertical jaune (miroir du curseur graphique)
+    drawGraphCursorOnImage(S.gCursorX, '#fbbf24');
+
+    // Graphique
+    updateGraph();
+}
+
+/**
+ * Dessine une ligne verticale en pointillés avec étiquette en haut.
+ * Ces lignes sont déplaçables (←→) et servent à calibrer les positions en cm.
+ */
+function drawVerticalDash(x, color, label) {
+    dispCtx.save();
+    dispCtx.setLineDash([5, 4]);
+    dispCtx.strokeStyle = color;
+    dispCtx.lineWidth   = 2;
+    dispCtx.globalAlpha = 0.9;
+    dispCtx.beginPath();
+    dispCtx.moveTo(x, 0);
+    dispCtx.lineTo(x, S.dispH);
+    dispCtx.stroke();
+    // Étiquette avec fond pour lisibilité
+    dispCtx.setLineDash([]);
+    dispCtx.globalAlpha = 1;
+    dispCtx.font = 'bold 10px Segoe UI, sans-serif';
+    const tw = dispCtx.measureText(label).width;
+    dispCtx.fillStyle = 'rgba(0,0,0,0.65)';
+    dispCtx.fillRect(x - tw / 2 - 3, 2, tw + 6, 14);
+    dispCtx.fillStyle = color;
+    dispCtx.textAlign = 'center';
+    dispCtx.fillText(label, x, 13);
+    dispCtx.restore();
+}
+
+/**
+ * Dessine la ligne verticale jaune sur l'image, synchronisée avec le
+ * curseur graphique. Permet de localiser visuellement la position lue.
+ */
+function drawGraphCursorOnImage(x, color) {
+    dispCtx.save();
+    dispCtx.setLineDash([5, 4]);
+    dispCtx.strokeStyle = color;
+    dispCtx.lineWidth   = 1.5;
+    dispCtx.globalAlpha = 0.75;
+    dispCtx.beginPath();
+    dispCtx.moveTo(x, 0);
+    dispCtx.lineTo(x, S.dispH);
+    dispCtx.stroke();
+    dispCtx.restore();
+}
+
+/**
+ * Dessine la ligne horizontale d'analyse (curseur vert, déplaçable ↕).
+ * C'est la ligne dont tous les pixels sont lus de gauche à droite.
+ */
+function drawHorizontalCursor(y, color) {
+    dispCtx.save();
+    dispCtx.setLineDash([]);
+    dispCtx.strokeStyle = color;
+    dispCtx.lineWidth   = 1.5;
+    dispCtx.globalAlpha = 0.9;
+    dispCtx.beginPath();
+    dispCtx.moveTo(0, y);
+    dispCtx.lineTo(S.dispW, y);
+    dispCtx.stroke();
+    // Triangle indicateur à gauche
+    dispCtx.fillStyle = color;
+    dispCtx.beginPath();
+    dispCtx.moveTo(0,    y);
+    dispCtx.lineTo(12,   y - 5);
+    dispCtx.lineTo(12,   y + 5);
+    dispCtx.closePath();
+    dispCtx.fill();
+    // Triangle indicateur à droite
+    dispCtx.beginPath();
+    dispCtx.moveTo(S.dispW,     y);
+    dispCtx.lineTo(S.dispW - 12, y - 5);
+    dispCtx.lineTo(S.dispW - 12, y + 5);
+    dispCtx.closePath();
+    dispCtx.fill();
+    dispCtx.restore();
+}
+
+// ── Calculs densitométriques ─────────────────────────────────────
+
+/**
+ * Retourne la position en cm pour un x en px display.
+ * Règle de trois : (x − xZéro) / (xDix − xZéro) × 10
+ */
+function getCm(xDisp) {
+    const span = S.tenX - S.zeroX;
+    if (Math.abs(span) < 5) return null;
+    return (xDisp - S.zeroX) / span * 10;
+}
+
+/**
+ * Lit la ligne horizontale à la position yDisp sur le canvas DISPLAY,
+ * mappe vers le canvas SOURCE (résolution native) pour un calcul exact,
+ * et ré-échantillonne vers la largeur display.
+ *
+ * Formule : Luminance (BT.601) = 0.299·R + 0.587·G + 0.114·B
+ *           Absorption = 100 − (Luminance / 255 × 100)
+ *
+ * @param  {number} yDisp  Position Y du curseur (px display)
+ * @returns {Float32Array} Absorption [0..100] pour chaque colonne display
+ */
+function getAbsorptionRow(yDisp) {
+    if (!S.loaded) return null;
+
+    // Coordonnée Y dans le canvas source
+    const ySrc = Math.min(Math.round(yDisp * S.scaleY), S.srcH - 1);
+
+    // Lecture d'une seule ligne (hauteur 1 px, pleine largeur) sur le canvas SOURCE
+    const imgData = srcCtx.getImageData(0, ySrc, S.srcW, 1);
+    const px      = imgData.data;   // [R,G,B,A, R,G,B,A, …] × srcW
+
+    // Ré-échantillonnage horizontal source → display (voisin le plus proche)
+    const abs = new Float32Array(S.dispW);
+    for (let xD = 0; xD < S.dispW; xD++) {
+        const xSrc = Math.min(Math.round(xD * S.scaleX), S.srcW - 1);
+        const i    = xSrc * 4;
+        const L    = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+        abs[xD]    = 100 - (L / 255 * 100);
+    }
+    return abs;
+}
+
+// ── Rendu du graphique ────────────────────────────────────────────
+
+/**
+ * Met à jour le graphique d'absorption.
+ *
+ * Orientation (identique à la plaque CCM) :
+ *   Axe X  →  position 0→10 cm  (gauche = dépôt, droite = front)
+ *   Axe Y  ↑  absorption 0→100 %
+ *
+ * Un curseur vertical jaune (↔ déplaçable) affiche cm + absorption.
+ */
+function updateGraph() {
+    const gW = graphCanvas.width;
+    const gH = graphCanvas.height;
+
+    gCtx.fillStyle = '#0f172a';
+    gCtx.fillRect(0, 0, gW, gH);
+
+    const abs = getAbsorptionRow(S.cursorY);
+    if (!abs || abs.length < 2) return;
+
+    // Marges internes du tracé
+    const mL = 38, mR = 10, mT = 8, mB = 34;
+    const pW  = gW - mL - mR;   // largeur zone tracé
+    const pH  = gH - mT - mB;   // hauteur zone tracé
+
+    // ── Grille ──────────────────────────────────────────────────
+    gCtx.save();
+    gCtx.font      = '9px Segoe UI, sans-serif';
+    gCtx.setLineDash([3, 3]);
+    gCtx.lineWidth = 1;
+
+    // Lignes horizontales (niveaux d'absorption 0, 25, 50, 75, 100 %)
+    for (let a = 0; a <= 100; a += 25) {
+        const y = mT + pH - (a / 100) * pH;   // 0 % en bas, 100 % en haut
+        gCtx.strokeStyle = '#1e3a5f';
+        gCtx.beginPath(); gCtx.moveTo(mL, y); gCtx.lineTo(mL + pW, y); gCtx.stroke();
+        gCtx.fillStyle  = '#6b7280';
+        gCtx.textAlign  = 'right';
+        gCtx.fillText(a + ' %', mL - 3, y + 3);
+    }
+
+    // Lignes verticales aux positions cm entières (0, 1, 2, …, 10)
+    // Position pixel display pour n cm = zeroX + n × (tenX − zeroX) / 10
+    const span = S.tenX - S.zeroX;
+    if (Math.abs(span) >= 5) {
+        for (let cm = 0; cm <= 10; cm++) {
+            const xDisp = S.zeroX + cm * span / 10;
+            const xPx   = mL + (xDisp / (S.dispW - 1)) * pW;
+            if (xPx < mL - 1 || xPx > mL + pW + 1) continue;
+
+            // Trait de grille : plus épais pour 0 et 10
+            gCtx.strokeStyle = (cm === 0 || cm === 10) ? '#2d5a8a' : '#1e3a5f';
+            gCtx.lineWidth   = (cm === 0 || cm === 10) ? 1.2 : 0.8;
+            gCtx.beginPath(); gCtx.moveTo(xPx, mT); gCtx.lineTo(xPx, mT + pH); gCtx.stroke();
+
+            // Étiquette cm (tous les 2 cm pour éviter l'encombrement)
+            if (cm % 2 === 0) {
+                gCtx.fillStyle = '#6b7280';
+                gCtx.textAlign = 'center';
+                gCtx.fillText(cm + ' cm', xPx, mT + pH + 14);
+            }
+        }
+    }
+
+    gCtx.setLineDash([]);
+
+    // Bordure de la zone de tracé
+    gCtx.strokeStyle = '#374151';
+    gCtx.lineWidth   = 1.5;
+    gCtx.strokeRect(mL, mT, pW, pH);
+
+    // Labels d'axe
+    gCtx.fillStyle  = '#9ca3af';
+    gCtx.font       = '9px Segoe UI, sans-serif';
+    gCtx.textAlign  = 'center';
+    gCtx.fillText('Position (cm)', mL + pW / 2, gH - 2);
+    gCtx.save();
+    gCtx.translate(10, mT + pH / 2);
+    gCtx.rotate(-Math.PI / 2);
+    gCtx.fillText('Absorption (%)', 0, 0);
+    gCtx.restore();
+
+    gCtx.restore();
+
+    // ── Courbe d'absorption ──────────────────────────────────────
+    //
+    // Chaque point du tableau abs[xD] correspond à la colonne xD (0…dispW-1).
+    // Sur le graphique : xPx = mL + (xD / (dispW-1)) × pW
+    //                    yPx = mT + pH − (abs[xD] / 100) × pH
+    //
+    // Ainsi le graphique est orienté de la même façon que la plaque :
+    // gauche = dépôt, droite = front, absorption croissante vers le haut.
+
+    gCtx.save();
+
+    // Remplissage sous la courbe
+    gCtx.beginPath();
+    for (let xD = 0; xD < abs.length; xD++) {
+        const xPx = mL + (xD / (abs.length - 1)) * pW;
+        const yPx = mT + pH - (abs[xD] / 100) * pH;
+        if (xD === 0) gCtx.moveTo(xPx, yPx);
+        else          gCtx.lineTo(xPx, yPx);
+    }
+    gCtx.lineTo(mL + pW, mT + pH);
+    gCtx.lineTo(mL,      mT + pH);
+    gCtx.closePath();
+    gCtx.fillStyle = 'rgba(248, 113, 113, 0.13)';
+    gCtx.fill();
+
+    // Contour de la courbe (tracé séparé, sans la fermeture de remplissage)
+    gCtx.beginPath();
+    for (let xD = 0; xD < abs.length; xD++) {
+        const xPx = mL + (xD / (abs.length - 1)) * pW;
+        const yPx = mT + pH - (abs[xD] / 100) * pH;
+        if (xD === 0) gCtx.moveTo(xPx, yPx);
+        else          gCtx.lineTo(xPx, yPx);
+    }
+    gCtx.strokeStyle = '#f87171';
+    gCtx.lineWidth   = 1.5;
+    gCtx.lineJoin    = 'round';
+    gCtx.stroke();
+
+    gCtx.restore();
+
+    // ── Curseur graphique jaune ──────────────────────────────────
+    //
+    // S.gCursorX est en coordonnées display (0…dispW-1), donc
+    // on peut directement lire abs[S.gCursorX] pour l'absorption.
+
+    const gIdx  = Math.max(0, Math.min(S.gCursorX, abs.length - 1));
+    const gAbsV = abs[gIdx];
+    const gCm   = getCm(S.gCursorX);
+
+    const gxPx  = mL + (S.gCursorX / (S.dispW - 1)) * pW;
+    const gyPx  = mT + pH - (gAbsV / 100) * pH;
+
+    gCtx.save();
+
+    // Ligne verticale jaune
+    gCtx.strokeStyle = '#fbbf24';
+    gCtx.lineWidth   = 1.5;
+    gCtx.setLineDash([4, 3]);
+    gCtx.beginPath(); gCtx.moveTo(gxPx, mT); gCtx.lineTo(gxPx, mT + pH); gCtx.stroke();
+    gCtx.setLineDash([]);
+
+    // Point sur la courbe
+    gCtx.fillStyle = '#fbbf24';
+    gCtx.beginPath();
+    gCtx.arc(gxPx, gyPx, 4, 0, 2 * Math.PI);
+    gCtx.fill();
+
+    // Tooltip (s'adapte pour ne pas dépasser le bord droit)
+    const tipCm  = gCm !== null ? gCm.toFixed(2) + ' cm  |  ' : '';
+    const tipTxt = tipCm + gAbsV.toFixed(1) + ' %';
+    gCtx.font    = 'bold 10px Segoe UI, sans-serif';
+    const tw     = gCtx.measureText(tipTxt).width;
+    let   tipX   = gxPx + 7;
+    if (tipX + tw + 5 > mL + pW) tipX = gxPx - tw - 10;
+    const tipY   = Math.max(gyPx - 4, mT + 14);
+    gCtx.fillStyle = 'rgba(0,0,0,0.72)';
+    gCtx.fillRect(tipX - 3, tipY - 13, tw + 6, 15);
+    gCtx.fillStyle = '#fbbf24';
+    gCtx.fillText(tipTxt, tipX, tipY);
+
+    gCtx.restore();
+
+    // ── Mise à jour des labels d'info ───────────────────────────
+    const yPct = ((S.cursorY / (S.dispH - 1)) * 100).toFixed(1);
+    rowLabel.textContent = `ligne ${S.cursorY} px  (${yPct} % de la hauteur)`;
+
+    gcursorLabel.textContent = gCm !== null
+        ? `${gCm.toFixed(3)} cm — absorption : ${gAbsV.toFixed(2)} %`
+        : `absorption : ${gAbsV.toFixed(2)} % (calibrer les lignes rouge/bleue)`;
+}
+
+// ── Interactions souris sur le canvas IMAGE ───────────────────────
+
+/**
+ * Coordonnée X en pixels réels (corrigée pour le ratio CSS/canvas).
+ */
+function realX(e, canvas) {
+    const r = canvas.getBoundingClientRect();
+    return Math.round((e.clientX - r.left) * (canvas.width  / r.width));
+}
+
+/**
+ * Coordonnée Y en pixels réels.
+ */
+function realY(e, canvas) {
+    const r = canvas.getBoundingClientRect();
+    return Math.round((e.clientY - r.top)  * (canvas.height / r.height));
+}
+
+displayCanvas.addEventListener('mousedown', e => {
+    if (!S.loaded) return;
+    const x = realX(e, displayCanvas);
+    const y = realY(e, displayCanvas);
+
+    // Priorité : curseur horizontal > ligne 0 cm > ligne 10 cm
+    if      (Math.abs(y - S.cursorY) <= S.HIT) S.dragging = 'cursorY';
+    else if (Math.abs(x - S.zeroX)   <= S.HIT) S.dragging = 'zeroX';
+    else if (Math.abs(x - S.tenX)    <= S.HIT) S.dragging = 'tenX';
+    else {
+        // Clic libre → positionner le curseur horizontal à la ligne cliquée
+        S.cursorY  = clamp(y, 0, S.dispH - 1);
+        S.dragging = 'cursorY';
+        render();
+    }
+});
+
+displayCanvas.addEventListener('mousemove', e => {
+    if (!S.loaded) return;
+    const x = realX(e, displayCanvas);
+    const y = realY(e, displayCanvas);
+
+    if (S.dragging) {
+        if      (S.dragging === 'cursorY') S.cursorY = clamp(y, 0, S.dispH - 1);
+        else if (S.dragging === 'zeroX')   S.zeroX   = clamp(x, 0, S.dispW - 1);
+        else if (S.dragging === 'tenX')    S.tenX    = clamp(x, 0, S.dispW - 1);
+        render();
+    }
+
+    // Curseur CSS adaptatif selon la proximité d'un élément déplaçable
+    const nearH = Math.abs(y - S.cursorY) <= S.HIT;
+    const nearV = Math.abs(x - S.zeroX)   <= S.HIT ||
+                  Math.abs(x - S.tenX)    <= S.HIT;
+    displayCanvas.style.cursor = nearH ? 'ns-resize' : nearV ? 'ew-resize' : 'crosshair';
+});
+
+displayCanvas.addEventListener('mouseup',    () => { S.dragging = null; });
+displayCanvas.addEventListener('mouseleave', () => { S.dragging = null; });
+
+// ── Interactions souris sur le GRAPHIQUE ─────────────────────────
+//
+// S.gCursorX est stocké en coordonnées display (0…dispW-1) pour que
+// l'indexation dans abs[] soit directe (abs[gCursorX] sans conversion).
+// La conversion graph ↔ display est :
+//   gxPx   = mL + (gCursorX / (dispW-1)) × pW
+//   gCursorX = round((gxPx - mL) / pW × (dispW-1))
+
+const GM = { mL: 38, mR: 10 };   // marges graphique (doit rester en synchro avec updateGraph)
+
+graphCanvas.addEventListener('mousedown', e => {
+    if (!S.loaded) return;
+    const pW   = graphCanvas.width - GM.mL - GM.mR;
+    const xPx  = realX(e, graphCanvas);
+    S.gCursorX = clamp(Math.round((xPx - GM.mL) / pW * (S.dispW - 1)), 0, S.dispW - 1);
+    S.dragging = 'gCursor';
+    render();
+});
+
+graphCanvas.addEventListener('mousemove', e => {
+    if (!S.loaded || S.dragging !== 'gCursor') return;
+    const pW   = graphCanvas.width - GM.mL - GM.mR;
+    const xPx  = realX(e, graphCanvas);
+    S.gCursorX = clamp(Math.round((xPx - GM.mL) / pW * (S.dispW - 1)), 0, S.dispW - 1);
+    render();
+});
+
+graphCanvas.addEventListener('mouseup',    () => { S.dragging = null; });
+graphCanvas.addEventListener('mouseleave', () => { S.dragging = null; });
+
+// ── Support tactile ──────────────────────────────────────────────
+function addTouch(canvas) {
+    canvas.addEventListener('touchstart', e => {
+        e.preventDefault();
+        canvas.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: e.touches[0].clientX, clientY: e.touches[0].clientY
+        }));
+    }, { passive: false });
+    canvas.addEventListener('touchmove', e => {
+        e.preventDefault();
+        canvas.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: e.touches[0].clientX, clientY: e.touches[0].clientY
+        }));
+    }, { passive: false });
+    canvas.addEventListener('touchend', () => canvas.dispatchEvent(new MouseEvent('mouseup')));
+}
+addTouch(displayCanvas);
+addTouch(graphCanvas);
+
+// ── Utilitaire ───────────────────────────────────────────────────
+function clamp(v, min, max) { return v < min ? min : v > max ? max : v; }
+
+</script>
+</body>
+</html>
