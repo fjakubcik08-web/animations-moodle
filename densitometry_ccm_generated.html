@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analyseur Densitométrique CCM</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0ede8;color:#1a1a2e;display:flex;flex-direction:column;}
+
+#header{
+  background:#1a1a2e;border-bottom:3px solid #c8a84b;
+  padding:6px 18px;flex-shrink:0;display:flex;align-items:center;gap:14px;
+  box-shadow:0 2px 8px rgba(0,0,0,.3);
+}
+#header h1{font-size:.84rem;font-weight:700;color:#f0ead6;letter-spacing:.07em;text-transform:uppercase;}
+#header h1 span{color:#c8a84b}
+#header .sub{font-size:.6rem;color:#8892a4;margin-left:auto}
+#btn-start{
+  background:#c8a84b;color:#1a1a2e;border:none;border-radius:3px;
+  padding:5px 18px;font-size:.75rem;font-weight:700;cursor:pointer;
+  letter-spacing:.06em;text-transform:uppercase;transition:background .2s;white-space:nowrap;flex-shrink:0;
+}
+#btn-start:hover{background:#e0bf60}
+#btn-start:disabled{background:#555;color:#999;cursor:default}
+
+#main{flex:1;overflow:hidden;display:flex;flex-direction:row;align-items:stretch;padding:8px 10px;gap:8px;}
+
+/* bécher : largeur minimale */
+#panel-anim{flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+#canvas-anim{display:block;border:1px solid #c0bdb0;background:#fafaf5;box-shadow:2px 2px 8px rgba(0,0,0,.10);}
+
+#vsep{flex-shrink:0;width:1px;background:#c8c0b0;margin:4px 0;}
+
+/* panneau analyse : prend tout le reste */
+#panel-analyse{
+  flex:1;min-width:0;display:flex;flex-direction:column;gap:0;
+  opacity:0;pointer-events:none;transition:opacity .8s;
+}
+#panel-analyse.visible{opacity:1;pointer-events:all}
+
+#ccmCanvas{display:block;border:1px solid #a0a098;box-shadow:2px 2px 8px rgba(0,0,0,.10);cursor:crosshair;}
+
+#info-strip{
+  background:#fff;border-left:1px solid #a0a098;border-right:1px solid #a0a098;
+  padding:2px 12px;font-size:.65rem;color:#555;display:flex;gap:20px;justify-content:center;flex-wrap:wrap;
+}
+#info-strip b{font-weight:700}.cg{color:#2d6a2d}.ca{color:#8b5e00}
+
+#graphCanvas{display:block;border:1px solid #a0a098;border-top:none;background:#fafaf5;box-shadow:2px 2px 8px rgba(0,0,0,.07);cursor:ew-resize;}
+
+#legend{
+  display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:center;
+  font-size:.6rem;color:#666;margin-top:4px;flex-shrink:0;
+}
+.leg{display:flex;align-items:center;gap:4px}
+.lline{width:18px;height:2px}.ldash{width:18px;height:0}
+
+#error-screen{display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#cc2200;font-size:.9rem;background:#fff;}
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>🔬 Analyseur <span>Densitométrique CCM</span></h1>
+  <button id="btn-start">▶ Démarrer</button>
+  <span class="sub">Après l'animation : placer le curseur vert sur la rangée des taches · calibrer les repères rouge (dépôt) et bleu (front)</span>
+</div>
+
+<div id="main">
+  <div id="panel-anim"><canvas id="canvas-anim"></canvas></div>
+  <div id="vsep"></div>
+  <div id="panel-analyse">
+    <canvas id="ccmCanvas"></canvas>
+    <div id="info-strip">
+      <span>Curseur vert : <b class="cg" id="row-label">—</b></span>
+      <span>Lecture : <b class="ca" id="gcursor-label">—</b></span>
+    </div>
+    <canvas id="graphCanvas"></canvas>
+    <div id="legend">
+      <div class="leg"><div class="lline" style="background:#2d6a2d"></div><span>Curseur analyse ↕ (ligne verte)</span></div>
+      <div class="leg"><div class="ldash" style="border-top:2px dashed #cc2200"></div><span>Repère 0 cm – dépôt (rouge)</span></div>
+      <div class="leg"><div class="ldash" style="border-top:2px dashed #0044cc"></div><span>Repère 10 cm – front (bleu)</span></div>
+      <div class="leg"><div class="ldash" style="border-top:2px dashed #8b5e00"></div><span>Curseur lecture (ambre)</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="error-screen"><div style="font-size:2rem">⚠️</div><div id="error-msg">Paramètres manquants.</div></div>
+<canvas id="sourceCanvas" style="display:none"></canvas>
+
+<script>
+function decodeParams(s){
+  s=s.replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length%4)s+='=';
+  return JSON.parse(decodeURIComponent(escape(atob(s))));
+}
+
+/* ── Colormap RdBu ── */
+const STOPS=[[0,[103,0,31]],[.1,[178,24,43]],[.2,[214,96,77]],[.3,[244,165,130]],
+  [.4,[253,219,199]],[.5,[247,247,247]],[.6,[209,229,240]],[.7,[146,197,222]],
+  [.8,[67,147,195]],[.9,[33,102,172]],[1,[5,48,97]]];
+const LUT=(()=>{
+  const l=new Uint8Array(256*3);
+  for(let i=0;i<256;i++){
+    const t=i/255;let lo=STOPS[0],hi=STOPS[STOPS.length-1];
+    for(let k=0;k<STOPS.length-1;k++){if(t>=STOPS[k][0]&&t<=STOPS[k+1][0]){lo=STOPS[k];hi=STOPS[k+1];break;}}
+    const f=(hi[0]-lo[0])<1e-9?0:(t-lo[0])/(hi[0]-lo[0]);
+    l[i*3]=Math.round(lo[1][0]+f*(hi[1][0]-lo[1][0]));
+    l[i*3+1]=Math.round(lo[1][1]+f*(hi[1][1]-lo[1][1]));
+    l[i*3+2]=Math.round(lo[1][2]+f*(hi[1][2]-lo[1][2]));
+  }return l;
+})();
+function rdbu(t){const i=Math.max(0,Math.min(255,Math.round(t*255)));return[LUT[i*3],LUT[i*3+1],LUT[i*3+2]];}
+
+/* ── SOURCE ──
+   Génère une image NX×NY représentant la plaque CCM avec :
+   - cadre physique
+   - ligne de dépôt tracée (trait fin + label)
+   - ligne de front tracée (trait fin + label)
+   - taches gaussiennes RdBu
+   La zone utile (entre dépôt et front) est stockée en fractions
+   pour que les curseurs d'étalonnage soient placés n'importe où
+   (l'élève doit les aligner lui-même).
+*/
+function buildSource(Mx,Ax,Sx){
+  // Image source : NX×NY pixels
+  // Zone plaque : laisse une marge pour annotations
+  const NX=700,NY=160;
+  const MAR_L=80,MAR_R=80,MAR_T=28,MAR_B=28;
+  const PW=NX-MAR_L-MAR_R; // 540
+  const PH=NY-MAR_T-MAR_B; // 104
+
+  const sc=document.getElementById('sourceCanvas');
+  sc.width=NX; sc.height=NY;
+  // Stocke les coordonnées absolues des lignes pour calibration initiale
+  // Ligne dépôt à 8% du bord gauche de la plaque
+  // Ligne front à 92% du bord droit
+  const DEPOT_FRAC=0.08;
+  const FRONT_FRAC=0.92;
+  sc._depotPx = MAR_L + DEPOT_FRAC*PW;  // px absolu dans l'image source
+  sc._frontPx = MAR_L + FRONT_FRAC*PW;
+  sc._NX=NX; sc._NY=NY;
+
+  const ctx=sc.getContext('2d',{willReadFrequently:true});
+
+  // Fond blanc cassé
+  ctx.fillStyle='#f8f6ee'; ctx.fillRect(0,0,NX,NY);
+
+  // Zone silice (fond plaque)
+  ctx.fillStyle='#fdfcf2';
+  ctx.fillRect(MAR_L,MAR_T,PW,PH);
+
+  // Taches gaussiennes dans la zone plaque
+  // x ∈ [0,10] mappé sur [depotFrac, frontFrac] de PW
+  const xMin=DEPOT_FRAC, xRange=FRONT_FRAC-DEPOT_FRAC;
+  const My=0.5,Sy=0.18;
+  const imgD=ctx.createImageData(PW,PH);
+  const px=imgD.data;
+  for(let row=0;row<PH;row++){
+    const yv=-1+(row/(PH-1))*3;
+    const gy=Math.exp(-((yv-My)*(yv-My))/(2*Sy*Sy));
+    for(let col=0;col<PW;col++){
+      // position normalisée dans la plaque → position en cm
+      const frac=col/PW; // 0..1 dans plaque
+      const xCm=(frac-xMin)/xRange*10; // cm
+      let val=0;
+      for(let k=0;k<Mx.length;k++){
+        val+=Ax[k]*Math.exp(-((xCm-Mx[k])*(xCm-Mx[k]))/(2*Sx[k]*Sx[k]))*gy;
+      }
+      const t=Math.max(0,Math.min(1,.5-val*.38));
+      const[r,g,b]=rdbu(t);
+      const idx=(row*PW+col)*4;
+      px[idx]=r;px[idx+1]=g;px[idx+2]=b;px[idx+3]=255;
+    }
+  }
+  ctx.putImageData(imgD,MAR_L,MAR_T);
+
+  // Cadre physique plaque
+  ctx.strokeStyle='#222';ctx.lineWidth=1.5;
+  ctx.strokeRect(MAR_L,MAR_T,PW,PH);
+
+  // Ligne de dépôt (trait vertical plein dans la plaque)
+  const dX=MAR_L+DEPOT_FRAC*PW;
+  ctx.strokeStyle='#444';ctx.lineWidth=1;ctx.setLineDash([]);
+  ctx.beginPath();ctx.moveTo(dX,MAR_T+2);ctx.lineTo(dX,MAR_T+PH-2);ctx.stroke();
+  // Annotation
+  ctx.fillStyle='#333';ctx.font='bold 10px sans-serif';ctx.textAlign='center';
+  ctx.fillText('ligne de dépôt',dX,MAR_T-6);
+  // petite flèche vers le bas
+  ctx.beginPath();ctx.moveTo(dX,MAR_T-5);ctx.lineTo(dX,MAR_T+1);ctx.stroke();
+
+  // Ligne de front (trait vertical plein dans la plaque)
+  const fX=MAR_L+FRONT_FRAC*PW;
+  ctx.strokeStyle='#444';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(fX,MAR_T+2);ctx.lineTo(fX,MAR_T+PH-2);ctx.stroke();
+  ctx.fillStyle='#333';ctx.font='bold 10px sans-serif';ctx.textAlign='center';
+  ctx.fillText("front de l'éluant",fX,MAR_T-6);
+  ctx.beginPath();ctx.moveTo(fX,MAR_T-5);ctx.lineTo(fX,MAR_T+1);ctx.stroke();
+
+  // Double flèche ↔ 10 cm
+  const arrY=MAR_T+PH+16;
+  ctx.strokeStyle='#444';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(dX,arrY);ctx.lineTo(fX,arrY);ctx.stroke();
+  arrowH(ctx,dX,arrY,'l');arrowH(ctx,fX,arrY,'r');
+  ctx.fillStyle='#333';ctx.font='11px sans-serif';ctx.textAlign='center';
+  ctx.fillText('10 cm',(dX+fX)/2,arrY+12);
+
+  // Titre
+  ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.fillStyle='#111';
+  ctx.fillText('CCM',NX/2,14);
+}
+function arrowH(ctx,x,y,d){
+  const s=5;ctx.beginPath();
+  if(d==='l'){ctx.moveTo(x,y);ctx.lineTo(x+s,y-s*.55);ctx.lineTo(x+s,y+s*.55);}
+  else{ctx.moveTo(x,y);ctx.lineTo(x-s,y-s*.55);ctx.lineTo(x-s,y+s*.55);}
+  ctx.closePath();ctx.fillStyle='#444';ctx.fill();
+}
+
+/* ── Layout ── */
+function getLayout(){
+  const hH=document.getElementById('header').offsetHeight;
+  const aH=window.innerHeight-hH-16;
+  const aW=window.innerWidth-16;
+  const animW=Math.round(Math.min(200,aW*.16));
+  const anaW=aW-animW-18;
+  // CCM : ratio 700:160 = 4.375 → hauteur max 28% de aH
+  const ccmH=Math.round(Math.min(aH*.28, anaW/4.375));
+  const ccmW=anaW;
+  const infoH=22;
+  const legH=22;
+  const graphH=aH-ccmH-infoH-legH-10;
+  return{animW,animH:aH,ccmW,ccmH,graphW:anaW,graphH};
+}
+
+/* ── État ── */
+const S={
+  loaded:false,phase:'idle',prog:0,animStart:null,DUR:5000,
+  Mx:[],Ax:[],Sx:[],
+  srcW:700,srcH:160,
+  dispW:0,dispH:0,scaleX:1,scaleY:1,
+  cursorY:0,   // curseur vert (horizontal, ↕)
+  zeroX:0,     // repère dépôt (vertical, rouge) — à placer par l'élève
+  tenX:0,      // repère front (vertical, bleu) — à placer par l'élève
+  gCursorX:0,  // curseur lecture (vertical, ambre)
+  dragging:null,HIT:10,
+};
+function clamp(v,a,b){return v<a?a:v>b?b:v;}
+
+/* ══ BÉCHER ══ */
+const animC=document.getElementById('canvas-anim');
+const aC=animC.getContext('2d');
+
+function drawBeaker(prog){
+  const W=animC.width,H=animC.height;
+  aC.clearRect(0,0,W,H);
+  aC.fillStyle='#fafaf5';aC.fillRect(0,0,W,H);
+  const cx=W/2;
+  const bW=W*.62,bH=H*.50;
+  const bX=cx-bW/2,bY=H*.28,bBot=bY+bH;
+
+  // verre
+  const grd=aC.createLinearGradient(bX,0,bX+bW,0);
+  grd.addColorStop(0,'rgba(160,185,220,.28)');grd.addColorStop(.5,'rgba(220,235,255,.04)');grd.addColorStop(1,'rgba(160,185,220,.28)');
+  aC.fillStyle=grd;aC.fillRect(bX,bY,bW,bH);
+  aC.strokeStyle='#5566aa';aC.lineWidth=2;aC.lineJoin='round';
+  aC.beginPath();aC.moveTo(bX-4,bY-4);aC.lineTo(bX,bY);aC.lineTo(bX,bBot);aC.lineTo(bX+bW,bBot);aC.lineTo(bX+bW,bY);aC.lineTo(bX+bW+4,bY-4);aC.stroke();
+  aC.lineWidth=3;aC.beginPath();aC.moveTo(bX-2,bBot);aC.lineTo(bX+bW+2,bBot);aC.stroke();
+
+  // graduations
+  aC.strokeStyle='#7788bb';aC.lineWidth=1;
+  aC.font=`${Math.round(W*.026)}px 'Segoe UI',sans-serif`;
+  aC.fillStyle='#7788bb';
+  for(let i=1;i<=3;i++){
+    const gy=bBot-bH*(i*.2);
+    aC.beginPath();aC.moveTo(bX,gy);aC.lineTo(bX+8,gy);aC.stroke();
+    aC.textAlign='left';aC.fillText((i*20)+'mL',bX+bW+5,gy+4);
+  }
+
+  // plaque CCM
+  const pW=bW*.30,pTH=bH*.96;
+  const pX=cx-pW/2,pTopY=bY+bH*.02,pBotY=pTopY+pTH;
+  const pGrd=aC.createLinearGradient(pX,0,pX+pW,0);
+  pGrd.addColorStop(0,'#dddcca');pGrd.addColorStop(.25,'#f7f6ec');pGrd.addColorStop(.75,'#f7f6ec');pGrd.addColorStop(1,'#dddcca');
+  aC.fillStyle=pGrd;aC.fillRect(pX,pTopY,pW,pTH);
+  aC.strokeStyle='#88886a';aC.lineWidth=1.2;aC.strokeRect(pX,pTopY,pW,pTH);
+
+  // ligne dépôt dans plaque
+  const depotFrac=.10;
+  const depotY=pBotY-pTH*depotFrac;
+  aC.strokeStyle='#666';aC.lineWidth=.8;aC.setLineDash([2,2]);
+  aC.beginPath();aC.moveTo(pX+2,depotY);aC.lineTo(pX+pW-2,depotY);aC.stroke();
+  aC.setLineDash([]);
+  aC.fillStyle='#555';aC.font=`${Math.round(W*.024)}px 'Segoe UI',sans-serif`;
+  aC.textAlign='right';aC.fillText('dépôt',pX-3,depotY+4);
+
+  // taches dépôt
+  const nT=S.Mx.length;
+  for(let k=0;k<nT;k++){
+    const tG=aC.createRadialGradient(cx,depotY,0,cx,depotY,pW*.14);
+    tG.addColorStop(0,'rgba(0,25,100,.4)');tG.addColorStop(1,'rgba(0,25,100,0)');
+    aC.beginPath();aC.ellipse(cx,depotY,pW*.14,pW*.07,0,0,2*Math.PI);
+    aC.fillStyle=tG;aC.fill();
+  }
+
+  // solvant : niveau juste sous la ligne de dépôt
+  const solH=bH*.09;
+  const solY=bBot-solH;
+  aC.fillStyle='rgba(90,155,215,.18)';aC.fillRect(bX+2,solY,bW-4,solH);
+  // surface animée
+  aC.strokeStyle='rgba(50,115,195,.50)';aC.lineWidth=1;
+  aC.beginPath();
+  for(let x=bX+2;x<=bX+bW-2;x+=2){
+    const w=Math.sin(x*.18+Date.now()*.003)*.6;
+    if(x===bX+2)aC.moveTo(x,solY+w);else aC.lineTo(x,solY+w);
+  }
+  aC.stroke();
+  aC.fillStyle='#3a78b8';aC.font=`${Math.round(W*.025)}px 'Segoe UI',sans-serif`;
+  aC.textAlign='right';aC.fillText('solvant',bX-3,solY+solH*.6+4);
+
+  // montée solvant + taches
+  if(prog>0){
+    const usH=pTH*(1-depotFrac-.04);
+    const frontY=depotY-prog*usH;
+    // zone mouillée
+    const wG=aC.createLinearGradient(0,frontY,0,depotY);
+    wG.addColorStop(0,'rgba(90,165,240,.05)');wG.addColorStop(1,'rgba(90,165,240,.16)');
+    aC.fillStyle=wG;aC.fillRect(pX+2,frontY,pW-4,depotY-frontY);
+    // taches migrantes
+    for(let k=0;k<nT;k++){
+      const rf=S.Mx[k]/10;
+      const tY=depotY-Math.min(prog,1)*rf*usH;
+      const alpha=Math.min(1,prog*2.5);
+      const r=pW*.13;
+      const tG=aC.createRadialGradient(cx,tY,0,cx,tY,r*2.4);
+      tG.addColorStop(0,`rgba(0,28,105,${.58*alpha})`);
+      tG.addColorStop(.5,`rgba(0,28,105,${.22*alpha})`);
+      tG.addColorStop(1,'rgba(0,28,105,0)');
+      aC.beginPath();aC.ellipse(cx,tY,r*2.5,r*.82,0,0,2*Math.PI);
+      aC.fillStyle=tG;aC.fill();
+    }
+    // ligne de front
+    aC.strokeStyle='rgba(0,45,175,.6)';aC.lineWidth=1.4;aC.setLineDash([]);
+    aC.beginPath();aC.moveTo(pX+2,frontY);aC.lineTo(pX+pW-2,frontY);aC.stroke();
+    if(prog>.05){
+      aC.fillStyle='#0033bb';aC.font=`${Math.round(W*.024)}px 'Segoe UI',sans-serif`;
+      aC.textAlign='left';aC.fillText('← front',pX+pW+3,frontY+4);
+    }
+  }
+
+  // titre
+  aC.fillStyle='#111122';aC.font=`bold ${Math.round(W*.030)}px 'Segoe UI',sans-serif`;
+  aC.textAlign='center';
+  if(prog>=.99){
+    aC.fillStyle='#2d6a2d';
+    aC.fillText('Migration terminée ✓',cx,bY-10);
+  } else {
+    aC.fillText('Dispositif expérimental',cx,bY-10);
+  }
+}
+
+function animLoop(ts){
+  if(S.phase!=='animating')return;
+  if(!S.animStart)S.animStart=ts;
+  S.prog=Math.min(1,(ts-S.animStart)/S.DUR);
+  drawBeaker(S.prog);
+  if(S.prog<1){requestAnimationFrame(animLoop);}
+  else{
+    S.phase='done';
+    document.getElementById('btn-start').textContent='✓ Terminé';
+    document.getElementById('btn-start').disabled=true;
+    buildSource(S.Mx,S.Ax,S.Sx);
+    initAnalyse();
+    document.getElementById('panel-analyse').classList.add('visible');
+  }
+}
+
+/* ══ ANALYSE ══ */
+const ccmC=document.getElementById('ccmCanvas');
+const graphC=document.getElementById('graphCanvas');
+const srcC=document.getElementById('sourceCanvas');
+const cc=ccmC.getContext('2d');
+const gc=graphC.getContext('2d');
+const sc2=srcC.getContext('2d',{willReadFrequently:true});
+
+function initAnalyse(){
+  const L=getLayout();
+  S.dispW=L.ccmW; S.dispH=L.ccmH;
+  S.scaleX=S.srcW/S.dispW; S.scaleY=S.srcH/S.dispH;
+  ccmC.width=S.dispW; ccmC.height=S.dispH;
+  graphC.width=L.graphW; graphC.height=L.graphH;
+
+  // Curseur vert : centré verticalement
+  S.cursorY=Math.round(S.dispH*.50);
+
+  // Repères rouge/bleu : placés n'importe où (10% et 90%), l'élève calibre
+  S.zeroX=Math.round(S.dispW*.10);
+  S.tenX=Math.round(S.dispW*.90);
+
+  // Curseur lecture : milieu
+  S.gCursorX=Math.round(S.dispW*.50);
+
+  S.loaded=true;
+  render();
+}
+
+/* ── Rendu CCM ──
+   Important : on dessine l'image source ENTIÈRE sur le canvas d'affichage.
+   Le mapping pixel est donc direct : pixel (x,y) du display → même fraction
+   dans la source. Pas de crop, pas de décalage.
+*/
+function render(){
+  if(!S.loaded)return;
+  cc.clearRect(0,0,S.dispW,S.dispH);
+  // Image source entière → canvas display entier
+  cc.drawImage(srcC,0,0,S.srcW,S.srcH,0,0,S.dispW,S.dispH);
+
+  // Repère 0 cm (dépôt) — rouge pointillé
+  drawVDash(S.zeroX,'#cc2200',2,'0 cm');
+  // Repère 10 cm (front) — bleu pointillé
+  drawVDash(S.tenX,'#0044cc',2,'10 cm');
+  // Curseur vert horizontal (analyse)
+  drawHCursor(S.cursorY,'#2d6a2d');
+  // Curseur lecture ambre pointillé fin
+  drawVDashThin(S.gCursorX,'#8b5e00');
+
+  updateGraph();
+}
+
+function drawVDash(x,color,lw,label){
+  cc.save();
+  cc.setLineDash([6,4]);cc.strokeStyle=color;cc.lineWidth=lw;cc.globalAlpha=.9;
+  cc.beginPath();cc.moveTo(x,0);cc.lineTo(x,S.dispH);cc.stroke();
+  cc.setLineDash([]);cc.globalAlpha=1;
+  cc.font=`bold ${Math.max(9,Math.round(S.dispH*.12))}px 'Segoe UI',sans-serif`;
+  const tw=cc.measureText(label).width;
+  const bx=x-tw/2-4,by=2,bw=tw+8,bh=15;
+  cc.fillStyle=color;rRect(cc,bx,by,bw,bh,3);cc.fill();
+  cc.fillStyle='#fff';cc.textAlign='center';cc.fillText(label,x,by+11);
+  cc.restore();
+}
+function drawVDashThin(x,color){
+  cc.save();cc.setLineDash([4,3]);cc.strokeStyle=color;cc.lineWidth=1.5;cc.globalAlpha=.75;
+  cc.beginPath();cc.moveTo(x,0);cc.lineTo(x,S.dispH);cc.stroke();cc.restore();
+}
+function drawHCursor(y,color){
+  cc.save();cc.strokeStyle=color;cc.lineWidth=1.8;cc.globalAlpha=.88;
+  cc.beginPath();cc.moveTo(0,y);cc.lineTo(S.dispW,y);cc.stroke();
+  cc.fillStyle=color;
+  tri(cc,0,y,14,y-5,14,y+5);cc.fill();
+  tri(cc,S.dispW,y,S.dispW-14,y-5,S.dispW-14,y+5);cc.fill();
+  cc.restore();
+}
+function tri(ctx,x1,y1,x2,y2,x3,y3){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.lineTo(x3,y3);ctx.closePath();}
+function rRect(ctx,x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
+}
+
+/* ── Densitométrie ──
+   CRUCIAL : getAbsRow lit la ligne du SOURCE canvas correspondant
+   au curseur vert sur le DISPLAY canvas.
+   ySrc = cursorY * (srcH/dispH)  → pas de décalage.
+*/
+function getCm(xD){
+  const span=S.tenX-S.zeroX;
+  if(Math.abs(span)<5)return null;
+  return(xD-S.zeroX)/span*10;
+}
+
+function getAbsRow(yDisp){
+  if(!S.loaded)return null;
+  // Coordonnée dans l'image source
+  const ySrc=Math.min(Math.round(yDisp*(S.srcH/S.dispH)),S.srcH-1);
+  const imgD=sc2.getImageData(0,ySrc,S.srcW,1);
+  const px=imgD.data;
+  const abs=new Float32Array(S.dispW);
+  for(let xD=0;xD<S.dispW;xD++){
+    // Coordonnée source correspondante
+    const xSrc=Math.min(Math.round(xD*(S.srcW/S.dispW)),S.srcW-1);
+    const i=xSrc*4;
+    const L=.299*px[i]+.587*px[i+1]+.114*px[i+2];
+    abs[xD]=100-(L/255*100);
+  }
+  return abs;
+}
+
+/* ── Graphique ── */
+function updateGraph(){
+  const gW=graphC.width,gH=graphC.height;
+  gc.fillStyle='#fafaf5';gc.fillRect(0,0,gW,gH);
+  const abs=getAbsRow(S.cursorY);
+  if(!abs||abs.length<2)return;
+
+  const mL=40,mR=14,mT=14,mB=30;
+  const pW=gW-mL-mR,pH=gH-mT-mB;
+
+  gc.save();gc.font=`10px 'Segoe UI',sans-serif`;
+
+  // Grilles horizontales (absorption %)
+  gc.setLineDash([2,3]);gc.lineWidth=.8;
+  for(let a=0;a<=100;a+=25){
+    const yPx=mT+pH-(a/100)*pH;
+    gc.strokeStyle=a===0?'#aaa':'#e0dfd4';gc.lineWidth=a===0?1:.7;
+    gc.beginPath();gc.moveTo(mL,yPx);gc.lineTo(mL+pW,yPx);gc.stroke();
+    gc.fillStyle='#666655';gc.textAlign='right';gc.fillText(a+'%',mL-4,yPx+3.5);
+  }
+
+  // Grilles verticales (cm) — dynamiques selon zeroX/tenX
+  const span=S.tenX-S.zeroX;
+  if(Math.abs(span)>=5){
+    for(let cm=0;cm<=10;cm+=2){
+      const xD=S.zeroX+cm*span/10;
+      const xPx=mL+(xD/(S.dispW-1))*pW;
+      if(xPx<mL-2||xPx>mL+pW+2)continue;
+      gc.strokeStyle=(cm===0||cm===10)?'#aaa':'#e0dfd4';
+      gc.lineWidth=(cm===0||cm===10)?1:.7;
+      gc.beginPath();gc.moveTo(xPx,mT);gc.lineTo(xPx,mT+pH);gc.stroke();
+      gc.fillStyle='#666655';gc.textAlign='center';
+      gc.fillText(cm+' cm',xPx,mT+pH+14);
+    }
+  }
+  gc.setLineDash([]);
+
+  // Cadre
+  gc.strokeStyle='#8888a0';gc.lineWidth=1.2;gc.strokeRect(mL,mT,pW,pH);
+
+  // Labels axes
+  gc.fillStyle='#444455';gc.textAlign='center';
+  gc.fillText('Position (cm)',mL+pW/2,gH-2);
+  gc.save();gc.translate(12,mT+pH/2);gc.rotate(-Math.PI/2);
+  gc.fillText('Absorption (%)',0,0);gc.restore();
+  gc.font=`bold 10px 'Segoe UI',sans-serif`;gc.fillStyle='#222233';
+  gc.textAlign='center';gc.fillText('Profil densitométrique',mL+pW/2,mT-2);
+  gc.restore();
+
+  // Remplissage + courbe
+  gc.save();
+  gc.beginPath();
+  for(let xD=0;xD<abs.length;xD++){
+    const xPx=mL+(xD/(abs.length-1))*pW;
+    const yPx=mT+pH-(abs[xD]/100)*pH;
+    if(xD===0)gc.moveTo(xPx,yPx);else gc.lineTo(xPx,yPx);
+  }
+  gc.lineTo(mL+pW,mT+pH);gc.lineTo(mL,mT+pH);gc.closePath();
+  gc.fillStyle='rgba(0,50,150,.06)';gc.fill();
+  gc.beginPath();
+  for(let xD=0;xD<abs.length;xD++){
+    const xPx=mL+(xD/(abs.length-1))*pW;
+    const yPx=mT+pH-(abs[xD]/100)*pH;
+    if(xD===0)gc.moveTo(xPx,yPx);else gc.lineTo(xPx,yPx);
+  }
+  gc.strokeStyle='#0044cc';gc.lineWidth=1.6;gc.lineJoin='round';gc.stroke();
+  gc.restore();
+
+  // Curseur lecture
+  const gIdx=Math.max(0,Math.min(S.gCursorX,abs.length-1));
+  const gAbsV=abs[gIdx];
+  const gCm=getCm(S.gCursorX);
+  const gxPx=mL+(S.gCursorX/(S.dispW-1))*pW;
+  const gyPx=mT+pH-(gAbsV/100)*pH;
+  gc.save();
+  gc.strokeStyle='#8b5e00';gc.lineWidth=1.2;gc.setLineDash([5,3]);
+  gc.beginPath();gc.moveTo(gxPx,mT);gc.lineTo(gxPx,mT+pH);gc.stroke();
+  gc.setLineDash([]);
+  gc.fillStyle='#8b5e00';gc.beginPath();gc.arc(gxPx,gyPx,4.5,0,2*Math.PI);gc.fill();
+  const tipCm=gCm!==null?`${gCm.toFixed(2)} cm  ·  `:'';
+  const tipTxt=tipCm+`${gAbsV.toFixed(1)}%`;
+  gc.font=`bold 10px 'Segoe UI',sans-serif`;
+  const tw=gc.measureText(tipTxt).width;
+  let tx=gxPx+8;if(tx+tw+8>mL+pW)tx=gxPx-tw-10;
+  const ty=Math.max(gyPx-5,mT+16);
+  gc.fillStyle='rgba(20,15,5,.85)';rRect(gc,tx-4,ty-13,tw+8,17,3);gc.fill();
+  gc.fillStyle='#f0e8c0';gc.textAlign='left';gc.fillText(tipTxt,tx,ty);
+  gc.restore();
+
+  // Info strip
+  document.getElementById('row-label').textContent=`y=${S.cursorY}px`;
+  document.getElementById('gcursor-label').textContent=gCm!==null
+    ?`${gCm.toFixed(3)} cm — abs. ${gAbsV.toFixed(2)}%`
+    :`abs. ${gAbsV.toFixed(2)}%`;
+}
+
+/* ── Interactions ── */
+function rX(e,c){const r=c.getBoundingClientRect();return Math.round((e.clientX-r.left)*(c.width/r.width));}
+function rY(e,c){const r=c.getBoundingClientRect();return Math.round((e.clientY-r.top)*(c.height/r.height));}
+
+ccmC.addEventListener('mousedown',e=>{
+  if(!S.loaded)return;
+  const x=rX(e,ccmC),y=rY(e,ccmC);
+  if     (Math.abs(y-S.cursorY)<=S.HIT)   S.dragging='cursorY';
+  else if(Math.abs(x-S.zeroX)<=S.HIT)     S.dragging='zeroX';
+  else if(Math.abs(x-S.tenX)<=S.HIT)      S.dragging='tenX';
+  else if(Math.abs(x-S.gCursorX)<=S.HIT)  S.dragging='gCursorX';
+  else{S.cursorY=clamp(y,0,S.dispH-1);S.dragging='cursorY';render();}
+});
+ccmC.addEventListener('mousemove',e=>{
+  if(!S.loaded)return;
+  const x=rX(e,ccmC),y=rY(e,ccmC);
+  if(S.dragging){
+    if(S.dragging==='cursorY') S.cursorY=clamp(y,0,S.dispH-1);
+    if(S.dragging==='zeroX')   S.zeroX=clamp(x,0,S.dispW-1);
+    if(S.dragging==='tenX')    S.tenX=clamp(x,0,S.dispW-1);
+    if(S.dragging==='gCursorX')S.gCursorX=clamp(x,0,S.dispW-1);
+    render();
+  }
+  const nH=Math.abs(y-S.cursorY)<=S.HIT;
+  const nV=Math.abs(x-S.zeroX)<=S.HIT||Math.abs(x-S.tenX)<=S.HIT||Math.abs(x-S.gCursorX)<=S.HIT;
+  ccmC.style.cursor=nH?'ns-resize':nV?'ew-resize':'crosshair';
+});
+ccmC.addEventListener('mouseup',()=>S.dragging=null);
+ccmC.addEventListener('mouseleave',()=>S.dragging=null);
+
+graphC.addEventListener('mousedown',e=>{
+  if(!S.loaded)return;
+  const mL=40,pW=graphC.width-40-14;
+  S.gCursorX=clamp(Math.round((rX(e,graphC)-mL)/pW*(S.dispW-1)),0,S.dispW-1);
+  S.dragging='gCursorX';render();
+});
+graphC.addEventListener('mousemove',e=>{
+  if(!S.loaded||S.dragging!=='gCursorX')return;
+  const mL=40,pW=graphC.width-40-14;
+  S.gCursorX=clamp(Math.round((rX(e,graphC)-mL)/pW*(S.dispW-1)),0,S.dispW-1);
+  render();
+});
+graphC.addEventListener('mouseup',()=>S.dragging=null);
+graphC.addEventListener('mouseleave',()=>S.dragging=null);
+
+function addTouch(c){
+  c.addEventListener('touchstart',e=>{e.preventDefault();c.dispatchEvent(new MouseEvent('mousedown',{clientX:e.touches[0].clientX,clientY:e.touches[0].clientY}));},{passive:false});
+  c.addEventListener('touchmove',e=>{e.preventDefault();c.dispatchEvent(new MouseEvent('mousemove',{clientX:e.touches[0].clientX,clientY:e.touches[0].clientY}));},{passive:false});
+  c.addEventListener('touchend',()=>c.dispatchEvent(new MouseEvent('mouseup')));
+}
+addTouch(ccmC);addTouch(graphC);
+
+window.addEventListener('resize',()=>{
+  const L=getLayout();
+  animC.width=L.animW;animC.height=L.animH;drawBeaker(S.prog);
+  if(S.loaded){
+    const ratioW=L.ccmW/S.dispW,ratioH=L.ccmH/S.dispH;
+    S.zeroX=Math.round(S.zeroX*ratioW);
+    S.tenX=Math.round(S.tenX*ratioW);
+    S.gCursorX=Math.round(S.gCursorX*ratioW);
+    S.cursorY=Math.round(S.cursorY*ratioH);
+    S.dispW=L.ccmW;S.dispH=L.ccmH;
+    S.scaleX=S.srcW/S.dispW;S.scaleY=S.srcH/S.dispH;
+    ccmC.width=S.dispW;ccmC.height=S.dispH;
+    graphC.width=L.graphW;graphC.height=L.graphH;
+    render();
+  }
+});
+
+document.getElementById('btn-start').addEventListener('click',()=>{
+  if(S.phase!=='idle')return;
+  S.phase='animating';S.animStart=null;
+  document.getElementById('btn-start').textContent='⏳ Migration…';
+  document.getElementById('btn-start').disabled=true;
+  requestAnimationFrame(animLoop);
+});
+
+/* ── Init ── */
+(()=>{
+  const p=new URLSearchParams(window.location.search).get('param');
+  if(!p){document.getElementById('error-screen').style.display='flex';document.getElementById('main').style.display='none';return;}
+  let d;
+  try{d=decodeParams(p);}catch(e){
+    document.getElementById('error-screen').style.display='flex';
+    document.getElementById('error-msg').textContent='Décodage impossible : '+e.message;
+    document.getElementById('main').style.display='none';return;
+  }
+  const Rf=d.Rf||d.rf,h=d.h||d.hauteurs;
+  if(!Rf||!h||Rf.length!==h.length){
+    document.getElementById('error-screen').style.display='flex';
+    document.getElementById('error-msg').textContent='Rf et h requis, même longueur.';
+    document.getElementById('main').style.display='none';return;
+  }
+  S.Mx=h.map(v=>+v);
+  let seed=Math.round(S.Mx.reduce((a,b)=>a*1000+b,0))%999983;
+  function rand(){seed=(seed*1664525+1013904223)&0xffffffff;return(seed>>>0)/0xffffffff;}
+  S.Ax=S.Mx.map(()=>.7+rand()*1.1);
+  S.Sx=S.Mx.map(()=>.35+rand()*.25);
+  const L=getLayout();
+  animC.width=L.animW;animC.height=L.animH;
+  drawBeaker(0);
+})();
+</script>
+</body>
+</html>
