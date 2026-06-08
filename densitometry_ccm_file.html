@@ -275,7 +275,7 @@ const S = {
 };
 
 // ── Chargement via paramètre URL ?file= ──────────────────────────
-(() => {
+(async () => {
     const params = new URLSearchParams(window.location.search);
     let url = params.get('file');
     if (!url) return; // pas de paramètre → interface classique
@@ -289,41 +289,34 @@ const S = {
     // Afficher l'écran de chargement, masquer la drop zone
     dropZone.style.display      = 'none';
     loadingScreen.style.display = 'flex';
-    loadingMsg.textContent      = 'Chargement de l\'image…';
+    loadingMsg.textContent      = 'Chargement de l\'image\u2026';
 
-    // Chargement direct via <img> — pas de fetch, pas de problème CORS
-    const img = new Image();
-    img.crossOrigin = 'anonymous'; // tente CORS si le serveur le supporte
-    img.onload = () => {
-        loadingScreen.style.display = 'none';
-        S.fromUrl = true;
-        initImage(img);
-    };
-    img.onerror = () => {
-        // Deuxième tentative sans crossOrigin (pour les URLs qui refusent CORS
-        // mais autorisent l'affichage direct — l'image sera tainted côté canvas)
-        const img2 = new Image();
-        img2.onload = () => {
+    // Proxy CORS pour contourner le canvas tainted
+    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+
+    try {
+        const resp = await fetch(proxyUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        const objectURL = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            URL.revokeObjectURL(objectURL);
             loadingScreen.style.display = 'none';
             S.fromUrl = true;
-            try {
-                initImage(img2);
-            } catch(e) {
-                showLoadingError(
-                    'Image chargée mais bloquée par la politique de sécurité du navigateur (canvas tainted).<br>' +
-                    'Hébergez l\'image sur GitHub ou un serveur avec en-tête CORS.'
-                );
-            }
+            initImage(img);
         };
-        img2.onerror = () => {
-            showLoadingError(
-                'Impossible de charger l\'image.<br>' +
-                'Vérifiez que l\'URL est accessible publiquement.'
-            );
+        img.onerror = () => {
+            URL.revokeObjectURL(objectURL);
+            showLoadingError('Impossible de décoder l\'image.');
         };
-        img2.src = url;
-    };
-    img.src = url;
+        img.src = objectURL;
+    } catch(e) {
+        showLoadingError(
+            `Erreur de chargement : ${e.message}<br>` +
+            `Vérifiez que l'URL est accessible publiquement.`
+        );
+    }
 })();
 
 function showLoadingError(msg) {
