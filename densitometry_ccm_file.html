@@ -292,7 +292,8 @@ const S = {
     loadingMsg.textContent      = 'Chargement de l\'image\u2026';
 
     // Proxy CORS pour contourner le canvas tainted
-    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+    // allorigins retourne un JSON {contents: base64} pour les binaires
+    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
 
     try {
         const resp = await fetch(proxyUrl);
