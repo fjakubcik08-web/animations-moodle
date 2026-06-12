@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><title>Des radioactifs</title>
+<style>
+body{font-family:sans-serif;padding:1rem;max-width:900px;margin:auto}
+h2{margin-bottom:1.5rem}
+.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:1.2rem}
+.cg{display:flex;flex-direction:column;gap:4px}
+.cg label{font-size:13px;color:#888}
+.cg input,.cg select{width:140px;padding:4px 6px;border-radius:6px;border:1px solid #ccc}
+.die-select-row{display:flex;align-items:center;gap:12px}
+.die-select-row select{width:200px;padding:4px 6px;border-radius:6px;border:1px solid #ccc}
+.btn-row{display:flex;gap:8px;margin-bottom:1.2rem;flex-wrap:wrap;align-items:center}
+button{padding:6px 14px;border-radius:6px;border:1px solid #ccc;background:#f5f5f5;cursor:pointer;font-size:13px}
+button:hover{background:#e8e8e8}
+button:disabled{opacity:0.4;cursor:default}
+.toggle-btn{display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:6px;border:1.5px solid #ccc;background:#f5f5f5;cursor:pointer;font-size:13px;user-select:none;transition:all .2s}
+.toggle-btn.on{border-color:#E24B4A;background:#fff0f0;color:#A32D2D}
+.toggle-dot{width:12px;height:12px;border-radius:50%;background:#ccc;transition:background .2s}
+.toggle-btn.on .toggle-dot{background:#E24B4A}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:1.2rem}
+.sc{background:#f5f7fa;border-radius:8px;padding:10px 12px}
+.sc .lbl{font-size:11px;color:#888;margin-bottom:2px}
+.sc .val{font-size:20px;font-weight:600;color:#111}
+.dice-zone{display:flex;flex-wrap:wrap;gap:5px;min-height:56px;padding:10px;background:#f5f7fa;border-radius:10px;border:1px solid #e0e0e0;margin-bottom:1.2rem;align-items:center}
+.die-icon{width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:1.5px solid}
+.die-icon.alive{background:#B5D4F4;border-color:#378ADD;color:#042C53}
+.die-icon.dead{background:#F7C1C1;border-color:#E24B4A;color:#501313;opacity:0.5;transform:scale(0.85)}
+/* zone graphique avec minimap */
+.chart-outer{position:relative;width:100%;height:320px;margin-bottom:.8rem}
+#graphe{width:100%;height:100%}
+#minimap{position:absolute;top:10px;right:10px;width:160px;height:80px;border-radius:8px;cursor:crosshair;
+  box-shadow:0 2px 8px rgba(0,0,0,0.18);display:none;}
+.stop-lbl{font-size:13px;color:#993C1D;margin-bottom:1rem;min-height:18px}
+.tbl-wrap{max-height:240px;overflow-y:auto;margin-bottom:1rem}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:5px 8px;border-bottom:1px solid #e0e0e0;color:#888;font-weight:500;position:sticky;top:0;background:#fff}
+td{padding:4px 8px;border-bottom:.5px solid #eee;color:#222}
+tr.st td{background:#FAECE7;font-weight:600}
+.preset{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+.preset button{font-size:12px;padding:2px 8px}
+</style>
+</head>
+<body>
+<h2>Simulation -- Des radioactifs</h2>
+
+<div class="controls">
+  <div class="cg">
+    <label>Nombre de des initial</label>
+    <input type="number" id="nbDes" min="5" max="1000000" value="30">
+    <div class="preset">
+      <button onclick="setN(300)">300</button>
+      <button onclick="setN(1000)">1 000</button>
+      <button onclick="setN(10000)">10 000</button>
+      <button onclick="setN(100000)">100 000</button>
+      <button onclick="setN(500000)">500 000</button>
+      <button onclick="setN(1000000)">1 000 000</button>
+    </div>
+  </div>
+  <div class="cg">
+    <label>Face desintegrante</label>
+    <div class="die-select-row">
+      <select id="nbFaces" onchange="onDieChange()">
+        <option value="4">D4 -- 4 faces</option>
+        <option value="6" selected>D6 -- 6 faces</option>
+        <option value="8">D8 -- 8 faces</option>
+        <option value="10">D10 -- 10 faces</option>
+        <option value="12">D12 -- 12 faces</option>
+        <option value="20">D20 -- 20 faces</option>
+        <option value="100">D100 -- 100 faces</option>
+      </select>
+      <div id="dieImg"></div>
+    </div>
+  </div>
+  <div class="cg">
+    <label>Vitesse</label>
+    <select id="vitesse">
+      <option value="800">Lente</option>
+      <option value="350">Normale</option>
+      <option value="80" selected>Rapide</option>
+      <option value="0">Instantanee</option>
+    </select>
+  </div>
+</div>
+
+<div class="btn-row">
+  <button id="btnStart" onclick="startSim()">&#9654; Lancer</button>
+  <button onclick="resetSim()">&#8635; Reinitialiser</button>
+  <button class="toggle-btn" id="toggleDesint" onclick="toggleDesintegres()">
+    <span class="toggle-dot"></span>
+    <span id="toggleLabel">Afficher desintegres</span>
+  </button>
+</div>
+
+<div class="stats">
+  <div class="sc"><div class="lbl">Lancer n</div><div class="val" id="sL">0</div></div>
+  <div class="sc"><div class="lbl">Des restants</div><div class="val" id="sR">--</div></div>
+  <div class="sc"><div class="lbl">Desintegres</div><div class="val" id="sD">0</div></div>
+</div>
+
+<div class="dice-zone" id="diceZone"></div>
+
+<div class="chart-outer">
+  <canvas id="graphe"></canvas>
+  <canvas id="minimap"></canvas>
+  <button id="btnDezoom" onclick="resetZoomMM()" style="display:none;position:absolute;top:94px;right:10px;font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid #aaa;background:rgba(245,247,250,0.92);cursor:pointer;">&#8596; Vue complete</button>
+</div>
+
+<div class="stop-lbl" id="stopLine"></div>
+
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+  <span style="font-size:13px;color:#888;font-weight:500">Tableau de valeurs</span>
+  <button onclick="copierCSV()" style="font-size:12px;padding:3px 10px">&#128203; Copier CSV</button>
+  <button onclick="telechargerCSV()" style="font-size:12px;padding:3px 10px">&#8659; Telecharger CSV</button>
+  <span style="font-size:11px;color:#aaa">Separateur : point-virgule -- compatible Calc / Excel</span>
+</div>
+<div class="tbl-wrap">
+  <table>
+    <thead><tr>
+      <th style="text-align:right">
+        <label style="display:flex;align-items:center;justify-content:flex-end;gap:5px;cursor:pointer;font-weight:500">
+          <input type="checkbox" id="chkLancer" checked onchange="toggleColLancer()">
+          Lancer
+        </label>
+      </th>
+      <th style="text-align:right">
+        <label style="display:flex;align-items:center;justify-content:flex-end;gap:5px;cursor:pointer;font-weight:500">
+          <input type="checkbox" id="chkDesint" checked onchange="toggleColDesint()">
+          Desintegres
+        </label>
+      </th>
+      <th style="text-align:right" id="thRestants">Restants (D6)</th>
+      <th></th>
+    </tr></thead>
+    <tbody id="tbody"><tr><td colspan="4" style="color:#aaa;padding:10px 8px">Lance la simulation...</td></tr></tbody>
+  </table>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+var DIE_COLORS = {4:'#7B4FBF', 6:'#185FA5', 8:'#1A7A4A', 10:'#B5670A', 12:'#A32D2D', 20:'#0A6B6B', 100:'#444444'};
+var showDesint = false;
+
+/* ── SVG 3D des ─────────────────────────────────────────────────── */
+function svgDie(faces) {
+    var c = DIE_COLORS[faces] || '#185FA5';
+    function darker(hex) {
+        var n = parseInt(hex.slice(1), 16);
+        var r = Math.max(0, ((n >> 16) & 255) - 50);
+        var g = Math.max(0, ((n >> 8)  & 255) - 50);
+        var b = Math.max(0, ( n        & 255) - 50);
+        return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+    var dk = darker(c);
+    var body = '', lbl = '';
+    var tA = 'text-anchor="middle" font-weight="bold" fill="white" font-family="sans-serif"';
+    if (faces == 4) {
+        body = '<polygon points="50,8 90,85 10,85" fill="'+c+'"/>'
+             + '<polygon points="50,8 90,85 96,91 56,96 50,8" fill="'+dk+'"/>'
+             + '<polygon points="50,8 10,85 4,91 44,96 50,8" fill="'+dk+'"/>'
+             + '<polygon points="10,85 4,91 96,91 90,85" fill="'+dk+'" opacity="0.7"/>';
+        lbl = '<text x="50" y="76" '+tA+' font-size="19">D4</text>';
+    } else if (faces == 6) {
+        body = '<polygon points="50,10 85,30 85,70 50,90 15,70 15,30" fill="'+c+'"/>'
+             + '<polygon points="50,10 85,30 85,70 50,50" fill="'+dk+'"/>'
+             + '<polygon points="50,50 85,70 50,90 15,70" fill="'+dk+'" opacity="0.8"/>'
+             + '<polygon points="50,10 15,30 15,70 50,50" fill="'+c+'" opacity="0.85"/>';
+        lbl = '<text x="50" y="57" '+tA+' font-size="18">D6</text>';
+    } else if (faces == 8) {
+        body = '<polygon points="50,5 88,50 50,65" fill="'+c+'"/>'
+             + '<polygon points="50,5 12,50 50,65" fill="'+dk+'"/>'
+             + '<polygon points="50,65 88,50 50,95" fill="'+dk+'"/>'
+             + '<polygon points="50,65 12,50 50,95" fill="'+dk+'" opacity="0.7"/>';
+        lbl = '<text x="50" y="58" '+tA+' font-size="18">D8</text>';
+    } else if (faces == 10) {
+        body = '<polygon points="50,6 91,36 76,88 24,88 9,36" fill="'+c+'"/>'
+             + '<polygon points="76,88 91,36 97,43 81,95" fill="'+dk+'"/>'
+             + '<polygon points="76,88 81,95 19,95 24,88" fill="'+dk+'" opacity="0.75"/>';
+        lbl = '<text x="50" y="62" '+tA+' font-size="17">D10</text>';
+    } else if (faces == 12) {
+        body = '<polygon points="50,5 90,27 90,73 50,95 10,73 10,27" fill="'+c+'"/>'
+             + '<polygon points="90,27 90,73 96,68 96,32" fill="'+dk+'"/>'
+             + '<polygon points="50,95 90,73 96,68 56,91" fill="'+dk+'" opacity="0.75"/>';
+        lbl = '<text x="50" y="58" '+tA+' font-size="17">D12</text>';
+    } else if (faces == 20) {
+        body = '<polygon points="50,6 93,78 7,78" fill="'+c+'"/>'
+             + '<polygon points="50,94 7,22 93,22" fill="'+dk+'" opacity="0.7"/>'
+             + '<polygon points="50,6 93,78 95,85 52,12" fill="'+dk+'" opacity="0.5"/>';
+        lbl = '<text x="50" y="60" '+tA+' font-size="17">D20</text>';
+    } else {
+        body = '<defs><radialGradient id="rg100" cx="38%" cy="35%" r="60%">'
+             + '<stop offset="0%" stop-color="white" stop-opacity="0.4"/>'
+             + '<stop offset="100%" stop-color="'+c+'" stop-opacity="1"/>'
+             + '</radialGradient></defs>'
+             + '<circle cx="50" cy="50" r="44" fill="url(#rg100)" stroke="'+dk+'" stroke-width="2"/>';
+        lbl = '<text x="50" y="57" '+tA+' font-size="15">D100</text>';
+    }
+    return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="64" height="64">'+body+lbl+'</svg>';
+}
+
+function onDieChange() {
+    var faces = parseInt(document.getElementById('nbFaces').value);
+    document.getElementById('dieImg').innerHTML = svgDie(faces);
+    document.getElementById('thRestants').textContent = 'Restants (D' + faces + ')';
+    resetSim();
+}
+
+function toggleDesintegres() {
+    showDesint = !showDesint;
+    var btn = document.getElementById('toggleDesint');
+    document.getElementById('toggleLabel').textContent = showDesint ? 'Masquer desintegres' : 'Afficher desintegres';
+    if (showDesint) btn.classList.add('on'); else btn.classList.remove('on');
+    if (chart) { chart.data.datasets[1].hidden = !showDesint; chart.update(); }
+}
+
+/* ── Minimap ─────────────────────────────────────────────────────── */
+var miniCtx = null;
+var mmW = 160, mmH = 80;
+// fenetre de zoom : indices [zMin, zMax] dans allData
+var zMin = 0, zMax = 0;
+var allLabels = [], allRest = [], allDesint = [];
+var mmDragging = false, mmDragStartX = 0, mmDragStartMin = 0, mmDragStartMax = 0;
+var mmSelecting = false, mmSelX = 0;
+
+function initMinimap() {
+    var mc = document.getElementById('minimap');
+    mc.width = mmW;
+    mc.height = mmH;
+    miniCtx = mc.getContext('2d');
+    zMin = 0; zMax = 0;
+    allLabels = [0]; allRest = [N0]; allDesint = [0];
+    drawMinimap();
+    setupMinimapEvents();
+}
+
+function drawMinimap() {
+    if (!miniCtx) return;
+    var ctx = miniCtx;
+    var W = mmW, H = mmH;
+    var n = allRest.length;
+
+    // fond semi-transparent
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(245,247,250,0.88)';
+    roundRect(ctx, 0, 0, W, H, 8);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.lineWidth = 1;
+    roundRect(ctx, 0, 0, W, H, 8);
+    ctx.stroke();
+
+    if (n < 2) { return; }
+
+    var pad = 8;
+    var maxV = N0;
+    var faces = parseInt(document.getElementById('nbFaces').value);
+    var col = DIE_COLORS[faces] || '#185FA5';
+
+    // courbe restants
+    ctx.beginPath();
+    for (var i = 0; i < n; i++) {
+        var x = pad + (i / (n-1)) * (W - 2*pad);
+        var y = (H - pad) - (allRest[i] / maxV) * (H - 2*pad);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // courbe desintegres si visible
+    if (showDesint) {
+        ctx.beginPath();
+        for (var i = 0; i < n; i++) {
+            var x = pad + (i / (n-1)) * (W - 2*pad);
+            var y = (H - pad) - (allDesint[i] / maxV) * (H - 2*pad);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = '#E24B4A';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+
+    // zone selectionnee
+    var x1 = pad + (zMin / Math.max(1, n-1)) * (W - 2*pad);
+    var x2 = pad + (zMax / Math.max(1, n-1)) * (W - 2*pad);
+    if (zMax > zMin) {
+        ctx.fillStyle = 'rgba(24,95,165,0.18)';
+        ctx.fillRect(x1, 0, x2 - x1, H);
+        ctx.strokeStyle = 'rgba(24,95,165,0.7)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x1, 0, x2 - x1, H);
+    }
+
+    // label
+    ctx.fillStyle = 'rgba(100,100,100,0.7)';
+    ctx.font = '9px sans-serif';
+    ctx.fillText('Vue complete', pad, H - 3);
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.lineTo(x+w-r, y);
+    ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+    ctx.lineTo(x+w, y+h-r);
+    ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+    ctx.lineTo(x+r, y+h);
+    ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+    ctx.lineTo(x, y+r);
+    ctx.quadraticCurveTo(x, y, x+r, y);
+    ctx.closePath();
+}
+
+function mmXtoIndex(mx) {
+    var pad = 8;
+    var n = allRest.length;
+    var frac = (mx - pad) / (mmW - 2*pad);
+    frac = Math.max(0, Math.min(1, frac));
+    return Math.round(frac * (n - 1));
+}
+
+function resetZoomMM() {
+    zMin = 0; zMax = 0;
+    applyZoomFromMM();
+}
+
+function applyZoomFromMM() {
+    if (!chart) return;
+    var n = allLabels.length;
+    if (n < 2 || zMax <= zMin) {
+        chart.options.scales.x.min = undefined;
+        chart.options.scales.x.max = undefined;
+    } else {
+        chart.options.scales.x.min = String(allLabels[zMin]);
+        chart.options.scales.x.max = String(allLabels[zMax]);
+    }
+    chart.update('none');
+    drawMinimap();
+}
+
+function setupMinimapEvents() {
+    var mc = document.getElementById('minimap');
+    mc.onmousedown = function(e) {
+        var rect = mc.getBoundingClientRect();
+        var mx = (e.clientX - rect.left) * (mmW / rect.width);
+        var idx = mmXtoIndex(mx);
+        var n = allRest.length;
+        // clic dans la zone selectionnee = deplacement
+        if (zMax > zMin && idx >= zMin && idx <= zMax) {
+            mmDragging = true;
+            mmDragStartX = mx;
+            mmDragStartMin = zMin;
+            mmDragStartMax = zMax;
+        } else {
+            // nouvelle selection
+            mmSelecting = true;
+            mmSelX = mx;
+            zMin = idx; zMax = idx;
+        }
+        e.preventDefault();
+    };
+    mc.onmousemove = function(e) {
+        var rect = mc.getBoundingClientRect();
+        var mx = (e.clientX - rect.left) * (mmW / rect.width);
+        var n = allRest.length;
+        if (mmSelecting) {
+            var idx = mmXtoIndex(mx);
+            zMin = Math.min(mmXtoIndex(mmSelX), idx);
+            zMax = Math.max(mmXtoIndex(mmSelX), idx);
+            applyZoomFromMM();
+        } else if (mmDragging) {
+            var pad = 8;
+            var dx = mx - mmDragStartX;
+            var dIdx = Math.round(dx / (mmW - 2*pad) * (n-1));
+            var span = mmDragStartMax - mmDragStartMin;
+            zMin = Math.max(0, Math.min(n-1-span, mmDragStartMin + dIdx));
+            zMax = zMin + span;
+            applyZoomFromMM();
+        }
+    };
+    var endDrag = function() { mmDragging = false; mmSelecting = false; };
+    mc.onmouseup = endDrag;
+    mc.onmouseleave = endDrag;
+    // double-clic = reset zoom
+    mc.ondblclick = function() { resetZoomMM(); };
+    // tooltip
+    mc.title = 'Glissez pour zoomer -- Double-clic pour tout afficher';
+}
+
+/* ── Simulation ──────────────────────────────────────────────────── */
+var N0 = 30, restants = 0, totalDesint = 0, lancerCount = 0;
+var running = false, stepTimer = null, chart = null, firstRow = true;
+var MAX_DISP = 120;
+
+function seuil() { return Math.max(1, Math.floor(N0 / 25)); }
+function setN(v) { document.getElementById('nbDes').value = v; resetSim(); }
+function fmt(n)  { return n >= 1000 ? n.toLocaleString('fr-FR') : String(n); }
+
+function initChart() {
+    if (chart) chart.destroy();
+    var ctx = document.getElementById('graphe').getContext('2d');
+    var pr = N0 > 50000 ? 2 : N0 > 5000 ? 3 : 5;
+    var faces = parseInt(document.getElementById('nbFaces').value);
+    var col = DIE_COLORS[faces] || '#185FA5';
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: ['0'],
+            datasets: [
+                {
+                    label: 'Des restants', data: [N0],
+                    borderColor: col, backgroundColor: col + '18',
+                    fill: true, tension: 0.1,
+                    pointRadius: pr, pointHoverRadius: pr+2,
+                    pointBackgroundColor: col, pointBorderColor: '#fff', pointBorderWidth: 1.5,
+                    borderWidth: 2, hidden: false
+                },
+                {
+                    label: 'Desintegres cumules', data: [0],
+                    borderColor: '#E24B4A', backgroundColor: 'rgba(226,75,74,0.07)',
+                    fill: true, tension: 0.1,
+                    pointRadius: pr, pointHoverRadius: pr+2,
+                    pointBackgroundColor: '#E24B4A', pointBorderColor: '#fff', pointBorderWidth: 1.5,
+                    borderWidth: 2, hidden: true
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            animation: { duration: N0 > 10000 ? 0 : 120 },
+            scales: {
+                x: { type: 'category', title: { display: true, text: 'Numero de lancer', font: { size: 12 }, color: '#888' }, ticks: { maxTicksLimit: 14 } },
+                y: { min: 0, beginAtZero: true, title: { display: true, text: 'Nombre de des', font: { size: 12 }, color: '#888' } }
+            },
+            plugins: {
+                legend: { display: true, labels: { boxWidth: 14, font: { size: 12 } } },
+                tooltip: { callbacks: {
+                    title: function(l) { return 'Lancer n' + l[0].label; },
+                    label: function(l) { return l.dataset.label + ' : ' + fmt(Math.round(l.raw)); }
+                }}
+            }
+        }
+    });
+}
+
+function addPoint(l, r, d) {
+    allLabels.push(l); allRest.push(r); allDesint.push(d);
+    chart.data.labels.push(String(l));
+    chart.data.datasets[0].data.push(r);
+    chart.data.datasets[1].data.push(d);
+    chart.update('none');
+    drawMinimap();
+}
+
+function renderDice() {
+    var z = document.getElementById('diceZone'); z.innerHTML = '';
+    var faces = parseInt(document.getElementById('nbFaces').value);
+    var label = 'D' + faces;
+    if (N0 <= MAX_DISP) {
+        for (var i = 0; i < restants; i++) { var e = document.createElement('div'); e.className = 'die-icon alive'; e.textContent = label; z.appendChild(e); }
+        var dead = Math.min(N0 - restants, 80);
+        for (var j = 0; j < dead; j++) { var f = document.createElement('div'); f.className = 'die-icon dead'; f.textContent = 'x'; z.appendChild(f); }
+    } else {
+        z.innerHTML = '<span style="font-size:15px">Actifs : <b>' + fmt(restants) + '</b> &nbsp;|&nbsp; Desintegres : <b style="color:#A32D2D">' + fmt(totalDesint) + '</b></span>';
+    }
+}
+
+function updateStats() {
+    document.getElementById('sL').textContent = lancerCount;
+    document.getElementById('sR').textContent = fmt(restants);
+    document.getElementById('sD').textContent = fmt(totalDesint);
+}
+
+function addRow(desint, isStop) {
+    var tb = document.getElementById('tbody');
+    var tr = document.createElement('tr');
+    if (isStop) tr.className = 'st';
+    var note = isStop ? ('arret seuil N0/25 = ' + fmt(seuil())) : '';
+    tr.innerHTML = '<td style="text-align:right">'+lancerCount+'</td>'
+        + '<td style="text-align:right;color:#A32D2D">'+desint+'</td>'
+        + '<td style="text-align:right">'+restants+'</td>'
+        + '<td style="font-size:11px;color:#888">'+note+'</td>';
+    tb.appendChild(tr);
+    tb.parentElement.scrollTop = tb.parentElement.scrollHeight;
+    // appliquer l'etat des coches sur la nouvelle ligne
+    var onL = document.getElementById('chkLancer').checked;
+    var onD = document.getElementById('chkDesint').checked;
+    var cells = tr.children;
+    if (cells.length > 0) { cells[0].style.opacity = onL ? '1' : '0.25'; cells[0].style.textDecoration = onL ? '' : 'line-through'; }
+    if (cells.length > 1) { cells[1].style.opacity = onD ? '1' : '0.25'; cells[1].style.textDecoration = onD ? '' : 'line-through'; }
+}
+
+function doStep() {
+    if (restants <= seuil()) { stopSim(true); return; }
+    lancerCount++;
+    var faces = parseInt(document.getElementById('nbFaces').value);
+    var d;
+    if (N0 > 5000) {
+        var p = 1/faces, mu = restants*p, sig = Math.sqrt(restants*p*(1-p));
+        var z = Math.random()+Math.random()+Math.random()+Math.random()+Math.random()+Math.random()-3;
+        d = Math.max(0, Math.min(restants, Math.round(mu + sig*z)));
+    } else {
+        d = 0;
+        for (var i = 0; i < restants; i++) if (Math.floor(Math.random()*faces) === 0) d++;
+    }
+    restants -= d; totalDesint += d;
+    var isStop = restants <= seuil();
+    updateStats(); addRow(d, isStop); addPoint(lancerCount, restants, totalDesint); renderDice();
+    if (isStop) stopSim(true);
+}
+
+function startSim() {
+    if (running) return;
+    var delay = parseInt(document.getElementById('vitesse').value);
+    running = true;
+    document.getElementById('btnStart').disabled = true;
+    if (delay === 0) { while (running && restants > seuil()) doStep(); stopSim(restants <= seuil()); return; }
+    function loop() { if (!running || restants <= seuil()) { stopSim(restants <= seuil()); return; } doStep(); stepTimer = setTimeout(loop, delay); }
+    loop();
+}
+
+function stepOnce() { if (restants <= seuil()) return; doStep(); }
+
+function stopSim(hit) {
+    running = false; clearTimeout(stepTimer);
+    document.getElementById('btnStart').disabled = false;
+    if (hit) document.getElementById('stopLine').textContent =
+        'Simulation arretee au lancer ' + lancerCount + ' : ' + fmt(restants) + ' des restants (seuil = ' + fmt(seuil()) + ')';
+    // afficher la minimap seulement quand la simulation est terminee
+    document.getElementById('minimap').style.display = 'block';
+    document.getElementById('btnDezoom').style.display = 'block';
+    drawMinimap();
+}
+
+function resetSim() {
+    running = false; clearTimeout(stepTimer);
+    N0 = Math.max(5, Math.min(1000000, parseInt(document.getElementById('nbDes').value) || 30));
+    document.getElementById('nbDes').value = N0;
+    lancerCount = 0; restants = N0; totalDesint = 0; firstRow = true;
+    document.getElementById('sL').textContent = '0';
+    document.getElementById('sR').textContent = fmt(N0);
+    document.getElementById('sD').textContent = '0';
+    document.getElementById('stopLine').textContent = '';
+    document.getElementById('tbody').innerHTML = '';
+    firstRow = false;
+    // ligne initiale lancer 0
+    var tb = document.getElementById('tbody');
+    var tr0 = document.createElement('tr');
+    var onL = document.getElementById('chkLancer').checked;
+    var onD = document.getElementById('chkDesint').checked;
+    tr0.innerHTML = '<td style="text-align:right">0</td>'
+        + '<td style="text-align:right;color:#A32D2D">0</td>'
+        + '<td style="text-align:right">' + N0 + '</td>'
+        + '<td></td>';
+    tr0.children[0].style.opacity = onL ? '1' : '0.25';
+    tr0.children[0].style.textDecoration = onL ? '' : 'line-through';
+    tr0.children[1].style.opacity = onD ? '1' : '0.25';
+    tr0.children[1].style.textDecoration = onD ? '' : 'line-through';
+    tb.appendChild(tr0);
+    document.getElementById('btnStart').disabled = false;
+    document.getElementById('minimap').style.display = 'none';
+    document.getElementById('btnDezoom').style.display = 'none';
+    renderDice(); initChart(); initMinimap();
+}
+
+/* ── Export CSV ─────────────────────────────────────────────────── */
+function toggleColLancer() {
+    var on = document.getElementById('chkLancer').checked;
+    var tbl = document.querySelector('.tbl-wrap table');
+    if (!tbl) return;
+    var rows = tbl.querySelectorAll('tr');
+    for (var i = 0; i < rows.length; i++) {
+        var cells = rows[i].children;
+        if (cells.length > 0) {
+            cells[0].style.opacity = on ? '1' : '0.25';
+            cells[0].style.textDecoration = on ? '' : 'line-through';
+        }
+    }
+}
+
+function toggleColDesint() {
+    var on = document.getElementById('chkDesint').checked;
+    // header
+    var ths = document.querySelectorAll('#tbody').length ? document.querySelectorAll('thead th') : [];
+    // on cible la 2e colonne (index 1) du tableau
+    var tbl = document.querySelector('.tbl-wrap table');
+    if (!tbl) return;
+    var rows = tbl.querySelectorAll('tr');
+    for (var i = 0; i < rows.length; i++) {
+        var cells = rows[i].children;
+        if (cells.length > 1) {
+            cells[1].style.opacity = on ? '1' : '0.25';
+            cells[1].style.textDecoration = on ? '' : 'line-through';
+        }
+    }
+}
+
+function getCSV() {
+    var withLancer = document.getElementById('chkLancer').checked;
+    var withDesint = document.getElementById('chkDesint').checked;
+    var faces = parseInt(document.getElementById('nbFaces').value);
+    var header = [];
+    if (withLancer) header.push('Lancer');
+    if (withDesint) header.push('Desintegres');
+    header.push('Restants (D' + faces + ')');
+    var lines = [header.join(';')];
+    // lancer 0 = etat initial
+    var row0 = [];
+    if (withLancer) row0.push(0);
+    if (withDesint) row0.push(0);
+    row0.push(allRest[0]);
+    lines.push(row0.join(';'));
+    for (var i = 1; i < allLabels.length; i++) {
+        var d = allDesint[i] - allDesint[i-1];
+        var row = [];
+        if (withLancer) row.push(allLabels[i]);
+        if (withDesint) row.push(d);
+        row.push(allRest[i]);
+        lines.push(row.join(';'));
+    }
+    return lines.join('\r\n');
+}
+function copierCSV() {
+    var csv = getCSV();
+    // methode 1 : clipboard API (HTTPS uniquement)
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(csv).then(function() {
+            alert('CSV copie dans le presse-papier !\nCollez avec Ctrl+V dans Calc ou Excel.');
+        }).catch(function() { fallbackCopy(csv); });
+    } else {
+        fallbackCopy(csv);
+    }
+}
+function fallbackCopy(csv) {
+    var ta = document.createElement('textarea');
+    ta.value = csv;
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:2px;height:2px;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    if (ok) {
+        alert('CSV copie dans le presse-papier !\nCollez avec Ctrl+V dans Calc ou Excel.');
+    } else {
+        // dernier recours : ouvrir dans une nouvelle fenetre pour copier manuellement
+        var w = window.open('', '_blank');
+        w.document.write('<pre style="font-family:monospace;font-size:13px">' + csv.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</pre>');
+        w.document.title = 'CSV -- selectionnez tout (Ctrl+A) puis copiez (Ctrl+C)';
+    }
+}
+function telechargerCSV() {
+    var csv = getCSV();
+    var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = 'des_radioactifs.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+onDieChange();
+</script>
+</body></html>
