@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Composés Ioniques – Legos</title>
+<style>
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #131825;
+  color: #e0e6f0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── HEADER ── */
+#header {
+  background: #1a2236;
+  border-bottom: 2px solid #2a3a5c;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  min-height: 50px;
+}
+
+h1 { font-size: 1rem; color: #a0b4d8; white-space: nowrap; letter-spacing: 0.5px; }
+
+/* Compteur de charges */
+#charge-display {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 0.88rem;
+  background: #0e1520;
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1px solid #2a3a5c;
+}
+
+.c-pos { color: #ff7070; font-weight: bold; font-size: 1rem; }
+.c-neg { color: #60aaff; font-weight: bold; font-size: 1rem; }
+
+#balance-msg { font-size: 0.85rem; color: #8899bb; min-width: 120px; }
+
+.c-neutral {
+  color: #55efc4;
+  font-weight: 700;
+  animation: blink 0.7s ease-in-out infinite alternate;
+}
+@keyframes blink { from { opacity: 1; } to { opacity: 0.55; } }
+
+/* ── Overlay "×N" dans la zone d'assemblage ── */
+#assembly-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(15, 5, 0, 0.65);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 10;
+  border-radius: 10px;
+  transition: opacity 0.35s ease;
+}
+#assembly-overlay.visible { opacity: 1; }
+
+#overlay-factor {
+  font-size: 4rem;
+  font-weight: bold;
+  color: #ffaa55;
+  text-shadow: 0 0 24px rgba(255,150,50,0.7);
+  animation: pulseOrange 1.1s ease-in-out infinite;
+  line-height: 1;
+}
+#overlay-msg {
+  font-size: 0.78rem;
+  color: #ffcc88;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+@keyframes pulseOrange {
+  0%, 100% { transform: scale(1);    opacity: 1;    }
+  50%       { transform: scale(1.1); opacity: 0.75; }
+}
+
+/* Shake quand multiple détecté */
+@keyframes shake {
+  0%,100% { transform: translateX(0);    }
+  15%     { transform: translateX(-8px); }
+  30%     { transform: translateX( 8px); }
+  50%     { transform: translateX(-5px); }
+  70%     { transform: translateX( 5px); }
+  85%     { transform: translateX(-2px); }
+}
+/* ── Sommes affichées en grand dans la zone ── */
+.zone-sum {
+  position: absolute;
+  right: 16px;
+  font-size: 3rem;
+  font-weight: 900;
+  pointer-events: none;
+  z-index: 5;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  transform: scale(0.8);
+}
+.zone-sum.active {
+  opacity: 0.55;
+  transform: scale(1);
+}
+#zone-sum-pos {
+  top: 18%;
+  color: #ff7070;
+  text-shadow: 0 0 24px rgba(255,80,80,0.5);
+}
+#zone-sum-neg {
+  bottom: 18%;
+  color: #74b9ff;
+  text-shadow: 0 0 24px rgba(80,140,255,0.5);
+}
+
+/* ── Canvas éclair ── */
+#lightning-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 30;
+  display: none;
+  border-radius: 10px;
+}
+
+/* ── Flash blanc ── */
+#electric-flash {
+  position: absolute;
+  inset: 0;
+  background: white;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 29;
+  border-radius: 10px;
+}
+#electric-flash.active {
+  animation: elec-flash 0.45s ease-out forwards;
+}
+@keyframes elec-flash {
+  0%   { opacity: 0.85; }
+  100% { opacity: 0;    }
+}
+
+/* ── Étincelles ── */
+.espark {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 35;
+  animation: espark-fly 0.75s ease-out forwards;
+}
+@keyframes espark-fly {
+  0%   { transform: translate(0,0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--dx),var(--dy)) scale(0.1); opacity: 0; }
+}
+
+/* ── Lego electrifié ── */
+.lego.electrified { animation: lego-elec 0.6s ease-out 3; }
+@keyframes lego-elec {
+  0%,100% { filter: brightness(1); }
+  50%     { filter: brightness(2.5) drop-shadow(0 0 8px #a0e0ff); }
+}
+
+#assembly-zone.is-multiple { border-color: #ff8833; }
+#assembly-zone.shaking     { animation: shake 0.5s ease-in-out; }
+
+/* ── Séparateur de groupes (s'élargit en animation) ── */
+.group-sep {
+  width: 0;
+  min-width: 0;
+  flex-shrink: 0;
+  align-self: stretch;
+  overflow: hidden;
+  position: relative;
+  transition: width 0.45s ease, min-width 0.45s ease;
+}
+/* Ligne pointillée centrale visible une fois élargi */
+.group-sep::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 10%;
+  bottom: 10%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,140,50,0.7) 0px,
+    rgba(255,140,50,0.7) 5px,
+    transparent 5px,
+    transparent 10px
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease 0.2s;
+}
+.group-sep.expanded {
+  width: 28px;
+  min-width: 28px;
+}
+.group-sep.expanded::after { opacity: 1; }
+
+/* Boutons */
+#controls-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+button {
+  background: #1e2d4a;
+  color: #c8d8f0;
+  border: 1px solid #3a5080;
+  border-radius: 6px;
+  padding: 5px 13px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+button:hover:not(:disabled) { background: #2a4068; border-color: #5a80b0; }
+button:disabled { opacity: 0.3; cursor: default; }
+
+#btn-reset  { border-color: #804040; color: #ffaaaa; }
+#btn-reset:hover { background: #4a2020; border-color: #c05050; }
+#btn-confirm { border-color: #40aa70; color: #55efc4; display: none; }
+#btn-confirm:hover:not(:disabled) { background: #1a4030; }
+
+/* Champs de nommage (symbole + charge) */
+.name-field {
+  background: #1e2d4a;
+  color: #e0e6f0;
+  border: 1px solid #60aaff;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  display: none;
+}
+#name-symbol { width: 70px; }
+#name-charge {
+  width: 52px;
+  border-color: #556080;
+  background: #141c2e;
+  color: #7a8aaa;
+  cursor: default;
+  user-select: none;
+}
+
+/* Aperçu de la notation ionique */
+#name-preview {
+  display: none;
+  font-size: 0.85rem;
+  color: #ffd080;
+  font-weight: bold;
+  min-width: 40px;
+  text-align: center;
+}
+
+/* ── LAYOUT PRINCIPAL ── */
+#layout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  gap: 8px;
+  min-height: 0;
+}
+
+/* ── BACS ── */
+.bin {
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  min-height: 105px; /* LEGO_H (80) + studs (~13) + padding */
+}
+
+#bin-positive { background: #220e0e; border: 2px dashed #8b2020; }
+#bin-negative { background: #0e0e22; border: 2px dashed #204488; }
+
+.bin-label {
+  font-size: 0.72rem;
+  font-weight: bold;
+  opacity: 0.65;
+  min-width: 46px;
+  text-align: center;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+}
+
+.bin-row {
+  display: flex;
+  align-items: flex-end; /* legos alignés par leur bas dans le bac (+) */
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 32px;
+}
+
+#bin-neg-row { align-items: flex-start; } /* legos alignés par leur haut dans le bac (-) */
+
+/* ── ZONE D'ASSEMBLAGE ── */
+#assembly-zone {
+  flex: 1;
+  background: #0a0f1a;
+  border: 2px solid #2a3a5c;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  transition: border-color 0.4s, box-shadow 0.4s;
+  overflow: hidden;
+  position: relative;
+}
+
+#assembly-zone.is-neutral {
+  border-color: #55efc4;
+  box-shadow: 0 0 22px rgba(85,239,196,0.3);
+}
+
+#assembly-header {
+  text-align: center;
+  font-size: 0.62rem;
+  color: #3a5080;
+  padding: 4px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* Demi-zone des legos (+) : studs pointent vers le BAS (vers le diviseur) */
+#assembly-positive {
+  flex: 1;
+  display: flex;
+  align-items: flex-end; /* legos collés au bas = collés au diviseur */
+  gap: 0; /* IMPORTANT : gap 0 pour que n × (charge 1) = largeur de 1 × (charge n) */
+  justify-content: center;
+  padding: 4px 16px;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Diviseur central – représente la "LIAISON" */
+#assembly-divider {
+  flex-shrink: 0;
+  height: 4px;
+  margin: 0 16px;
+  background: linear-gradient(90deg,
+    transparent 0%, #3a5080 10%, #7090d0 50%, #3a5080 90%, transparent 100%);
+  border-radius: 2px;
+  position: relative;
+}
+#assembly-divider::after {
+  content: 'LIAISON';
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  background: #0a0f1a;
+  color: #3a5080;
+  font-size: 0.52rem;
+  padding: 0 8px;
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
+
+/* Demi-zone des legos (-) : studs pointent vers le HAUT (vers le diviseur) */
+#assembly-negative {
+  flex: 1;
+  display: flex;
+  align-items: flex-start; /* legos collés au haut = collés au diviseur */
+  gap: 0; /* même logique : gap 0 pour que les largeurs s'additionnent correctement */
+  justify-content: center;
+  padding: 4px 16px;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* ── LEGO ── */
+.lego {
+  display: flex;
+  flex-direction: column;
+  cursor: grab;
+  flex-shrink: 0;
+  transition: filter 0.12s;
+}
+.lego:hover      { filter: brightness(1.25); }
+.lego.selected   { filter: drop-shadow(0 0 6px gold) brightness(1.15); }
+.lego.is-dragging {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.88;
+  filter: drop-shadow(0 12px 28px rgba(0,0,0,0.75));
+  cursor: grabbing;
+}
+
+/* Corps du lego – largeur définie dynamiquement en JS (charge × UNIT_W) */
+.lego-body {
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-around;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Reflet en haut du corps */
+.lego-body::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 38%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.13) 0%, transparent 100%);
+  pointer-events: none;
+  border-radius: 6px 6px 0 0;
+}
+
+.lego-positive .lego-body {
+  background: linear-gradient(158deg, #dd3333 0%, #881515 100%);
+  border: 2px solid #ee5555;
+  box-shadow: inset 0 2px 4px rgba(255,255,255,0.15), 0 4px 12px rgba(0,0,0,0.55);
+}
+
+.lego-negative .lego-body {
+  background: linear-gradient(158deg, #2266cc 0%, #0e3a88 100%);
+  border: 2px solid #4488ee;
+  box-shadow: inset 0 2px 4px rgba(255,255,255,0.15), 0 4px 12px rgba(0,0,0,0.55);
+}
+
+/* Séparateurs de niveaux à l'intérieur du corps */
+.level-line {
+  width: 84%;
+  height: 1px;
+  background: rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+
+/* Symbole de l'ion : vertical, centré dans le corps */
+.lego-sym {
+  writing-mode: vertical-lr;
+  font-size: 0.72rem;
+  font-weight: bold;
+  color: rgba(255,255,255,0.95);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.85);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-height: 88%;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Charge en exposant : coin supérieur droit du corps */
+.lego-chg {
+  font-size: 0.55rem;
+  font-weight: bold;
+  color: rgba(255,255,255,0.85);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Pastilles (studs) – taille calculée dynamiquement en JS */
+.studs {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0 1px;
+  flex-shrink: 0;
+  width: 100%; /* s'étire sur la largeur du wrap */
+}
+
+.stud {
+  border-radius: 50%;
+  flex-shrink: 0;
+  /* width/height injectés en JS */
+}
+
+.lego-positive .stud {
+  background: radial-gradient(circle at 35% 30%, #ffaaaa 0%, #aa2222 100%);
+  border: 1px solid #ee6666;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+.lego-negative .stud {
+  background: radial-gradient(circle at 35% 30%, #aaccff 0%, #1144aa 100%);
+  border: 1px solid #5588ee;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+</style>
+</head>
+
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<div id="header">
+  <h1>⚛ Composés Ioniques</h1>
+
+  <div id="charge-display">
+    <span>Σ(+) : <strong class="c-pos" id="pos-sum">0</strong></span>
+    <span>Σ(−) : <strong class="c-neg" id="neg-sum">0</strong></span>
+    <span id="balance-msg">—</span>
+  </div>
+
+  <div id="controls-right">
+    <button id="btn-name" disabled>✏ Nommer</button>
+    <input id="name-symbol" class="name-field" type="text" maxlength="6" placeholder="Symbole">
+    <input id="name-charge" class="name-field" type="text" maxlength="4" placeholder="Charge" readonly tabindex="-1">
+    <span id="name-preview"></span>
+    <button id="btn-confirm">✓</button>
+    <button id="btn-reset">↺ Réinitialiser</button>
+  </div>
+</div>
+
+<!-- ═══ LAYOUT ═══ -->
+<div id="layout">
+
+  <!-- Bac ions POSITIFS (rouge, haut) -->
+  <div class="bin" id="bin-positive">
+    <div class="bin-label c-pos">IONS<br>(+)</div>
+    <div class="bin-row" id="bin-pos-row"></div>
+  </div>
+
+  <!-- Zone d'assemblage (centre) -->
+  <div id="assembly-zone">
+    <!-- Overlay affiché quand la combinaison est un multiple de la formule simple -->
+    <div id="assembly-overlay">
+      <div id="overlay-factor"></div>
+      <div id="overlay-msg">retirez des legos</div>
+    </div>
+    <div id="assembly-header">◆ zone d'assemblage ◆</div>
+    <div id="assembly-positive"></div>
+    <div id="assembly-divider"></div>
+    <div id="assembly-negative"></div>
+    <div id="zone-sum-pos" class="zone-sum"></div>
+    <div id="zone-sum-neg" class="zone-sum"></div>
+    <canvas id="lightning-canvas"></canvas>
+    <div id="electric-flash"></div>
+  </div>
+
+  <!-- Bac ions NÉGATIFS (bleu, bas) -->
+  <div class="bin" id="bin-negative">
+    <div class="bin-label c-neg">IONS<br>(−)</div>
+    <div class="bin-row" id="bin-neg-row"></div>
+  </div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   CONSTANTES
+═══════════════════════════════════════════════ */
+const LEGO_H = 80;   // hauteur FIXE du corps (identique pour tous les legos)
+const UNIT_W = 22;   // largeur par unité de charge → charge 1:22px, 2:44px, 3:66px, 4:88px
+
+/* ═══════════════════════════════════════════════
+   ÉTAT GLOBAL
+═══════════════════════════════════════════════ */
+let legos        = [];     // toutes les instances lego
+let selectedLego = null;   // lego actuellement sélectionné (null si aucun)
+let drag         = null;   // objet de suivi du drag en cours
+let nextId       = 0;      // compteur d'IDs uniques
+
+/* ═══════════════════════════════════════════════
+   NOMS PAR DÉFAUT (modifiables par l'utilisateur)
+═══════════════════════════════════════════════ */
+const DEFAULTS = {
+  '+1': { symbol: 'Na',   chargeLabel: '+'   },
+  '+2': { symbol: 'Ca',   chargeLabel: '2+'  },
+  '+3': { symbol: 'Fe',   chargeLabel: '3+'  },
+  '-1': { symbol: 'Cl',   chargeLabel: '-'   },
+  '-2': { symbol: 'SO₄', chargeLabel: '2-'  },
+};
+
+/* ═══════════════════════════════════════════════
+   INITIALISATION DES DONNÉES
+   Règle : charge 4 → ×1 exemplaire, 3 → ×2, 2 → ×3, 1 → ×4
+═══════════════════════════════════════════════ */
+function initData() {
+  legos = [];
+  nextId = 0;
+  // Positifs (rouges)
+  [[4,1],[3,2],[2,3],[1,4]].forEach(([c,n]) => {
+    for (let i = 0; i < n; i++) {
+      const def = DEFAULTS['+' + c] || {};
+      legos.push({ id: nextId++, sign: '+', charge: c, symbol: def.symbol || null, chargeLabel: def.chargeLabel || null, location: 'bin', el: null });
+    }
+  });
+  // Négatifs (bleus)
+  [[4,1],[3,2],[2,3],[1,4]].forEach(([c,n]) => {
+    for (let i = 0; i < n; i++) {
+      const def = DEFAULTS['-' + c] || {};
+      legos.push({ id: nextId++, sign: '-', charge: c, symbol: def.symbol || null, chargeLabel: def.chargeLabel || null, location: 'bin', el: null });
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════
+   CONSTRUCTION DE L'ÉLÉMENT DOM D'UN LEGO
+
+   Logique d'orientation des pastilles (studs) :
+   ┌──────────────────────────────────────────────┐
+   │  Bac (+)       → studs EN HAUT               │
+   │  Bac (−)       → studs EN BAS                │
+   │  Assemblage(+) → studs EN BAS (→ diviseur)   │
+   │  Assemblage(−) → studs EN HAUT (→ diviseur)  │
+   └──────────────────────────────────────────────┘
+   → Dans la zone centrale, les studs de chaque côté
+     se "touchent" au niveau du diviseur LIAISON.
+═══════════════════════════════════════════════ */
+function buildLegoEl(lego) {
+  const isPos      = lego.sign === '+';
+  const inAssembly = lego.location === 'assembly';
+
+  // Largeur proportionnelle à la charge, hauteur fixe pour tous
+  const bodyW = lego.charge * UNIT_W;
+
+  // Taille des studs : remplit la largeur disponible (padding 6px, gap 4px entre studs)
+  const studSize = Math.floor((bodyW - 6 - Math.max(0, lego.charge - 1) * 4) / lego.charge);
+
+  /* ── Rangée de pastilles ── */
+  function makeStuds() {
+    const row = document.createElement('div');
+    row.className = 'studs';
+    for (let i = 0; i < lego.charge; i++) {
+      const s = document.createElement('div');
+      s.className = 'stud';
+      s.style.width  = studSize + 'px';
+      s.style.height = studSize + 'px';
+      row.appendChild(s);
+    }
+    return row;
+  }
+
+  /* ── Corps ── */
+  const body = document.createElement('div');
+  body.className = 'lego-body';
+  body.style.width  = bodyW + 'px';
+  body.style.height = LEGO_H + 'px'; // hauteur fixe : identique pour tous les legos
+
+  // Symbole (vertical, centré)
+  if (lego.symbol) {
+    const sym = document.createElement('div');
+    sym.className = 'lego-sym';
+    sym.textContent = lego.symbol;
+    body.appendChild(sym);
+  }
+  // Charge en exposant (coin supérieur droit)
+  if (lego.chargeLabel) {
+    const chg = document.createElement('div');
+    chg.className = 'lego-chg';
+    chg.textContent = lego.chargeLabel;
+    body.appendChild(chg);
+  }
+
+  /* ── Conteneur principal ── */
+  const wrap = document.createElement('div');
+  wrap.className = `lego ${isPos ? 'lego-positive' : 'lego-negative'}`;
+  wrap.dataset.id = lego.id;
+  wrap.style.width = bodyW + 'px'; // le wrap épouse exactement la largeur du corps
+
+  /*
+   * Assemblage de l'ordre [studs / corps] selon le signe et la localisation :
+   *
+   *  Bac (+)   : [studs haut] [corps]   → icône "ion saillant vers le haut"
+   *  Asm (+)   : [corps] [studs bas]    → studs pointent vers le diviseur
+   *  Bac (-)   : [corps] [studs bas]    → icône "ion saillant vers le bas"
+   *  Asm (-)   : [studs haut] [corps]   → studs pointent vers le diviseur
+   */
+  if (isPos) {
+    if (inAssembly) { wrap.appendChild(body);       wrap.appendChild(makeStuds()); }
+    else             { wrap.appendChild(makeStuds()); wrap.appendChild(body);       }
+  } else {
+    if (inAssembly) { wrap.appendChild(makeStuds()); wrap.appendChild(body);       }
+    else             { wrap.appendChild(body);       wrap.appendChild(makeStuds()); }
+  }
+
+  wrap.addEventListener('mousedown', onMouseDown);
+  lego.el = wrap;
+  return wrap;
+}
+
+/* ═══════════════════════════════════════════════
+   RENDU COMPLET (appelé à l'init et au reset)
+═══════════════════════════════════════════════ */
+function renderAll() {
+  const posRow = document.getElementById('bin-pos-row');
+  const negRow = document.getElementById('bin-neg-row');
+  const asmPos = document.getElementById('assembly-positive');
+  const asmNeg = document.getElementById('assembly-negative');
+
+  [posRow, negRow, asmPos, asmNeg].forEach(el => el.innerHTML = '');
+
+  legos.forEach(lego => {
+    const el = buildLegoEl(lego);
+    if (lego.location === 'bin') {
+      (lego.sign === '+' ? posRow : negRow).appendChild(el);
+    } else {
+      (lego.sign === '+' ? asmPos : asmNeg).appendChild(el);
+    }
+  });
+
+  updateDisplay();
+}
+
+/* ═══════════════════════════════════════════════
+   ANIMATION ÉLECTRIQUE (composé neutre réussi)
+═══════════════════════════════════════════════ */
+let _wasNeutral   = false;
+let _elecAnimId   = null;
+
+function triggerElectric() {
+  // Flash
+  const flash = document.getElementById('electric-flash');
+  flash.classList.remove('active');
+  requestAnimationFrame(() => requestAnimationFrame(() => flash.classList.add('active')));
+
+  // Étincelles
+  const zone    = document.getElementById('assembly-zone');
+  const zW      = zone.clientWidth;
+  const zH      = zone.clientHeight;
+  const colors  = ['#ffffff','#a0e0ff','#ffe080','#80ffcc'];
+  for (let i = 0; i < 28; i++) {
+    const s = document.createElement('div');
+    s.className = 'espark';
+    const angle = Math.random() * Math.PI * 2;
+    const dist  = 60 + Math.random() * 130;
+    s.style.setProperty('--dx', (Math.cos(angle) * dist) + 'px');
+    s.style.setProperty('--dy', (Math.sin(angle) * dist) + 'px');
+    s.style.left  = (zW * 0.2 + Math.random() * zW * 0.6) + 'px';
+    s.style.top   = (zH * 0.3 + Math.random() * zH * 0.4) + 'px';
+    s.style.background = colors[Math.floor(Math.random() * colors.length)];
+    s.style.animationDelay = (Math.random() * 180) + 'ms';
+    zone.appendChild(s);
+    setTimeout(() => s.remove(), 1100);
+  }
+
+  // Legos : effet lumineux
+  document.querySelectorAll('.lego').forEach(el => {
+    el.classList.remove('electrified');
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('electrified')));
+  });
+
+  // Son : craquement électrique
+  try {
+    const ac  = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = ac.createBuffer(1, ac.sampleRate * 0.5, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      // bruit blanc filtré décroissant
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 1.5) * 0.6;
+    }
+    const src  = ac.createBufferSource();
+    const gain = ac.createGain();
+    const filt = ac.createBiquadFilter();
+    filt.type = 'bandpass'; filt.frequency.value = 1200; filt.Q.value = 0.5;
+    src.buffer = buf;
+    src.connect(filt); filt.connect(gain); gain.connect(ac.destination);
+    gain.gain.setValueAtTime(0.9, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.5);
+    src.start(ac.currentTime);
+  } catch(e) {}
+
+  // Éclairs sur canvas
+  const canvas = document.getElementById('lightning-canvas');
+  if (_elecAnimId) { cancelAnimationFrame(_elecAnimId); canvas.style.display = 'none'; }
+  canvas.width  = zone.clientWidth;
+  canvas.height = zone.clientHeight;
+  canvas.style.display = 'block';
+  const ctx = canvas.getContext('2d');
+  const t0  = performance.now();
+  const DUR = 1600;
+
+  function bolt(x1, y1, x2, y2, rough, depth) {
+    if (depth === 0) { ctx.lineTo(x2, y2); return; }
+    const mx = (x1+x2)/2 + (Math.random()-0.5) * rough;
+    const my = (y1+y2)/2 + (Math.random()-0.5) * rough * 0.4;
+    bolt(x1,y1, mx,my, rough*0.52, depth-1);
+    bolt(mx,my, x2,y2, rough*0.52, depth-1);
+  }
+
+  function frame(now) {
+    const elapsed = now - t0;
+    if (elapsed > DUR) { canvas.style.display = 'none'; return; }
+    const fade = elapsed < DUR * 0.65 ? 1 : 1 - (elapsed - DUR * 0.65) / (DUR * 0.35);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const cx = canvas.width / 2;
+    const topY = canvas.height * 0.12;
+    const botY = canvas.height * 0.88;
+    const nBolts = 2 + (Math.random() < 0.4 ? 1 : 0);
+    for (let i = 0; i < nBolts; i++) {
+      const sx = cx + (Math.random()-0.5) * canvas.width * 0.55;
+      const ex = cx + (Math.random()-0.5) * canvas.width * 0.55;
+      // Halo extérieur
+      ctx.beginPath(); ctx.moveTo(sx, topY);
+      bolt(sx,topY, ex,botY, 70, 6);
+      ctx.strokeStyle = `rgba(120,200,255,${fade * 0.35})`; ctx.lineWidth = 8; ctx.stroke();
+      // Arc principal
+      ctx.beginPath(); ctx.moveTo(sx, topY);
+      bolt(sx,topY, ex,botY, 70, 6);
+      ctx.strokeStyle = `rgba(255,255,255,${fade * 0.95})`; ctx.lineWidth = 1.8; ctx.stroke();
+      // Branche secondaire aléatoire
+      if (Math.random() < 0.5) {
+        const branchY = topY + (botY-topY) * (0.25 + Math.random()*0.4);
+        const branchX = sx + (Math.random()-0.5)*80;
+        const bex = branchX + (Math.random()-0.5)*60;
+        ctx.beginPath(); ctx.moveTo(branchX, branchY);
+        bolt(branchX,branchY, bex,branchY+(Math.random()-0.5)*80, 30, 4);
+        ctx.strokeStyle = `rgba(200,230,255,${fade * 0.6})`; ctx.lineWidth = 1; ctx.stroke();
+      }
+    }
+    _elecAnimId = requestAnimationFrame(frame);
+  }
+  _elecAnimId = requestAnimationFrame(frame);
+}
+
+/* ═══════════════════════════════════════════════
+   MISE À JOUR AFFICHAGE (charges + message)
+═══════════════════════════════════════════════ */
+function updateDisplay() {
+  const asm    = legos.filter(l => l.location === 'assembly');
+  const posSum = asm.filter(l => l.sign === '+').reduce((s,l) => s + l.charge, 0);
+  const negSum = asm.filter(l => l.sign === '-').reduce((s,l) => s + l.charge, 0);
+  const total  = posSum + negSum;
+
+  document.getElementById('pos-sum').textContent = posSum;
+  document.getElementById('neg-sum').textContent = negSum;
+
+  // Sommes en grand dans la zone
+  const sumPosEl = document.getElementById('zone-sum-pos');
+  const sumNegEl = document.getElementById('zone-sum-neg');
+  sumPosEl.textContent = posSum > 0 ? posSum : '';
+  sumNegEl.textContent = negSum > 0 ? negSum : '';
+  sumPosEl.classList.toggle('active', posSum > 0);
+  sumNegEl.classList.toggle('active', negSum > 0);
+
+  const msgEl  = document.getElementById('balance-msg');
+  const zoneEl = document.getElementById('assembly-zone');
+
+  if (total === 0) {
+    msgEl.textContent = '—';
+    zoneEl.classList.remove('is-neutral', 'is-multiple');
+    document.getElementById('assembly-overlay').classList.remove('visible');
+    updateGroupSeparators(1);
+    _wasNeutral = false;
+    return;
+  }
+
+  const overlay       = document.getElementById('assembly-overlay');
+  const overlayFactor = document.getElementById('overlay-factor');
+
+  if (posSum === negSum) {
+    const factor = assemblyGCD(asm);
+    if (factor > 1) {
+      // ⚠ Multiple — afficher l'overlay + shake + bordure orange
+      const formula = buildFormula(asm);
+      overlayFactor.textContent = `× ${factor}`;
+      overlay.classList.add('visible');
+      zoneEl.classList.remove('is-neutral');
+      zoneEl.classList.add('is-multiple');
+      // Re-déclencher le shake à chaque détection
+      zoneEl.classList.remove('shaking');
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        zoneEl.classList.add('shaking');
+        setTimeout(() => zoneEl.classList.remove('shaking'), 520);
+      }));
+      // Séparer visuellement les groupes
+      updateGroupSeparators(factor);
+      msgEl.innerHTML = `<span style="color:#ffaa55">⚠ ${factor} × ${formula || '?'}</span>`;
+    } else {
+      // ✅ Formule irréductible
+      overlay.classList.remove('visible');
+      zoneEl.classList.remove('is-multiple');
+      updateGroupSeparators(1);
+      const formula = buildFormula(asm);
+      msgEl.innerHTML = `<span class="c-neutral">⚡ NEUTRE !${formula ? ' → <strong>' + formula + '</strong>' : ''}</span>`;
+      zoneEl.classList.add('is-neutral');
+      // Animation électrique uniquement à la transition → neutre
+      if (!_wasNeutral) triggerElectric();
+      _wasNeutral = true;
+    }
+  } else {
+    document.getElementById('assembly-overlay').classList.remove('visible');
+    zoneEl.classList.remove('is-neutral', 'is-multiple');
+    updateGroupSeparators(1);
+    _wasNeutral = false;
+    const diff = posSum - negSum;
+    msgEl.innerHTML = `<span style="color:#ffaa55">Bilan : ${diff > 0 ? '+' : ''}${diff}</span>`;
+  }
+}
+
+/*
+ * Construit la formule chimique à partir des legos nommés
+ * (cations d'abord, puis anions – convention IUPAC).
+ */
+/* ── Séparateurs visuels entre les groupes de formule ──
+   Insère des div.group-sep entre chaque sous-groupe de legos
+   dans les deux demi-zones d'assemblage.
+   Ex : 2 Na⁺ + 2 Cl⁻ → 1 séparateur au milieu de chaque rangée.
+═══════════════════════════════════════════════ */
+function updateGroupSeparators(factor) {
+  if (factor <= 1) {
+    // Rétraction animée puis suppression
+    document.querySelectorAll('.group-sep').forEach(sep => {
+      sep.classList.remove('expanded');
+      setTimeout(() => sep.remove(), 460);
+    });
+    return;
+  }
+
+  // Supprimer les anciens séparateurs immédiatement (on va en recréer)
+  document.querySelectorAll('.group-sep').forEach(el => el.remove());
+
+  ['assembly-positive', 'assembly-negative'].forEach(zoneId => {
+    const zone     = document.getElementById(zoneId);
+    const legoEls  = [...zone.querySelectorAll('.lego')];
+    const total    = legoEls.length;
+    if (total === 0) return;
+
+    const groupSize = Math.round(total / factor); // nb de legos par groupe dans cette rangée
+    if (groupSize < 1) return;
+
+    // Insérer un séparateur avant chaque début de groupe (sauf le 1er)
+    for (let i = groupSize; i < total; i += groupSize) {
+      const sep = document.createElement('div');
+      sep.className = 'group-sep';
+      zone.insertBefore(sep, legoEls[i]);
+    }
+
+    // Déclencher l'animation d'ouverture au prochain frame
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        zone.querySelectorAll('.group-sep').forEach(s => s.classList.add('expanded'));
+      });
+    });
+  });
+}
+
+/* ── PGCD (algorithme d'Euclide) ── */
+function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+
+/*
+ * Retourne le PGCD de toutes les quantités d'ions dans la zone.
+ * Si PGCD > 1 → la combinaison est un multiple d'une formule plus simple.
+ * Ex : 2 Na⁺ + 2 Cl⁻ → PGCD = 2 → c'est 2 × NaCl
+ *      1 Ca²⁺ + 2 Cl⁻ → PGCD = 1 → CaCl₂ ✓
+ *      2 Al³⁺ + 3 O²⁻ → PGCD = 1 → Al₂O₃ ✓
+ */
+function assemblyGCD(asm) {
+  const counts = {};
+  asm.forEach(l => {
+    const key = l.sign + l.charge;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  const vals = Object.values(counts);
+  return vals.length ? vals.reduce((g, c) => gcd(g, c)) : 1;
+}
+
+function buildFormula(asm) {
+  // Utilise le symbole (ex: "Ca", "Cl") pour construire la formule chimique
+  const named = asm.filter(l => l.symbol);
+  if (!named.length) return '';
+  const order  = [];
+  const counts = {};
+  [...named.filter(l => l.sign==='+'), ...named.filter(l => l.sign==='-')].forEach(l => {
+    if (!counts[l.symbol]) { order.push(l.symbol); counts[l.symbol] = 0; }
+    counts[l.symbol]++;
+  });
+  // Indice en subscript Unicode si count > 1
+  const sub = n => n > 1 ? String.fromCodePoint(0x2080 + n) : '';
+  return order.map(s => s + sub(counts[s])).join('');
+}
+
+/* ═══════════════════════════════════════════════
+   SÉLECTION D'UN LEGO (pour nommage)
+═══════════════════════════════════════════════ */
+function selectLego(lego) {
+  if (selectedLego?.el) selectedLego.el.classList.remove('selected');
+
+  if (selectedLego === lego) {
+    selectedLego = null;                  // re-clic → désélection
+  } else {
+    selectedLego = lego;
+    lego?.el?.classList.add('selected');
+  }
+
+  document.getElementById('btn-name').disabled = !selectedLego;
+  hideNameInput();
+}
+
+/* ═══════════════════════════════════════════════
+   NOMMAGE
+═══════════════════════════════════════════════ */
+document.getElementById('btn-name').addEventListener('click', () => {
+  if (!selectedLego) return;
+  const symInp  = document.getElementById('name-symbol');
+  const chgInp  = document.getElementById('name-charge');
+  const preview = document.getElementById('name-preview');
+  const btn     = document.getElementById('btn-confirm');
+
+  symInp.style.display  = 'inline-block';
+  chgInp.style.display  = 'inline-block';
+  preview.style.display = 'inline-block';
+  btn.style.display     = 'inline-block';
+
+  // Pré-remplir le symbole ; la charge est auto (lecture seule)
+  symInp.value = selectedLego.symbol || '';
+  chgInp.value = (selectedLego.charge > 1 ? selectedLego.charge : '') + selectedLego.sign;
+
+  updatePreview();
+  symInp.focus(); symInp.select();
+});
+
+// Mise à jour de l'aperçu en temps réel
+function updatePreview() {
+  const sym = document.getElementById('name-symbol').value.trim();
+  const chg = document.getElementById('name-charge').value.trim();
+  const preview = document.getElementById('name-preview');
+  preview.innerHTML = sym
+    ? (sym + (chg ? '<sup>' + chg + '</sup>' : ''))
+    : '<span style="opacity:0.4">aperçu</span>';
+}
+document.getElementById('name-symbol').addEventListener('input', updatePreview);
+// name-charge est readonly — pas d'écouteur input nécessaire
+
+document.getElementById('btn-confirm').addEventListener('click', applyName);
+document.getElementById('name-symbol').addEventListener('keydown', e => {
+  if (e.key === 'Enter')  applyName();
+  if (e.key === 'Escape') hideNameInput();
+});
+
+function applyName() {
+  if (!selectedLego) return;
+  const sym = document.getElementById('name-symbol').value.trim().slice(0, 6) || null;
+  // La charge est toujours dérivée du lego (champ en lecture seule)
+  const chg = (selectedLego.charge > 1 ? selectedLego.charge : '') + selectedLego.sign || null;
+
+  // Appliquer symbole + charge à TOUS les legos du même type (signe + charge)
+  legos
+    .filter(l => l.sign === selectedLego.sign && l.charge === selectedLego.charge)
+    .forEach(lego => {
+      lego.symbol      = sym;
+      lego.chargeLabel = chg;
+      if (!lego.el?.parentNode) return;
+      const oldEl = lego.el;
+      const newEl = buildLegoEl(lego);
+      if (lego === selectedLego) newEl.classList.add('selected');
+      oldEl.parentNode.replaceChild(newEl, oldEl);
+    });
+
+  hideNameInput();
+  updateDisplay();
+}
+
+function hideNameInput() {
+  document.getElementById('name-symbol').style.display  = 'none';
+  document.getElementById('name-charge').style.display  = 'none';
+  document.getElementById('name-preview').style.display = 'none';
+  document.getElementById('btn-confirm').style.display  = 'none';
+}
+
+/* ═══════════════════════════════════════════════
+   RÉINITIALISATION
+═══════════════════════════════════════════════ */
+document.getElementById('btn-reset').addEventListener('click', () => {
+  drag = null;
+  selectedLego = null;
+  initData();   // remet les noms par défaut + replace tout en bac
+  hideNameInput();
+  renderAll();
+  document.getElementById('btn-name').disabled = true;
+});
+
+/* ═══════════════════════════════════════════════
+   DRAG & DROP
+   ─────────────────────────────────────────────
+   Principe :
+   1. mousedown  → placeholder invisible dans le DOM, lego "flottant" dans body
+   2. mousemove  → déplace le lego flottant avec la souris
+   3. mouseup    → si lâché dans #assembly-zone : placer en zone assemblage
+                   sinon : retour dans le bac d'origine
+   Si pas de mouvement (< 4px) → simple clic → sélection
+═══════════════════════════════════════════════ */
+function onMouseDown(e) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  const id   = parseInt(e.currentTarget.dataset.id);
+  const lego = legos.find(l => l.id === id);
+  if (!lego) return;
+
+  const rect = lego.el.getBoundingClientRect();
+
+  // Placeholder : garde l'espace visuel pendant le drag
+  const ph = document.createElement('div');
+  ph.style.cssText = `width:${rect.width}px;height:${rect.height}px;opacity:0;flex-shrink:0;`;
+
+  drag = {
+    lego,
+    startX:  e.clientX,
+    startY:  e.clientY,
+    offsetX: e.clientX - rect.left,
+    offsetY: e.clientY - rect.top,
+    elW:     rect.width,
+    elH:     rect.height,   // hauteur capturée pour la détection de drop
+    moved:   false,
+    ph,
+    origParent:   lego.el.parentNode,
+    origLocation: lego.location
+  };
+
+  drag.origParent.insertBefore(ph, lego.el);
+  document.body.appendChild(lego.el);
+
+  lego.el.classList.add('is-dragging');
+  lego.el.style.width = drag.elW + 'px';
+  lego.el.style.left  = rect.left + 'px';
+  lego.el.style.top   = rect.top  + 'px';
+}
+
+document.addEventListener('mousemove', e => {
+  if (!drag) return;
+  if (Math.abs(e.clientX - drag.startX) > 4 || Math.abs(e.clientY - drag.startY) > 4)
+    drag.moved = true;
+  drag.lego.el.style.left = (e.clientX - drag.offsetX) + 'px';
+  drag.lego.el.style.top  = (e.clientY - drag.offsetY) + 'px';
+});
+
+document.addEventListener('mouseup', e => {
+  if (!drag) return;
+
+  const lego  = drag.lego;
+  const oldEl = lego.el;
+
+  // Nettoyer l'état dragging
+  // NOTE : on remet la largeur naturelle (charge × UNIT_W) car le drag avait
+  // overridé style.width pour le rendu en position:fixed, et la CSS n'a pas de
+  // valeur de fallback depuis qu'on a retiré width:70px du sélecteur .lego-body.
+  oldEl.classList.remove('is-dragging');
+  oldEl.style.left  = '';
+  oldEl.style.top   = '';
+  oldEl.style.width = (lego.charge * UNIT_W) + 'px'; // restaure la largeur naturelle
+  drag.ph.remove();
+
+  /* ── Clic simple (pas de déplacement) → sélection ── */
+  if (!drag.moved) {
+    drag.origParent.appendChild(oldEl);
+    selectLego(lego);
+    drag = null;
+    return;
+  }
+
+  /* ── Déterminer la zone de dépôt ──
+     On vérifie si le LEGO (pas seulement le curseur) chevauche la zone d'assemblage.
+     Ainsi, peu importe où l'utilisateur tient le lego, le dépôt est détecté
+     dès qu'une partie du lego est au-dessus de la zone. */
+  const asmRect  = document.getElementById('assembly-zone').getBoundingClientRect();
+  const legoLeft = e.clientX - drag.offsetX;
+  const legoTop  = e.clientY - drag.offsetY;
+  const inAsm    = legoLeft + drag.elW > asmRect.left  &&
+                   legoLeft            < asmRect.right  &&
+                   legoTop  + drag.elH > asmRect.top   &&
+                   legoTop             < asmRect.bottom;
+
+  const prevLoc = drag.origLocation;
+
+  if (inAsm) {
+    /* → Déposer dans la zone d'assemblage */
+    const targetId = lego.sign === '+' ? 'assembly-positive' : 'assembly-negative';
+    const targetEl = document.getElementById(targetId);
+    lego.location  = 'assembly';
+
+    if (prevLoc !== 'assembly') {
+      // Changement de zone → reconstruire pour flipper les studs
+      const newEl = buildLegoEl(lego);
+      if (selectedLego === lego) newEl.classList.add('selected');
+      targetEl.appendChild(newEl);
+      oldEl.remove();
+    } else {
+      // Déjà en assemblage → replacer sans reconstruction
+      targetEl.appendChild(oldEl);
+    }
+
+  } else {
+    /* → Retour au bac d'origine */
+    const binId  = lego.sign === '+' ? 'bin-pos-row' : 'bin-neg-row';
+    const binEl  = document.getElementById(binId);
+    lego.location = 'bin';
+
+    if (prevLoc !== 'bin') {
+      // Vient d'assemblage → reconstruire pour flipper les studs
+      const newEl = buildLegoEl(lego);
+      if (selectedLego === lego) newEl.classList.add('selected');
+      binEl.appendChild(newEl);
+      oldEl.remove();
+    } else {
+      // Vient du bac → replacer sans reconstruction
+      binEl.appendChild(oldEl);
+    }
+  }
+
+  updateDisplay();
+  drag = null;
+});
+
+/* Clic en dehors d'un lego → désélectionner */
+document.addEventListener('click', e => {
+  if (drag) return;
+  if (!e.target.closest('.lego') && !e.target.closest('#controls-right'))
+    selectLego(null);
+});
+
+/* ═══════════════════════════════════════════════
+   DÉMARRAGE
+═══════════════════════════════════════════════ */
+initData();
+renderAll();
+</script>
+</body>
+</html>
