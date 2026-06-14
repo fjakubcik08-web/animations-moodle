@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Diffraction par une fente</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a14;
+    color: #ddd;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 8px 16px;
+    background: #12121e;
+    border-bottom: 1px solid #2a2a40;
+    flex-wrap: wrap;
+  }
+  #topbar h1 { font-size: 15px; color: #aac; letter-spacing: 1px; margin-right: 4px; }
+  .param-group { display: flex; align-items: center; gap: 6px; }
+  .param-group label { color: #88a; font-size: 12px; white-space: nowrap; }
+  .param-group input[type=range] { width: 90px; accent-color: #6af; }
+  .param-group span { min-width: 46px; color: #cce; font-size: 12px; }
+  #btn-laser {
+    padding: 5px 16px; border-radius: 20px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: all .2s;
+  }
+  #btn-laser.on  { background: #e53; color: #fff; box-shadow: 0 0 12px #e534; }
+  #btn-laser.off { background: #333; color: #888; }
+  .info-D { color: #6af; font-size: 12px; }
+  #laser-hint {
+    font-size: 11px; color: #e84; padding: 2px 10px;
+    background: #1a1200; border: 1px solid #4a3000; border-radius: 4px;
+    transition: opacity .3s;
+  }
+  #laser-hint.hidden { opacity: 0; }
+
+  /* Scene */
+  #scene {
+    position: relative;
+    width: 100%;
+    height: 340px;
+    overflow: hidden;
+  }
+  #scene-canvas { display: block; width: 100%; height: 340px; }
+
+  /* Laser drag handle */
+  #laser-handle {
+    position: absolute;
+    left: 12px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 20%, #e53 60%, #600 100%);
+    border: 2px solid #f86;
+    cursor: ns-resize;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 14px #e536;
+    z-index: 10;
+    transition: box-shadow .1s;
+  }
+  #laser-handle:hover { box-shadow: 0 0 22px #e53a; }
+  #laser-handle.off { background: #333; border-color: #555; box-shadow: none; }
+  #laser-handle.blocked { background: radial-gradient(circle, #888 20%, #c53 60%, #400 100%);
+    border-color: #844; box-shadow: 0 0 8px #5002; }
+
+  /* Screen diffraction */
+  #screen-panel { position: relative; width: 100%; background: #08080f;
+    border-top: 1px solid #1e1e30; }
+  #screen-canvas { display: block; width: 100%; height: 80px; }
+
+  /* Axis */
+  #axis-panel {
+    position: relative; width: 100%; height: 52px;
+    background: #0d0d18; border-top: 1px solid #1a1a28;
+    cursor: ew-resize; user-select: none;
+  }
+  #axis-canvas { display: block; width: 100%; height: 52px; }
+  #cursor-readout {
+    position: absolute; top: 4px; right: 16px;
+    background: #1a1a2e; border: 1px solid #3a3a60;
+    border-radius: 6px; padding: 3px 10px;
+    font-size: 12px; color: #8df; pointer-events: none;
+  }
+
+  /* Curve */
+  #curve-panel { width: 100%; background: #06060e;
+    border-top: 1px solid #181824; position: relative; }
+  #curve-canvas { display: block; width: 100%; height: 120px; }
+  #curve-label { position: absolute; left: 14px; top: 6px; color: #556; font-size: 10px; }
+
+  /* λ swatch */
+  #lambda-swatch { width: 18px; height: 18px; border-radius: 4px;
+    border: 1px solid #444; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>⟨ Diffraction ⟩</h1>
+  <button id="btn-laser" class="on" onclick="toggleLaser()">Laser ON</button>
+  <div class="param-group" id="grp-lambda">
+    <div id="lambda-swatch"></div>
+    <label>λ (nm)</label>
+    <input type="range" id="sl-lambda" min="400" max="800" step="1" value="633" oninput="onParam()">
+    <span id="lbl-lambda">633</span>
+  </div>
+  <div class="param-group" id="grp-a">
+    <label>Fente <i>a</i> (µm)</label>
+    <input type="range" id="sl-a" min="20" max="500" step="5" value="200" oninput="onParam()">
+    <span id="lbl-a">200</span>
+  </div>
+  <div class="param-group" id="grp-D">
+    <label>D (m)</label>
+    <input type="range" id="sl-D" min="100" max="300" step="5" value="100" oninput="onParam()">
+    <span id="lbl-D">1.00 m</span>
+  </div>
+  <div class="param-group">
+    <label>Zoom ×</label>
+    <input type="range" id="sl-zoom" min="0.2" max="8" step="0.2" value="1" oninput="onZoom()">
+    <span id="lbl-zoom">×1</span>
+  </div>
+  <span class="info-D" id="info-D">D = 1.00 m</span>
+  <span id="laser-hint" class="hidden">⚠ Laser hors de la fente</span>
+</div>
+
+<div id="scene" style="position:relative;">
+  <canvas id="scene-canvas"></canvas>
+  <div id="laser-handle"></div>
+</div>
+
+<div id="screen-panel">
+  <canvas id="screen-canvas"></canvas>
+</div>
+
+<div id="axis-panel">
+  <canvas id="axis-canvas"></canvas>
+  <div id="cursor-readout">x = 0.00 mm</div>
+</div>
+
+<div id="curve-panel" style="display:none; position:relative;">
+  <canvas id="curve-canvas"></canvas>
+  <div id="curve-label">Courbe de luminosité I(x) — intensité réelle</div>
+</div>
+
+<script>
+// ══ DÉCODEUR PARAMÈTRES MOODLE (XOR / base64url) ══
+const _ANIM_KEY = [83,17,204,61,128,42,75,199,33,91,156,47,113,8,240,66];
+function _animDecrypt(b64url) {
+  let b64 = b64url.replace(/-/g,'+').replace(/_/g,'/');
+  while (b64.length % 4) b64 += '=';
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const dec = bytes.map((b, i) => b ^ _ANIM_KEY[i % _ANIM_KEY.length]);
+  return JSON.parse(new TextDecoder().decode(dec));
+}
+function getAnimParams() {
+  const code = new URLSearchParams(location.search).get('param');
+  if (code) { try { return _animDecrypt(code); } catch(e) {} }
+  // Fallback : params en clair (développement)
+  const urlP = new URLSearchParams(location.search);
+  const o = {};
+  for (const [k,v] of urlP) o[k] = isNaN(v) ? v : +v;
+  return o;
+}
+const PARAMS = getAnimParams();
+function P(key, def) { return key in PARAMS ? PARAMS[key] : def; }
+
+// ══ STATE ══
+let lambda = P('lambda', 633);   // nm
+let a      = P('a', 200);        // µm
+let D      = P('D', 100);        // cm (100–300)
+let zoom   = P('zoom', 1);       // 0.2–8
+let laserOn  = !!P('laser', 1);             // 0 = éteint au départ
+let laserY   = P('laser_y', 0.30);          // position initiale (0.30 → hors fente)
+let cursorPos = 0;    // metres from centre on screen
+
+// ══ VISIBILITÉ DES CONTRÔLES ══
+const showCurve    = !!P('curve', 1);
+const showLambda   = !!P('lambda_aff', 1);  // 0 → slider λ caché
+const showA        = !!P('a_aff', 1);       // 0 → slider a caché
+const showD        = !!P('D_aff', 1);       // 0 → slider D caché
+
+// Slit is fixed at the vertical centre of the scene
+const SLIT_CENTER   = 0.5;     // fraction of scene height
+const SLIT_GAP_PX   = 3;       // ±px for visual gap (very fine)
+const SLIT_TOL_FRAC = 0.028;   // ±fraction of height for interaction (~±9px on 340px)
+
+// ══ WAVELENGTH → RGB ══
+function wavelengthToRGB(nm) {
+  let r, g, b;
+  if      (nm < 380) { r=0.5; g=0;   b=0.5; }
+  else if (nm < 440) { r=(440-nm)/60; g=0; b=1; }
+  else if (nm < 490) { r=0; g=(nm-440)/50; b=1; }
+  else if (nm < 510) { r=0; g=1; b=(510-nm)/20; }
+  else if (nm < 580) { r=(nm-510)/70; g=1; b=0; }
+  else if (nm < 645) { r=1; g=(645-nm)/65; b=0; }
+  else if (nm <=750) { r=1; g=0; b=0; }
+  else               { r=0.5; g=0; b=0; }
+  let factor = 1;
+  if      (nm < 420) factor = 0.3 + 0.7*(nm-380)/40;
+  else if (nm > 700) factor = 0.3 + 0.7*(750-nm)/50;
+  return [Math.round(r*255*factor), Math.round(g*255*factor), Math.round(b*255*factor)];
+}
+function rgbStr(nm, alpha=1) {
+  const [r,g,b] = wavelengthToRGB(nm); return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ══ PHYSICS ══
+// True single-slit intensity
+function rawIntensity(y, aM, lambdaM, DM) {
+  const beta = Math.PI * aM * y / (lambdaM * DM);
+  if (Math.abs(beta) < 1e-10) return 1;
+  const s = Math.sin(beta) / beta;
+  return s * s;
+}
+
+// Boosted display intensity — raises secondary maxima visibility
+// (secondary peaks have I ~0.045, 0.016 → boosted to ~0.38, 0.28)
+function dispIntensity(I) {
+  return Math.pow(I, 0.35);
+}
+
+// ══ Laser passes through slit? ══
+// Pure fraction check — no clientHeight dependency (avoids "always true" when h=0)
+function laserInSlit() {
+  return Math.abs(laserY - SLIT_CENTER) <= SLIT_TOL_FRAC;
+}
+
+// ── Display range: fixed ±20mm divided by zoom factor ──
+// Zoom centers on x=0 and narrows the visible window, keeping the ruler metric.
+function displayHalfRange() {
+  return 0.020 / zoom;   // ±20mm at zoom=1, ±2.5mm at zoom=8
+}
+
+// Convert physical metres → canvas pixel x  (SAME formula for screen, axis, curve)
+function yToXpx(yM, w) {
+  return w * (0.5 + yM / (2 * displayHalfRange()));
+}
+function xpxToY(xpx, w) {
+  return ((xpx / w) - 0.5) * 2 * displayHalfRange();
+}
+
+// ══ CANVAS SETUP ══
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+const LASER_X   = 60;
+const SLIT_XF   = 0.42;
+const SCREEN_XF = 0.90;   // fixed — D ne change pas l'angle de diffraction
+
+// ══ SCENE ══
+function drawScene() {
+  const canvas = document.getElementById('scene-canvas');
+  const {ctx, w, h} = setupCanvas(canvas);
+  ctx.clearRect(0, 0, w, h);
+
+  const bg = ctx.createLinearGradient(0,0,0,h);
+  bg.addColorStop(0,'#07070f'); bg.addColorStop(1,'#0a0a18');
+  ctx.fillStyle = bg; ctx.fillRect(0,0,w,h);
+
+  const slitX   = w * SLIT_XF;
+  const screenX = w * SCREEN_XF;
+  const ly      = laserY * h;               // laser beam y in px
+  const slitCY  = SLIT_CENTER * h;          // slit centre y in px
+  const gapPx   = SLIT_GAP_PX;             // visual gap: very fine, fixed pixels
+  const passes  = laserInSlit() && laserOn;
+
+  // Optical bench
+  ctx.strokeStyle = '#222238'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(LASER_X, slitCY); ctx.lineTo(w, slitCY); ctx.stroke();
+
+  // Slit barrier (centred, fixed)
+  ctx.fillStyle = '#2e2e50';
+  ctx.fillRect(slitX - 5, 0,                  10, slitCY - gapPx);
+  ctx.fillRect(slitX - 5, slitCY + gapPx,     10, h - (slitCY + gapPx));
+  // Slit edges
+  ctx.strokeStyle = '#5555aa'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(slitX, 0);         ctx.lineTo(slitX, slitCY - gapPx);
+  ctx.moveTo(slitX, slitCY + gapPx); ctx.lineTo(slitX, h);
+  ctx.stroke();
+  // Gap highlight
+  ctx.strokeStyle = '#8888ff'; ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(slitX-5, slitCY - gapPx); ctx.lineTo(slitX+5, slitCY - gapPx);
+  ctx.moveTo(slitX-5, slitCY + gapPx); ctx.lineTo(slitX+5, slitCY + gapPx);
+  ctx.stroke();
+  // Label
+  ctx.fillStyle = '#8888bb'; ctx.font = '11px Segoe UI';
+  ctx.fillText(`Fente  a = ${a} µm`, slitX + 8, 18);
+
+  // Screen
+  ctx.fillStyle = '#1e1e38';
+  ctx.fillRect(screenX - 4, 0, 8, h);
+  ctx.strokeStyle = '#5566aa'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(screenX, 0); ctx.lineTo(screenX, h); ctx.stroke();
+  ctx.fillStyle = '#8899cc'; ctx.font = '11px Segoe UI';
+  ctx.fillText('Écran', screenX + 6, 18);
+
+  // D annotation
+  ctx.strokeStyle = '#3a3a60'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+  ctx.beginPath();
+  ctx.moveTo(slitX, h - 22); ctx.lineTo(screenX, h - 22); ctx.stroke();
+  ctx.setLineDash([]);
+  arrowHead(ctx, slitX,   h-22,  1, '#3a3a60');
+  arrowHead(ctx, screenX, h-22, -1, '#3a3a60');
+  ctx.fillStyle = '#6688bb'; ctx.font = 'bold 12px Segoe UI'; ctx.textAlign = 'center';
+  ctx.fillText(`D = ${(D/100).toFixed(2)} m`, (slitX+screenX)/2, h - 6);
+  ctx.textAlign = 'left';
+
+  if (!laserOn) return;
+
+  // ── Laser beam before slit ──
+  const beamGrad = ctx.createLinearGradient(LASER_X, 0, slitX, 0);
+  beamGrad.addColorStop(0, rgbStr(lambda, 0));
+  beamGrad.addColorStop(0.3, rgbStr(lambda, 0.9));
+  beamGrad.addColorStop(1,   rgbStr(lambda, 0.95));
+  ctx.strokeStyle = beamGrad; ctx.lineWidth = 2.5;
+  ctx.shadowColor = rgbStr(lambda, 0.7); ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.moveTo(LASER_X, ly); ctx.lineTo(slitX, ly); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  if (!passes) {
+    // Beam blocked — show impact on barrier
+    const blockY = ly < slitCY - gapPx ? slitCY - gapPx : slitCY + gapPx;
+    const bGrad = ctx.createRadialGradient(slitX, ly, 0, slitX, ly, 20);
+    bGrad.addColorStop(0, rgbStr(lambda, 0.6));
+    bGrad.addColorStop(1, rgbStr(lambda, 0));
+    ctx.fillStyle = bGrad;
+    ctx.fillRect(slitX - 6, ly - 15, 6, 30);
+    return;
+  }
+
+  // ── Diffraction fan after slit ──
+  // Intensité = f(λ, a, θ) uniquement — D ne change pas les angles diffractés.
+  // On utilise D_ref = 1 m fixe pour convertir position → angle → intensité.
+  const aM = a * 1e-6, lambdaM = lambda * 1e-9, DM = D / 100;
+  const D_ref = 1.0;    // référence fixe : le fan ne dépend pas de D
+  const yMax = 0.020;   // ±20mm : plage angulaire fixe
+  const nRays = 70;
+  for (let i = 0; i <= nRays; i++) {
+    const yScreen = -yMax + (2 * yMax * i / nRays);
+    const Iv = rawIntensity(yScreen, aM, lambdaM, D_ref);  // D_ref fixe → angles fixes
+    if (Iv < 0.003) continue;
+    const boosted = dispIntensity(Iv);
+    const screenYpx = slitCY + (yScreen / yMax) * (h * 0.47);
+    const rayGrad = ctx.createLinearGradient(slitX, slitCY, screenX, screenYpx);
+    rayGrad.addColorStop(0, rgbStr(lambda, boosted * 0.85));
+    rayGrad.addColorStop(1, rgbStr(lambda, boosted * 0.25));
+    ctx.strokeStyle = rayGrad; ctx.lineWidth = 0.9;
+    ctx.shadowColor = rgbStr(lambda, 0.25); ctx.shadowBlur = 2;
+    ctx.beginPath(); ctx.moveTo(slitX, slitCY); ctx.lineTo(screenX, screenYpx); ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+
+  // Laser label
+  ctx.fillStyle = '#aabbdd'; ctx.font = '11px Segoe UI';
+  ctx.fillText('Laser', 10, ly - 14);
+  ctx.fillStyle = '#667799'; ctx.font = '10px Segoe UI';
+  ctx.fillText('(déplaçable ↕)', 10, ly + 22);
+}
+
+function arrowHead(ctx, x, y, dir, color) {
+  ctx.fillStyle = color; ctx.beginPath();
+  ctx.moveTo(x+dir*8,y); ctx.lineTo(x+dir*2,y-4); ctx.lineTo(x+dir*2,y+4); ctx.fill();
+}
+
+// ══ SCREEN CANVAS ══
+function drawScreen() {
+  const canvas = document.getElementById('screen-canvas');
+  const {ctx, w, h} = setupCanvas(canvas);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#08080f'; ctx.fillRect(0,0,w,h);
+
+  const passes = laserInSlit() && laserOn;
+  if (!passes) {
+    ctx.fillStyle = '#222240'; ctx.font = '13px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText(laserOn ? 'Laser hors de la fente — aucune diffraction' : 'Laser éteint', w/2, h/2+5);
+    ctx.textAlign = 'left'; return;
+  }
+
+  const aM = a*1e-6, lambdaM = lambda*1e-9, DM = D/100;
+  const HR = displayHalfRange();
+  const [lr,lg,lb] = wavelengthToRGB(lambda);
+
+  // ── Figure de diffraction — approche continue (offscreen + drawImage = DPR-correct) ──
+  // Scan pixel par pixel, profil Gaussien vertical constant (hauteur du faisceau).
+  // Couleur = couleur λ pure × luminosité — AUCUNE saturation vers le blanc.
+  const W = Math.round(w), H = Math.round(h);
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const oCtx = off.getContext('2d');
+  const img  = oCtx.createImageData(W, H);
+  const cy   = H / 2;
+  const sigY = H * 0.27;   // hauteur faisceau constante
+
+  for (let px = 0; px < W; px++) {
+    const yM  = xpxToY(px + 0.5, w);
+    const Iv  = rawIntensity(yM, aM, lambdaM, DM);
+    const dI  = dispIntensity(Iv);   // boost I^0.35 → taches secondaires visibles
+    if (dI < 0.008) continue;
+
+    for (let py = 0; py < H; py++) {
+      const dy   = (py - cy) / sigY;
+      const vert = Math.exp(-dy * dy * 0.5);
+      const v    = dI * vert;
+      if (v < 0.012) continue;
+
+      // Couleur pure λ, luminosité linéaire — PAS de blanc
+      const lum = Math.min(1, v * 1.8);
+      const idx = (py * W + px) * 4;
+      img.data[idx]   = Math.round(lr * lum);
+      img.data[idx+1] = Math.round(lg * lum);
+      img.data[idx+2] = Math.round(lb * lum);
+      img.data[idx+3] = 255;
+    }
+  }
+  oCtx.putImageData(img, 0, 0);
+  ctx.drawImage(off, 0, 0, w, h);   // drawImage respecte ctx.scale(dpr) → DPR-correct
+
+  // Cursor — yToXpx in logical coords, same as curve & axis
+  const cxpx = yToXpx(cursorPos, w);
+  ctx.strokeStyle = 'rgba(100,200,255,0.8)'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(cxpx,0); ctx.lineTo(cxpx,h); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ══ AXIS CANVAS ══
+function drawAxis() {
+  const canvas = document.getElementById('axis-canvas');
+  const {ctx, w, h} = setupCanvas(canvas);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#0d0d18'; ctx.fillRect(0,0,w,h);
+
+  const HR = displayHalfRange();   // fixed metric ruler
+  const axisY = h * 0.52;
+
+  // Axis line
+  ctx.strokeStyle = '#3a3a58'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, axisY); ctx.lineTo(w, axisY); ctx.stroke();
+
+  // Arrow
+  ctx.fillStyle = '#4a5580';
+  ctx.beginPath(); ctx.moveTo(w-2,axisY); ctx.lineTo(w-10,axisY-4); ctx.lineTo(w-10,axisY+4); ctx.fill();
+  ctx.fillStyle = '#5566aa'; ctx.font = '11px Segoe UI';
+  ctx.textAlign = 'right'; ctx.fillText('x', w-2, axisY-6); ctx.textAlign = 'left';
+
+  // ── Graduation en mm ──
+  const rangeMM = HR * 1000;        // half-range in mm
+  const step    = niceStep(rangeMM / 4);   // nice mm step
+  ctx.font = '9px Segoe UI'; ctx.textAlign = 'center';
+
+  for (let mm = -Math.ceil(rangeMM/step)*step; mm <= rangeMM + 1e-9; mm += step) {
+    mm = Math.round(mm * 1e6) / 1e6; // float fix
+    const xpx = yToXpx(mm / 1000, w);
+    if (xpx < 4 || xpx > w - 4) continue;
+    const isCentre = Math.abs(mm) < 1e-9;
+    const isMajor  = Math.abs(mm % (step * 2)) < 1e-9 || isCentre;
+    ctx.strokeStyle = isMajor ? '#7788bb' : '#383858';
+    ctx.lineWidth   = isMajor ? 1.5 : 1;
+    const tickH = isMajor ? 14 : 8;
+    ctx.beginPath();
+    ctx.moveTo(xpx, axisY - tickH/2); ctx.lineTo(xpx, axisY + tickH/2); ctx.stroke();
+    if (isMajor) {
+      ctx.fillStyle = isCentre ? '#8899cc' : '#55668a';
+      ctx.fillText(mm === 0 ? '0' : mm.toFixed(1) + ' mm', xpx, axisY + tickH/2 + 11);
+    }
+  }
+
+  // Centre mark
+  const cx0 = yToXpx(0, w);
+  ctx.strokeStyle = '#6677aa'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx0, axisY-16); ctx.lineTo(cx0, axisY+16); ctx.stroke();
+
+  // Cursor
+  const cxpx = yToXpx(cursorPos, w);
+  ctx.strokeStyle = '#4ad'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cxpx, 2); ctx.lineTo(cxpx, h-2); ctx.stroke();
+  ctx.fillStyle = '#4ad';
+  ctx.beginPath(); ctx.moveTo(cxpx-7,2); ctx.lineTo(cxpx+7,2); ctx.lineTo(cxpx,13); ctx.fill();
+
+  // Readout
+  document.getElementById('cursor-readout').textContent =
+    `x = ${(cursorPos*1000).toFixed(2)} mm`;
+}
+
+// ══ CURVE CANVAS ══
+// Uses EXACT same x-mapping as screen canvas (yToXpx / displayHalfRange)
+// so zero of curve = zero of figure. Curve shows REAL intensity (no boost).
+function drawCurve() {
+  const canvas = document.getElementById('curve-canvas');
+  const {ctx, w, h} = setupCanvas(canvas);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#06060e'; ctx.fillRect(0,0,w,h);
+
+  const passes = laserInSlit() && laserOn;
+  const aM = a*1e-6, lambdaM = lambda*1e-9, DM = D/100;
+  const HR  = displayHalfRange();  // same fixed range as screen & axis
+
+  // Plot area: full width (no x-offset) so center = w/2 = same as screen
+  const pt = 16, pb = 26;          // top/bottom padding only
+  const ph = h - pt - pb;
+
+  // Horizontal base line
+  ctx.strokeStyle = '#2a2a42'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, pt+ph); ctx.lineTo(w, pt+ph); ctx.stroke();
+
+  // Y axis overlay labels (left side, inside canvas)
+  ctx.fillStyle = '#445566'; ctx.font = '9px Segoe UI';
+  ctx.textAlign = 'left';
+  ctx.fillText('I₀', 3, pt + 9);
+  ctx.fillText('0',  3, pt + ph + 3);
+
+  // X label
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#334455';
+  ctx.fillText('x (mm)', w/2, h - 2);
+
+  // Horizontal grid lines (I = 0.25, 0.5, 0.75)
+  ctx.strokeStyle = '#111120'; ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = pt + ph * (1 - i/4);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  // X axis ticks (mm) — identical to axis canvas using yToXpx
+  const rangeMM = HR * 1000;
+  const step    = niceStep(rangeMM / 4);
+  ctx.font = '9px Segoe UI'; ctx.textAlign = 'center'; ctx.fillStyle = '#445566';
+  for (let mm = -Math.ceil(rangeMM/step)*step; mm <= rangeMM+1e-9; mm += step) {
+    mm = Math.round(mm*1e6)/1e6;
+    const xpx = yToXpx(mm/1000, w);   // ← SAME formula as screen/axis
+    if (xpx < 2 || xpx > w-2) continue;
+    const isMajor = Math.abs(mm % (step*2)) < 1e-9 || Math.abs(mm) < 1e-9;
+    if (!isMajor) continue;
+    ctx.strokeStyle = '#2a2a42'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(xpx, pt+ph); ctx.lineTo(xpx, pt+ph+5); ctx.stroke();
+    ctx.fillText(mm === 0 ? '0' : mm.toFixed(1), xpx, pt+ph+14);
+  }
+
+  if (!passes) return;
+
+  // ── Curve: iterate in PHYSICAL space, map to pixels via yToXpx ──
+  // This guarantees pixel-perfect alignment with the cursor (same yToXpx call).
+  const [lr,lg,lb] = wavelengthToRGB(lambda);
+  const N = Math.round(w * 2);   // 2 samples per pixel → smooth curve
+
+  // Build points array using yToXpx for x — same function the cursor uses
+  const pts = [];
+  for (let i = 0; i <= N; i++) {
+    const yM  = -HR + 2 * HR * i / N;              // physical position
+    const Iv  = rawIntensity(yM, aM, lambdaM, DM); // real intensity, no boost
+    const xpx = yToXpx(yM, w);                     // ← same as cursor formula
+    const ypx = pt + ph * (1 - Iv);
+    pts.push([xpx, ypx]);
+  }
+
+  // Fill under curve
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = `rgb(${lr},${lg},${lb})`;
+  ctx.beginPath();
+  pts.forEach(([x,y], i) => i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
+  ctx.lineTo(pts[pts.length-1][0], pt+ph); ctx.lineTo(pts[0][0], pt+ph); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Draw curve on top
+  ctx.strokeStyle = `rgb(${lr},${lg},${lb})`;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = `rgba(${lr},${lg},${lb},0.5)`; ctx.shadowBlur = 5;
+  ctx.beginPath();
+  pts.forEach(([x,y], i) => i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Cursor — yToXpx(cursorPos, w): by construction aligns with curve's x=0 peak
+  const cxpx = yToXpx(cursorPos, w);
+  ctx.strokeStyle = 'rgba(100,200,255,0.7)'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(cxpx, pt); ctx.lineTo(cxpx, pt+ph); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Debug dot at x=0 to verify alignment (remove in production)
+  // ctx.fillStyle = '#ff0'; ctx.beginPath(); ctx.arc(yToXpx(0,w), pt, 4, 0, Math.PI*2); ctx.fill();
+}
+
+function niceStep(rough) {
+  if (rough <= 0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+  const f = rough / mag;
+  if (f < 1.5) return mag;
+  if (f < 3.5) return 2*mag;
+  if (f < 7.5) return 5*mag;
+  return 10*mag;
+}
+
+// ══ LASER HANDLE DRAG ══
+const laserHandle = document.getElementById('laser-handle');
+let dragging = false;
+
+function updateHandlePos() {
+  const sceneH = document.getElementById('scene').clientHeight;
+  laserHandle.style.top  = (laserY * sceneH) + 'px';
+  laserHandle.style.left = LASER_X + 'px';
+  laserHandle.className  = !laserOn ? 'off' : laserInSlit() ? '' : 'blocked';
+  document.getElementById('laser-hint').className =
+    (laserOn && !laserInSlit()) ? '' : 'hidden';
+}
+
+laserHandle.addEventListener('mousedown', e => { dragging=true; e.preventDefault(); });
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const rect = document.getElementById('scene').getBoundingClientRect();
+  laserY = Math.max(0.04, Math.min(0.96, (e.clientY - rect.top) / rect.height));
+  updateHandlePos(); drawAll();
+});
+window.addEventListener('mouseup', () => { dragging=false; });
+
+laserHandle.addEventListener('touchstart', e => { dragging=true; e.preventDefault(); }, {passive:false});
+window.addEventListener('touchmove', e => {
+  if (!dragging) return;
+  const rect = document.getElementById('scene').getBoundingClientRect();
+  laserY = Math.max(0.04, Math.min(0.96, (e.touches[0].clientY-rect.top)/rect.height));
+  updateHandlePos(); drawAll();
+}, {passive:false});
+window.addEventListener('touchend', () => { dragging=false; });
+
+// ══ CURSOR DRAG ON AXIS ══
+let axisDragging = false;
+const axisPanel = document.getElementById('axis-panel');
+
+function updateCursorFromX(xpx) {
+  cursorPos = xpxToY(xpx, axisPanel.clientWidth);
+}
+axisPanel.addEventListener('mousedown', e => {
+  axisDragging = true;
+  updateCursorFromX(e.clientX - axisPanel.getBoundingClientRect().left);
+  drawAll();
+});
+window.addEventListener('mousemove', e => {
+  if (!axisDragging) return;
+  updateCursorFromX(e.clientX - axisPanel.getBoundingClientRect().left);
+  drawAll();
+});
+window.addEventListener('mouseup', () => { axisDragging = false; });
+axisPanel.addEventListener('touchstart', e => {
+  axisDragging=true;
+  updateCursorFromX(e.touches[0].clientX - axisPanel.getBoundingClientRect().left);
+  drawAll(); e.preventDefault();
+}, {passive:false});
+window.addEventListener('touchmove', e => {
+  if (!axisDragging) return;
+  updateCursorFromX(e.touches[0].clientX - axisPanel.getBoundingClientRect().left);
+  drawAll();
+}, {passive:false});
+
+// ══ CONTROLS ══
+function toggleLaser() {
+  laserOn = !laserOn;
+  const btn = document.getElementById('btn-laser');
+  btn.textContent = laserOn ? 'Laser ON' : 'Laser OFF';
+  btn.className   = laserOn ? 'on' : 'off';
+  updateHandlePos(); drawAll();
+}
+
+function onParam() {
+  lambda = parseFloat(document.getElementById('sl-lambda').value);
+  a      = parseFloat(document.getElementById('sl-a').value);
+  D      = parseFloat(document.getElementById('sl-D').value);
+  document.getElementById('lbl-lambda').textContent = lambda;
+  document.getElementById('lbl-a').textContent = a;
+  document.getElementById('lbl-D').textContent = `${(D/100).toFixed(2)} m`;
+  document.getElementById('info-D').textContent = `D = ${(D/100).toFixed(2)} m`;
+  const [r,g,b] = wavelengthToRGB(lambda);
+  document.getElementById('lambda-swatch').style.background = `rgb(${r},${g},${b})`;
+  cursorPos = Math.max(-displayHalfRange(), Math.min(displayHalfRange(), cursorPos));
+  drawAll();
+}
+
+function onZoom() {
+  zoom = parseFloat(document.getElementById('sl-zoom').value);
+  document.getElementById('lbl-zoom').textContent = '×' + (zoom % 1 === 0 ? zoom : zoom.toFixed(2));
+  cursorPos = Math.max(-displayHalfRange(), Math.min(displayHalfRange(), cursorPos));
+  drawAll();
+}
+
+// ══ DRAW ALL ══
+function drawAll() {
+  drawScene(); drawScreen(); drawAxis();
+  if (showCurve) drawCurve();
+}
+
+// ══ INIT ══
+function init() {
+  document.getElementById('curve-panel').style.display = showCurve ? 'block' : 'none';
+
+  // Masquer les groupes de contrôles selon les params _aff
+  if (!showLambda) document.getElementById('grp-lambda').style.display = 'none';
+  if (!showA)      document.getElementById('grp-a').style.display      = 'none';
+  if (!showD)      document.getElementById('grp-D').style.display      = 'none';
+
+  document.getElementById('sl-lambda').value = lambda;
+  document.getElementById('sl-a').value = a;
+  document.getElementById('sl-D').value = D;
+  document.getElementById('sl-zoom').value = zoom;
+  document.getElementById('lbl-lambda').textContent = lambda;
+  document.getElementById('lbl-a').textContent = a;
+  document.getElementById('lbl-D').textContent = `${(D/100).toFixed(2)} m`;
+  document.getElementById('lbl-zoom').textContent = '×' + (zoom % 1 === 0 ? zoom : zoom.toFixed(2));
+  document.getElementById('info-D').textContent = `D = ${(D/100).toFixed(2)} m`;
+  const [r,g,b] = wavelengthToRGB(lambda);
+  document.getElementById('lambda-swatch').style.background = `rgb(${r},${g},${b})`;
+  // État initial laser (bouton + classe)
+  const btn = document.getElementById('btn-laser');
+  btn.textContent = laserOn ? 'Laser ON' : 'Laser OFF';
+  btn.className   = laserOn ? 'on' : 'off';
+  updateHandlePos();
+  // Defer first draw slightly so curve panel has time to layout
+  setTimeout(drawAll, 0);
+}
+
+window.addEventListener('resize', () => { updateHandlePos(); drawAll(); });
+init();
+</script>
+</body>
+</html>
