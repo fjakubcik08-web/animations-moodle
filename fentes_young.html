@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Interférences — Fentes d'Young</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a14;
+    color: #ddd;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 8px 16px;
+    background: #12121e;
+    border-bottom: 1px solid #2a2a40;
+    flex-wrap: wrap;
+  }
+  #topbar h1 { font-size: 15px; color: #aac; letter-spacing: 1px; margin-right: 4px; }
+  .param-group { display: flex; align-items: center; gap: 6px; }
+  .param-group label { color: #88a; font-size: 12px; white-space: nowrap; }
+  .param-group input[type=range] { width: 90px; accent-color: #6af; }
+  .param-group span { min-width: 46px; color: #cce; font-size: 12px; }
+  #btn-laser {
+    padding: 5px 16px; border-radius: 20px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: all .2s;
+  }
+  #btn-laser.on  { background: #e53; color: #fff; box-shadow: 0 0 12px #e534; }
+  #btn-laser.off { background: #333; color: #888; }
+  .info-val { color: #6af; font-size: 12px; }
+  .info-inter { color: #fa6; font-size: 12px; font-weight: 600; }
+  #laser-hint {
+    font-size: 11px; color: #e84; padding: 2px 10px;
+    background: #1a1200; border: 1px solid #4a3000; border-radius: 4px;
+    transition: opacity .3s;
+  }
+  #laser-hint.hidden { opacity: 0; }
+
+  /* Scene */
+  #scene {
+    position: relative;
+    width: 100%;
+    height: 340px;
+    overflow: hidden;
+  }
+  #scene-canvas { display: block; width: 100%; height: 340px; }
+
+  /* Laser drag handle */
+  #laser-handle {
+    position: absolute;
+    left: 12px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 20%, #e53 60%, #600 100%);
+    border: 2px solid #f86;
+    cursor: ns-resize;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 14px #e536;
+    z-index: 10;
+    transition: box-shadow .1s;
+  }
+  #laser-handle:hover { box-shadow: 0 0 22px #e53a; }
+  #laser-handle.off { background: #333; border-color: #555; box-shadow: none; }
+  #laser-handle.blocked { background: radial-gradient(circle, #888 20%, #c53 60%, #400 100%);
+    border-color: #844; box-shadow: 0 0 8px #5002; }
+
+  /* Screen diffraction */
+  #screen-panel { position: relative; width: 100%; background: #08080f;
+    border-top: 1px solid #1e1e30; }
+  #screen-canvas { display: block; width: 100%; height: 80px; }
+
+  /* Axis */
+  #axis-panel {
+    position: relative; width: 100%; height: 52px;
+    background: #0d0d18; border-top: 1px solid #1a1a28;
+    cursor: ew-resize; user-select: none;
+  }
+  #axis-canvas { display: block; width: 100%; height: 52px; }
+  #cursor-readout {
+    position: absolute; top: 4px; right: 16px;
+    background: #1a1a2e; border: 1px solid #3a3a60;
+    border-radius: 6px; padding: 3px 10px;
+    font-size: 12px; color: #8df; pointer-events: none;
+  }
+
+  /* Curve */
+  #curve-panel { width: 100%; background: #06060e;
+    border-top: 1px solid #181824; position: relative; }
+  #curve-canvas { display: block; width: 100%; height: 120px; }
+  #curve-label { position: absolute; left: 14px; top: 6px; color: #556; font-size: 10px; }
+
+  /* λ swatch */
+  #lambda-swatch { width: 18px; height: 18px; border-radius: 4px;
+    border: 1px solid #444; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>⟨ Fentes d'Young ⟩</h1>
+  <button id="btn-laser" class="on" onclick="toggleLaser()">Laser ON</button>
+  <div class="param-group" id="grp-lambda">
+    <div id="lambda-swatch"></div>
+    <label>λ (nm)</label>
+    <input type="range" id="sl-lambda" min="400" max="800" step="1" value="633" oninput="onParam()">
+    <span id="lbl-lambda">633</span>
+  </div>
+  <div class="param-group" id="grp-a">
+    <label>Distance <i>a</i> (µm)</label>
+    <input type="range" id="sl-a" min="100" max="2000" step="10" value="500" oninput="onParam()">
+    <span id="lbl-a">500</span>
+  </div>
+  <div class="param-group" id="grp-b">
+    <label>Largeur <i>b</i> (µm)</label>
+    <input type="range" id="sl-b" min="20" max="500" step="5" value="100" oninput="onParam()">
+    <span id="lbl-b">100</span>
+  </div>
+  <div class="param-group" id="grp-D">
+    <label>D (m)</label>
+    <input type="range" id="sl-D" min="100" max="300" step="5" value="100" oninput="onParam()">
+    <span id="lbl-D">1.00 m</span>
+  </div>
+  <div class="param-group">
+    <label>Zoom ×</label>
+    <input type="range" id="sl-zoom" min="0.2" max="8" step="0.2" value="1" oninput="onZoom()">
+    <span id="lbl-zoom">×1</span>
+  </div>
+  <span class="info-val" id="info-D">D = 1.00 m</span>
+  <span id="laser-hint" class="hidden">⚠ Laser hors des fentes</span>
+</div>
+
+<div id="scene" style="position:relative;">
+  <canvas id="scene-canvas"></canvas>
+  <div id="laser-handle"></div>
+</div>
+
+<div id="screen-panel">
+  <canvas id="screen-canvas"></canvas>
+</div>
+
+<div id="axis-panel">
+  <canvas id="axis-canvas"></canvas>
+  <div id="cursor-readout">x = 0.00 mm</div>
+</div>
+
+<div id="curve-panel" style="display:none; position:relative;">
+  <canvas id="curve-canvas"></canvas>
+  <div id="curve-label">Courbe de luminosité I(x) — intensité réelle</div>
+</div>
+
+<script>
+// ══ DÉCODEUR PARAMÈTRES MOODLE (XOR / base64url) ══
+const _ANIM_KEY = [83,17,204,61,128,42,75,199,33,91,156,47,113,8,240,66];
+function _animDecrypt(enc) {
+  let b64 = enc.replace(/-/g,'+').replace(/_/g,'/');
+  while (b64.length % 4) b64 += '=';
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const dec = bytes.map((byte, i) => byte ^ _ANIM_KEY[i % _ANIM_KEY.length]);
+  return JSON.parse(new TextDecoder().decode(dec));
+}
+function getAnimParams() {
+  const code = new URLSearchParams(location.search).get('param');
+  if (code) { try { return _animDecrypt(code); } catch(e) {} }
+  const urlP = new URLSearchParams(location.search);
+  const o = {};
+  for (const [k,v] of urlP) o[k] = isNaN(v) ? v : +v;
+  return o;
+}
+const PARAMS = getAnimParams();
+function P(key, def) { return key in PARAMS ? PARAMS[key] : def; }
+
+// ══ STATE ══
+let lambda = P('lambda', 633);   // nm
+let a      = P('a', 500);        // µm — distance entre les 2 fentes (centre-à-centre)
+let b      = P('b', 100);        // µm — largeur de chaque fente
+let D      = P('D', 100);        // cm (100–300)
+let zoom   = P('zoom', 1);
+let laserOn  = !!P('laser', 1);
+let laserY   = P('laser_y', 0.50);
+let cursorPos = 0;
+
+// ══ VISIBILITÉ DES CONTRÔLES ══
+const showCurve  = !!P('curve', 1);
+const showLambda = !!P('lambda_aff', 1);
+const showA      = !!P('a_aff', 1);
+const showB      = !!P('b_aff', 1);
+const showD      = !!P('D_aff', 1);
+
+const SLIT_CENTER = 0.5;
+
+// ── Tailles visuelles des fentes : FIXES (indépendantes de a et b) ──
+const FIXED_VIS_B = 38;   // distance centre-à-centre (px)
+const FIXED_VIS_A = 5;    // largeur de chaque fente (px)
+const BEAM_HALF   = 30;   // demi-hauteur du faisceau large (couvre bien les 2 fentes)
+
+// Les interférences apparaissent quand le laser est sur l'axe de symétrie
+function laserInSlits() {
+  const h = document.getElementById('scene').clientHeight || 340;
+  const tol = 12;   // ±12 px autour de l'axe central
+  return Math.abs(laserY * h - SLIT_CENTER * h) <= tol;
+}
+
+// ══ LONGUEUR D'ONDE → RGB ══
+function wavelengthToRGB(nm) {
+  let r=0, g=0, bv=0;
+  if      (nm < 380) { r=0.5; g=0;   bv=0.5; }
+  else if (nm < 440) { r=(440-nm)/60; g=0;   bv=1; }
+  else if (nm < 490) { r=0; g=(nm-440)/50;   bv=1; }
+  else if (nm < 510) { r=0; g=1; bv=(510-nm)/20; }
+  else if (nm < 580) { r=(nm-510)/70; g=1; bv=0; }
+  else if (nm < 645) { r=1; g=(645-nm)/65; bv=0; }
+  else if (nm <=750) { r=1; g=0; bv=0; }
+  else               { r=0.5; g=0; bv=0; }
+  let factor = 1;
+  if      (nm < 420) factor = 0.3 + 0.7*(nm-380)/40;
+  else if (nm > 700) factor = 0.3 + 0.7*(750-nm)/50;
+  return [Math.round(r*255*factor), Math.round(g*255*factor), Math.round(bv*255*factor)];
+}
+function rgbStr(nm, alpha=1) {
+  const [r,g,bv] = wavelengthToRGB(nm);
+  return `rgba(${r},${g},${bv},${alpha})`;
+}
+
+// ══ PHYSIQUE ══
+// Intensité fentes d'Young : I(y) = sinc²(β) · cos²(δ)
+//   β = π·b·y / (λ·D)   → enveloppe de diffraction (largeur de fente b)
+//   δ = π·a·y / (λ·D)   → franges d'interférence (distance entre fentes a)
+function rawIntensity(y, widthM, sepM, lambdaM, DM) {
+  const beta  = Math.PI * widthM * y / (lambdaM * DM);   // enveloppe (largeur b)
+  const delta = Math.PI * sepM   * y / (lambdaM * DM);   // franges (distance a)
+  const sinc2 = Math.abs(beta) < 1e-10 ? 1 : Math.pow(Math.sin(beta) / beta, 2);
+  const cos2  = Math.cos(delta) * Math.cos(delta);
+  return sinc2 * cos2;
+}
+
+// Boost d'affichage — rend les maxima secondaires visibles
+function dispIntensity(I) {
+  return Math.pow(I, 0.38);
+}
+
+// ── Plage d'affichage : ±20 mm / zoom ──
+function displayHalfRange() {
+  return 0.020 / zoom;
+}
+
+// Conversion position physique (m) ↔ pixel x
+function yToXpx(yM, w) {
+  return w * (0.5 + yM / (2 * displayHalfRange()));
+}
+function xpxToY(xpx, w) {
+  return ((xpx / w) - 0.5) * 2 * displayHalfRange();
+}
+
+// ══ SETUP CANVAS DPR ══
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+const LASER_X   = 60;
+const SLIT_XF   = 0.42;
+const SCREEN_XF = 0.90;
+
+// ══ SCÈNE ══
+function drawScene() {
+  const canvas = document.getElementById('scene-canvas');
+  const {ctx, w, h} = setupCanvas(canvas);
+  ctx.clearRect(0, 0, w, h);
+
+  const bg = ctx.createLinearGradient(0,0,0,h);
+  bg.addColorStop(0,'#07070f'); bg.addColorStop(1,'#0a0a18');
+  ctx.fillStyle = bg; ctx.fillRect(0,0,w,h);
+
+  const slitX   = w * SLIT_XF;
+  const screenX = w * SCREEN_XF;
+  const slitCY  = SLIT_CENTER * h;
+  const ly      = laserY * h;
+
+  // Tailles visuelles FIXES (indépendantes de a et b)
+  const slit1Y = slitCY - FIXED_VIS_B / 2;
+  const slit2Y = slitCY + FIXED_VIS_B / 2;
+  const halfA  = FIXED_VIS_A / 2;
+
+  const passes = laserInSlits() && laserOn;
+
+  // Banc optique
+  ctx.strokeStyle = '#222238'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(LASER_X, slitCY); ctx.lineTo(w, slitCY); ctx.stroke();
+
+  // ── Écran obstacle avec 2 fentes (taille fixe) ──
+  ctx.fillStyle = '#2e2e50';
+  ctx.fillRect(slitX-5, 0, 10, slit1Y - halfA);
+  ctx.fillRect(slitX-5, slit1Y + halfA, 10, (slit2Y - halfA) - (slit1Y + halfA));
+  ctx.fillRect(slitX-5, slit2Y + halfA, 10, h - (slit2Y + halfA));
+
+  // Bords de l'obstacle
+  ctx.strokeStyle = '#5555aa'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(slitX, 0);              ctx.lineTo(slitX, slit1Y - halfA);
+  ctx.moveTo(slitX, slit1Y + halfA); ctx.lineTo(slitX, slit2Y - halfA);
+  ctx.moveTo(slitX, slit2Y + halfA); ctx.lineTo(slitX, h);
+  ctx.stroke();
+
+  // Reflets des bords des fentes
+  ctx.strokeStyle = '#8888ff'; ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(slitX-5, slit1Y-halfA); ctx.lineTo(slitX+5, slit1Y-halfA);
+  ctx.moveTo(slitX-5, slit1Y+halfA); ctx.lineTo(slitX+5, slit1Y+halfA);
+  ctx.moveTo(slitX-5, slit2Y-halfA); ctx.lineTo(slitX+5, slit2Y-halfA);
+  ctx.moveTo(slitX-5, slit2Y+halfA); ctx.lineTo(slitX+5, slit2Y+halfA);
+  ctx.stroke();
+
+  // Flèche b (côté gauche de la fente)
+  ctx.strokeStyle = '#4a6090'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+  ctx.beginPath();
+  ctx.moveTo(slitX-14, slit1Y); ctx.lineTo(slitX-14, slit2Y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#4a6090';
+  ctx.beginPath(); ctx.moveTo(slitX-14,slit1Y); ctx.lineTo(slitX-18,slit1Y+6); ctx.lineTo(slitX-10,slit1Y+6); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(slitX-14,slit2Y); ctx.lineTo(slitX-18,slit2Y-6); ctx.lineTo(slitX-10,slit2Y-6); ctx.fill();
+  ctx.fillStyle = '#6688bb'; ctx.font = 'bold 11px Segoe UI'; ctx.textAlign = 'right';
+  ctx.fillText('a', slitX-18, slitCY+4);
+  ctx.textAlign = 'left';
+
+  // Écran de détection
+  ctx.fillStyle = '#1e1e38';
+  ctx.fillRect(screenX - 4, 0, 8, h);
+  ctx.strokeStyle = '#5566aa'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(screenX, 0); ctx.lineTo(screenX, h); ctx.stroke();
+  ctx.fillStyle = '#8899cc'; ctx.font = '11px Segoe UI';
+  ctx.fillText('Écran', screenX + 6, 18);
+
+  // Annotation D
+  ctx.strokeStyle = '#3a3a60'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(slitX, h-22); ctx.lineTo(screenX, h-22); ctx.stroke();
+  ctx.setLineDash([]);
+  arrowHead(ctx, slitX,   h-22,  1, '#3a3a60');
+  arrowHead(ctx, screenX, h-22, -1, '#3a3a60');
+  ctx.fillStyle = '#6688bb'; ctx.font = 'bold 12px Segoe UI'; ctx.textAlign = 'center';
+  ctx.fillText(`D = ${(D/100).toFixed(2)} m`, (slitX+screenX)/2, h-6);
+  ctx.textAlign = 'left';
+
+  if (!laserOn) return;
+
+  // ── Faisceau laser large (couvre les 2 fentes) ──
+  const bw = slitX - LASER_X;
+
+  // Halo extérieur (large, faible alpha)
+  const gOut = ctx.createLinearGradient(LASER_X, 0, slitX, 0);
+  gOut.addColorStop(0, rgbStr(lambda, 0));
+  gOut.addColorStop(0.4, rgbStr(lambda, 0.06));
+  gOut.addColorStop(1,   rgbStr(lambda, 0.10));
+  ctx.fillStyle = gOut;
+  ctx.fillRect(LASER_X, ly - BEAM_HALF, bw, BEAM_HALF * 2);
+
+  // Couronne intermédiaire
+  const gMid = ctx.createLinearGradient(LASER_X, 0, slitX, 0);
+  gMid.addColorStop(0, rgbStr(lambda, 0));
+  gMid.addColorStop(0.35, rgbStr(lambda, 0.22));
+  gMid.addColorStop(1,    rgbStr(lambda, 0.30));
+  ctx.fillStyle = gMid;
+  ctx.fillRect(LASER_X, ly - BEAM_HALF * 0.45, bw, BEAM_HALF * 0.9);
+
+  // Cœur brillant (ligne centrale)
+  const gCore = ctx.createLinearGradient(LASER_X, 0, slitX, 0);
+  gCore.addColorStop(0,   rgbStr(lambda, 0));
+  gCore.addColorStop(0.3, rgbStr(lambda, 0.92));
+  gCore.addColorStop(1,   rgbStr(lambda, 0.97));
+  ctx.strokeStyle = gCore; ctx.lineWidth = 2;
+  ctx.shadowColor = rgbStr(lambda, 0.6); ctx.shadowBlur = 6;
+  ctx.beginPath(); ctx.moveTo(LASER_X, ly); ctx.lineTo(slitX, ly); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  if (!passes) {
+    // Bloqué — halo sur l'obstacle
+    const bGrad = ctx.createRadialGradient(slitX, ly, 0, slitX, ly, 22);
+    bGrad.addColorStop(0, rgbStr(lambda, 0.5));
+    bGrad.addColorStop(1, rgbStr(lambda, 0));
+    ctx.fillStyle = bGrad;
+    ctx.fillRect(slitX-6, ly - BEAM_HALF, 6, BEAM_HALF * 2);
+    return;
+  }
+
+  // ── Éventail d'interférences depuis les DEUX fentes ──
+  const widthM = b*1e-6, sepM = a*1e-6, lambdaM = lambda*1e-9;
+  const D_ref = 1.0;    // D fixe pour les angles du fan (D ne change pas les angles)
+  const yMax  = 0.020;  // ±20 mm
+  const nRays = 60;
+
+  for (let i = 0; i <= nRays; i++) {
+    const yScreen  = -yMax + (2 * yMax * i / nRays);
+    const Iv       = rawIntensity(yScreen, widthM, sepM, lambdaM, D_ref);
+    if (Iv < 0.006) continue;
+    const boosted  = dispIntensity(Iv);
+    const screenYpx = slitCY + (yScreen / yMax) * (h * 0.47);
+
+    // Rayon depuis la fente 1 (haute)
+    const g1 = ctx.createLinearGradient(slitX, slit1Y, screenX, screenYpx);
+    g1.addColorStop(0, rgbStr(lambda, boosted * 0.70));
+    g1.addColorStop(1, rgbStr(lambda, boosted * 0.16));
+    ctx.strokeStyle = g1; ctx.lineWidth = 0.85;
+    ctx.shadowColor = rgbStr(lambda, 0.12); ctx.shadowBlur = 1.5;
+    ctx.beginPath(); ctx.moveTo(slitX, slit1Y); ctx.lineTo(screenX, screenYpx); ctx.stroke();
+
+    // Rayon depuis la fente 2 (basse)
+    const g2 = ctx.createLinearGradient(slitX, slit2Y, screenX, screenYpx);
+    g2.addColorStop(0, rgbStr(lambda, boosted * 0.70));
+    g2.addColorStop(1, rgbStr(lambda, boosted * 0.16));
+    ctx.strokeStyle = g2; ctx.lineWidth = 0.85;
+    ctx.beginPath(); ctx.moveTo(slitX, slit2Y); ctx.lineTo(screenX, screenYpx); ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+
+  // Label laser
+  ctx.fillStyle = '#aabbdd'; ctx.font = '11px Segoe UI'; ctx.textAlign = 'left';
+  ctx.fillText('Laser', 10, ly - 14);
+  ctx.fillStyle = '#667799'; ctx.font = '10px Segoe UI';
+  ctx.fillText('(déplaçable ↕)', 10, ly + 22);
+}
+
+function arrowHead(ctx, x, y, dir, color) {
+  ctx.fillStyle = color; ctx.beginPath();
+  ctx.moveTo(x+dir*8,y); ctx.lineTo(x+dir*2,y-4); ctx.lineTo(x+dir*2,y+4); ctx.fill();
+}
+
+// ══ ÉCRAN — figure d'interférence ══
+function drawScreen() {
+  const canvas = document.getElementById('screen-canvas');
+  const {ctx, w, h} = setupCanvas(canvas);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#08080f'; ctx.fillRect(0,0,w,h);
+
+  const passes = laserInSlits() && laserOn;
+  if (!passes) {
+    ctx.fillStyle = '#222240'; ctx.font = '13px Segoe UI'; ctx.textAlign = 'center';
+    ctx.fillText(laserOn ? 'Laser hors des fentes — aucune interférence' : 'Laser éteint', w/2, h/2+5);
+    ctx.textAlign = 'left'; return;
+  }
+
+  const widthM = b*1e-6, sepM = a*1e-6, lambdaM = lambda*1e-9, DM = D/100;
+  const [lr,lg,lb] = wavelengthToRGB(lambda);
+
+  // Rendu pixel par pixel (offscreen canvas)
+  const W = Math.round(w), H = Math.round(h);
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const oCtx = off.getContext('2d');
+  const img  = oCtx.createImageData(W, H);
+  const cy   = H / 2;
+  const sigY = H * 0.27;
+
+  for (let px = 0; px < W; px++) {
+    const yM = xpxToY(px + 0.5, w);
+    const Iv = rawIntensity(yM, widthM, sepM, lambdaM, DM);
+    const dI = dispIntensity(Iv);
+    if (dI < 0.008) continue;
+    for (let py = 0; py < H; py++) {
+      const dy   = (py - cy) / sigY;
+      const vert = Math.exp(-dy * dy * 0.5);
+      const v    = dI * vert;
+      if (v < 0.012) continue;
+      const lum = Math.min(1, v * 1.8);
+      const idx = (py * W + px) * 4;
+      img.data[idx]   = Math.round(lr * lum);
+      img.data[idx+1] = Math.round(lg * lum);
+      img.data[idx+2] = Math.round(lb * lum);
+      img.data[idx+3] = 255;
+    }
+  }
+  oCtx.putImageData(img, 0, 0);
+  ctx.drawImage(off, 0, 0, w, h);
+
+  // Curseur
+  const cxpx = yToXpx(cursorPos, w);
+  ctx.strokeStyle = 'rgba(100,200,255,0.8)'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(cxpx,0); ctx.lineTo(cxpx,h); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ══ AXE ══
+function drawAxis() {
+  const canvas = document.getElementById('axis-canvas');
+  const {ctx, w, h} = setupCanvas(canvas);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#0d0d18'; ctx.fillRect(0,0,w,h);
+
+  const HR    = displayHalfRange();
+  const axisY = h * 0.52;
+
+  ctx.strokeStyle = '#3a3a58'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, axisY); ctx.lineTo(w, axisY); ctx.stroke();
+
+  ctx.fillStyle = '#4a5580';
+  ctx.beginPath(); ctx.moveTo(w-2,axisY); ctx.lineTo(w-10,axisY-4); ctx.lineTo(w-10,axisY+4); ctx.fill();
+  ctx.fillStyle = '#5566aa'; ctx.font = '11px Segoe UI';
+  ctx.textAlign = 'right'; ctx.fillText('x', w-2, axisY-6); ctx.textAlign = 'left';
+
+  const rangeMM = HR * 1000;
+  const step    = niceStep(rangeMM / 4);
+  ctx.font = '9px Segoe UI'; ctx.textAlign = 'center';
+
+  for (let mm = -Math.ceil(rangeMM/step)*step; mm <= rangeMM+1e-9; mm += step) {
+    mm = Math.round(mm*1e6)/1e6;
+    const xpx = yToXpx(mm/1000, w);
+    if (xpx < 4 || xpx > w-4) continue;
+    const isCentre = Math.abs(mm) < 1e-9;
+    const isMajor  = Math.abs(mm % (step*2)) < 1e-9 || isCentre;
+    ctx.strokeStyle = isMajor ? '#7788bb' : '#383858';
+    ctx.lineWidth   = isMajor ? 1.5 : 1;
+    const tickH = isMajor ? 14 : 8;
+    ctx.beginPath(); ctx.moveTo(xpx, axisY-tickH/2); ctx.lineTo(xpx, axisY+tickH/2); ctx.stroke();
+    if (isMajor) {
+      ctx.fillStyle = isCentre ? '#8899cc' : '#55668a';
+      ctx.fillText(mm===0 ? '0' : mm.toFixed(1)+' mm', xpx, axisY+tickH/2+11);
+    }
+  }
+
+  const cx0 = yToXpx(0, w);
+  ctx.strokeStyle = '#6677aa'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx0, axisY-16); ctx.lineTo(cx0, axisY+16); ctx.stroke();
+
+  const cxpx = yToXpx(cursorPos, w);
+  ctx.strokeStyle = '#4ad'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cxpx, 2); ctx.lineTo(cxpx, h-2); ctx.stroke();
+  ctx.fillStyle = '#4ad';
+  ctx.beginPath(); ctx.moveTo(cxpx-7,2); ctx.lineTo(cxpx+7,2); ctx.lineTo(cxpx,13); ctx.fill();
+
+  document.getElementById('cursor-readout').textContent =
+    `x = ${(cursorPos*1000).toFixed(2)} mm`;
+}
+
+// ══ COURBE I(x) ══
+function drawCurve() {
+  const canvas = document.getElementById('curve-canvas');
+  const {ctx, w, h} = setupCanvas(canvas);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#06060e'; ctx.fillRect(0,0,w,h);
+
+  const passes = laserInSlits() && laserOn;
+  const widthM = b*1e-6, sepM = a*1e-6, lambdaM = lambda*1e-9, DM = D/100;
+  const HR = displayHalfRange();
+  const pt = 16, pb = 26;
+  const ph = h - pt - pb;
+
+  ctx.strokeStyle = '#2a2a42'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, pt+ph); ctx.lineTo(w, pt+ph); ctx.stroke();
+
+  ctx.fillStyle = '#445566'; ctx.font = '9px Segoe UI'; ctx.textAlign = 'left';
+  ctx.fillText('I₀', 3, pt+9);
+  ctx.fillText('0',  3, pt+ph+3);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#334455';
+  ctx.fillText('x (mm)', w/2, h-2);
+
+  ctx.strokeStyle = '#111120'; ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = pt + ph*(1-i/4);
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+  }
+
+  const rangeMM = HR*1000;
+  const step    = niceStep(rangeMM/4);
+  ctx.font = '9px Segoe UI'; ctx.textAlign = 'center'; ctx.fillStyle = '#445566';
+  for (let mm = -Math.ceil(rangeMM/step)*step; mm <= rangeMM+1e-9; mm += step) {
+    mm = Math.round(mm*1e6)/1e6;
+    const xpx = yToXpx(mm/1000, w);
+    if (xpx < 2 || xpx > w-2) continue;
+    const isMajor = Math.abs(mm % (step*2)) < 1e-9 || Math.abs(mm) < 1e-9;
+    if (!isMajor) continue;
+    ctx.strokeStyle = '#2a2a42'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(xpx, pt+ph); ctx.lineTo(xpx, pt+ph+5); ctx.stroke();
+    ctx.fillText(mm===0 ? '0' : mm.toFixed(1), xpx, pt+ph+14);
+  }
+
+  if (!passes) return;
+
+  const [lr,lg,lb] = wavelengthToRGB(lambda);
+  const N = Math.round(w*2);
+  const pts = [];
+  for (let i = 0; i <= N; i++) {
+    const yM  = -HR + 2*HR*i/N;
+    const Iv  = rawIntensity(yM, widthM, sepM, lambdaM, DM);
+    const xpx = yToXpx(yM, w);
+    const ypx = pt + ph*(1-Iv);
+    pts.push([xpx, ypx]);
+  }
+
+  // Remplissage sous la courbe
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = `rgb(${lr},${lg},${lb})`;
+  ctx.beginPath();
+  pts.forEach(([x,y], i) => i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
+  ctx.lineTo(pts[pts.length-1][0], pt+ph); ctx.lineTo(pts[0][0], pt+ph); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Courbe
+  ctx.strokeStyle = `rgb(${lr},${lg},${lb})`;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = `rgba(${lr},${lg},${lb},0.5)`; ctx.shadowBlur = 5;
+  ctx.beginPath();
+  pts.forEach(([x,y], i) => i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Curseur
+  const cxpx = yToXpx(cursorPos, w);
+  ctx.strokeStyle = 'rgba(100,200,255,0.7)'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(cxpx, pt); ctx.lineTo(cxpx, pt+ph); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function niceStep(rough) {
+  if (rough <= 0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+  const f = rough/mag;
+  if (f < 1.5) return mag;
+  if (f < 3.5) return 2*mag;
+  if (f < 7.5) return 5*mag;
+  return 10*mag;
+}
+
+// ══ DRAG LASER ══
+const laserHandle = document.getElementById('laser-handle');
+let dragging = false;
+
+function updateHandlePos() {
+  const sceneH = document.getElementById('scene').clientHeight;
+  laserHandle.style.top  = (laserY * sceneH) + 'px';
+  laserHandle.style.left = LASER_X + 'px';
+  laserHandle.className  = !laserOn ? 'off' : laserInSlits() ? '' : 'blocked';
+  document.getElementById('laser-hint').className =
+    (laserOn && !laserInSlits()) ? '' : 'hidden';
+}
+
+laserHandle.addEventListener('mousedown', e => { dragging=true; e.preventDefault(); });
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const rect = document.getElementById('scene').getBoundingClientRect();
+  laserY = Math.max(0.04, Math.min(0.96, (e.clientY-rect.top)/rect.height));
+  updateHandlePos(); drawAll();
+});
+window.addEventListener('mouseup', () => { dragging=false; });
+
+laserHandle.addEventListener('touchstart', e => { dragging=true; e.preventDefault(); }, {passive:false});
+window.addEventListener('touchmove', e => {
+  if (!dragging) return;
+  const rect = document.getElementById('scene').getBoundingClientRect();
+  laserY = Math.max(0.04, Math.min(0.96, (e.touches[0].clientY-rect.top)/rect.height));
+  updateHandlePos(); drawAll();
+}, {passive:false});
+window.addEventListener('touchend', () => { dragging=false; });
+
+// ══ DRAG CURSEUR (axe) ══
+let axisDragging = false;
+const axisPanel = document.getElementById('axis-panel');
+function updateCursorFromX(xpx) {
+  cursorPos = xpxToY(xpx, axisPanel.clientWidth);
+}
+axisPanel.addEventListener('mousedown', e => {
+  axisDragging=true;
+  updateCursorFromX(e.clientX-axisPanel.getBoundingClientRect().left);
+  drawAll();
+});
+window.addEventListener('mousemove', e => {
+  if (!axisDragging) return;
+  updateCursorFromX(e.clientX-axisPanel.getBoundingClientRect().left);
+  drawAll();
+});
+window.addEventListener('mouseup', () => { axisDragging=false; });
+axisPanel.addEventListener('touchstart', e => {
+  axisDragging=true;
+  updateCursorFromX(e.touches[0].clientX-axisPanel.getBoundingClientRect().left);
+  drawAll(); e.preventDefault();
+}, {passive:false});
+window.addEventListener('touchmove', e => {
+  if (!axisDragging) return;
+  updateCursorFromX(e.touches[0].clientX-axisPanel.getBoundingClientRect().left);
+  drawAll();
+}, {passive:false});
+
+// ══ CONTRÔLES ══
+function toggleLaser() {
+  laserOn = !laserOn;
+  const btn = document.getElementById('btn-laser');
+  btn.textContent = laserOn ? 'Laser ON' : 'Laser OFF';
+  btn.className   = laserOn ? 'on' : 'off';
+  updateHandlePos(); drawAll();
+}
+
+function onParam() {
+  lambda = parseFloat(document.getElementById('sl-lambda').value);
+  a      = parseFloat(document.getElementById('sl-a').value);
+  b      = parseFloat(document.getElementById('sl-b').value);
+  D      = parseFloat(document.getElementById('sl-D').value);
+  document.getElementById('lbl-lambda').textContent = lambda;
+  document.getElementById('lbl-a').textContent = a;
+  document.getElementById('lbl-b').textContent = b;
+  document.getElementById('lbl-D').textContent = `${(D/100).toFixed(2)} m`;
+  document.getElementById('info-D').textContent = `D = ${(D/100).toFixed(2)} m`;
+  const [r,g,bv] = wavelengthToRGB(lambda);
+  document.getElementById('lambda-swatch').style.background = `rgb(${r},${g},${bv})`;
+  cursorPos = Math.max(-displayHalfRange(), Math.min(displayHalfRange(), cursorPos));
+  drawAll();
+}
+
+function onZoom() {
+  zoom = parseFloat(document.getElementById('sl-zoom').value);
+  document.getElementById('lbl-zoom').textContent = '×'+(zoom%1===0 ? zoom : zoom.toFixed(2));
+  cursorPos = Math.max(-displayHalfRange(), Math.min(displayHalfRange(), cursorPos));
+  drawAll();
+}
+
+// ══ RENDU ══
+function drawAll() {
+  drawScene(); drawScreen(); drawAxis();
+  if (showCurve) drawCurve();
+}
+
+// ══ INIT ══
+function init() {
+  document.getElementById('curve-panel').style.display = showCurve ? 'block' : 'none';
+  if (!showLambda) document.getElementById('grp-lambda').style.display = 'none';
+  if (!showA)      document.getElementById('grp-a').style.display      = 'none';
+  if (!showB)      document.getElementById('grp-b').style.display      = 'none';
+  if (!showD)      document.getElementById('grp-D').style.display      = 'none';
+
+  document.getElementById('sl-lambda').value = lambda;
+  document.getElementById('sl-a').value      = a;
+  document.getElementById('sl-b').value      = b;
+  document.getElementById('sl-D').value      = D;
+  document.getElementById('sl-zoom').value   = zoom;
+  document.getElementById('lbl-lambda').textContent = lambda;
+  document.getElementById('lbl-a').textContent = a;
+  document.getElementById('lbl-b').textContent = b;
+  document.getElementById('lbl-D').textContent = `${(D/100).toFixed(2)} m`;
+  document.getElementById('lbl-zoom').textContent = '×'+(zoom%1===0 ? zoom : zoom.toFixed(2));
+  document.getElementById('info-D').textContent = `D = ${(D/100).toFixed(2)} m`;
+  const [r,g,bv] = wavelengthToRGB(lambda);
+  document.getElementById('lambda-swatch').style.background = `rgb(${r},${g},${bv})`;
+  const btn = document.getElementById('btn-laser');
+  btn.textContent = laserOn ? 'Laser ON' : 'Laser OFF';
+  btn.className   = laserOn ? 'on' : 'off';
+  updateHandlePos();
+  setTimeout(drawAll, 0);
+}
+
+window.addEventListener('resize', () => { updateHandlePos(); drawAll(); });
+init();
+</script>
+</body>
+</html>
