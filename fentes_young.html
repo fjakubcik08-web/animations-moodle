@@ -182,7 +182,7 @@ let lambda = P('lambda', 633);   // nm
 let a      = P('a', 500);        // µm — distance entre les 2 fentes (centre-à-centre)
 let b      = P('b', 100);        // µm — largeur de chaque fente
 let D      = P('D', 100);        // cm (100–300)
-let zoom   = P('zoom', 1);
+let zoom   = P('zoom', 2);
 let laserOn  = !!P('laser', 1);
 let laserY   = P('laser_y', 0.50);
 let cursorPos = 0;
@@ -246,9 +246,9 @@ function dispIntensity(I) {
   return Math.pow(I, 0.38);
 }
 
-// ── Plage d'affichage : ±20 mm / zoom ──
+// ── Plage d'affichage : ±5 mm / zoom (adapté aux franges d'Young, bien plus fines) ──
 function displayHalfRange() {
-  return 0.020 / zoom;
+  return 0.005 / zoom;
 }
 
 // Conversion position physique (m) ↔ pixel x
@@ -460,19 +460,18 @@ function drawScreen() {
   const oCtx = off.getContext('2d');
   const img  = oCtx.createImageData(W, H);
   const cy   = H / 2;
-  const sigY = H * 0.27;
+  const sigY = H * 0.55;   // large → franges en barres verticales, pas en ovals
 
   for (let px = 0; px < W; px++) {
     const yM = xpxToY(px + 0.5, w);
     const Iv = rawIntensity(yM, widthM, sepM, lambdaM, DM);
-    const dI = dispIntensity(Iv);
-    if (dI < 0.008) continue;
+    if (Iv < 0.005) continue;   // affichage fidèle : pas de boost, franges nettes
     for (let py = 0; py < H; py++) {
       const dy   = (py - cy) / sigY;
       const vert = Math.exp(-dy * dy * 0.5);
-      const v    = dI * vert;
-      if (v < 0.012) continue;
-      const lum = Math.min(1, v * 1.8);
+      const v    = Iv * vert;
+      if (v < 0.008) continue;
+      const lum = Math.min(1, v * 2.2);
       const idx = (py * W + px) * 4;
       img.data[idx]   = Math.round(lr * lum);
       img.data[idx+1] = Math.round(lg * lum);
