@@ -128,8 +128,8 @@
   </div>
   <div class="param-group">
     <label>Zoom ×</label>
-    <input type="range" id="sl-zoom" min="0.2" max="8" step="0.2" value="1" oninput="onZoom()">
-    <span id="lbl-zoom">×1</span>
+    <input type="range" id="sl-zoom" min="0" max="16" step="1" value="7" oninput="onZoom()">
+    <span id="lbl-zoom">×2</span>
   </div>
   <span class="info-val" id="info-D">D = 1.00 m</span>
   <span id="laser-hint" class="hidden">⚠ Laser hors des fentes</span>
@@ -182,6 +182,7 @@ let lambda = P('lambda', 633);   // nm
 let a      = P('a', 500);        // µm — distance entre les 2 fentes (centre-à-centre)
 let b      = P('b', 100);        // µm — largeur de chaque fente
 let D      = P('D', 100);        // cm (100–300)
+const ZOOM_VALS = [0.1, 0.15, 0.2, 0.25, 0.3, 0.5, 0.8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let zoom   = P('zoom', 2);
 let laserOn  = !!P('laser', 1);
 let laserY   = P('laser_y', 0.50);
@@ -716,8 +717,9 @@ function onParam() {
 }
 
 function onZoom() {
-  zoom = parseFloat(document.getElementById('sl-zoom').value);
-  document.getElementById('lbl-zoom').textContent = '×'+(zoom%1===0 ? zoom : zoom.toFixed(2));
+  const idx = parseInt(document.getElementById('sl-zoom').value);
+  zoom = ZOOM_VALS[idx];
+  document.getElementById('lbl-zoom').textContent = '×' + zoom;
   cursorPos = Math.max(-displayHalfRange(), Math.min(displayHalfRange(), cursorPos));
   drawAll();
 }
@@ -740,12 +742,14 @@ function init() {
   document.getElementById('sl-a').value      = a;
   document.getElementById('sl-b').value      = b;
   document.getElementById('sl-D').value      = D;
-  document.getElementById('sl-zoom').value   = zoom;
+  const zoomIdx = ZOOM_VALS.reduce((best, v, i) =>
+    Math.abs(v - zoom) < Math.abs(ZOOM_VALS[best] - zoom) ? i : best, 0);
+  document.getElementById('sl-zoom').value = zoomIdx;
   document.getElementById('lbl-lambda').textContent = lambda;
   document.getElementById('lbl-a').textContent = a;
   document.getElementById('lbl-b').textContent = b;
   document.getElementById('lbl-D').textContent = `${(D/100).toFixed(2)} m`;
-  document.getElementById('lbl-zoom').textContent = '×'+(zoom%1===0 ? zoom : zoom.toFixed(2));
+  document.getElementById('lbl-zoom').textContent = '×' + ZOOM_VALS[zoomIdx];
   document.getElementById('info-D').textContent = `D = ${(D/100).toFixed(2)} m`;
   const [r,g,bv] = wavelengthToRGB(lambda);
   document.getElementById('lambda-swatch').style.background = `rgb(${r},${g},${bv})`;
