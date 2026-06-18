@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rayonnement solaire — Loi du carré inverse</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#0a0a1a;font-family:Arial,Helvetica,sans-serif;color:#e8eaf0;}
+    #wrap{max-width:920px;margin:0 auto;}
+    canvas{display:block;width:100%;border-radius:12px 12px 0 0;cursor:default;}
+    #panel{display:flex;border:1px solid #2a2d3a;border-top:none;border-radius:0 0 12px 12px;overflow:hidden;}
+    .cell{flex:1;padding:12px 18px;background:#12141f;}
+    .cell+.cell{border-left:1px solid #2a2d3a;flex:0.65;}
+    .lbl{font-size:11px;color:#888;margin-bottom:3px;}
+    #vE{font-size:26px;font-weight:500;color:#e8eaf0;transition:color .07s;}
+    #vR{font-size:19px;font-weight:500;color:#e8eaf0;}
+    #vPlanet{font-size:12px;margin-top:3px;min-height:16px;transition:opacity .15s;opacity:0;}
+    #ctrl{display:flex;justify-content:center;padding:8px 0;}
+    button{background:#1e2035;border:1px solid #3a3d52;color:#c8cad8;padding:6px 18px;
+           border-radius:8px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:6px;}
+    button:hover{background:#262840;}
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="panel">
+    <div class="cell" id="panE">
+      <div class="lbl">Éclairement au capteur</div>
+      <div id="vE">— W/m²</div>
+    </div>
+    <div class="cell">
+      <div class="lbl">Distance à <span id="lblStar">l'étoile</span></div>
+      <div id="vR">— UA</div>
+      <div id="vPlanet"> </div>
+    </div>
+  </div>
+  <div id="ctrl">
+    <button onclick="togglePlay()">
+      <span id="btnIco">⏸</span>
+      <span id="btnLbl">Pause</span>
+    </button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  DÉCODAGE DES PARAMÈTRES URL
+//  Algo : JSON → UTF-8 → XOR cyclique → base64url → ?param=
+// ═══════════════════════════════════════════════════════════
+function getAnimParams(defaults) {
+  const KEY = [83,17,204,61,128,42,75,199,33,91,156,47,113,8,240,66];
+  try {
+    const raw = new URLSearchParams(location.search).get('param');
+    if (!raw) return defaults;
+    const b64 = raw.replace(/-/g,'+').replace(/_/g,'/');
+    const bytes = Uint8Array.from(atob(b64 + '=='), c => c.charCodeAt(0));
+    const decoded = bytes.map((b, i) => b ^ KEY[i % KEY.length]);
+    return { ...defaults, ...JSON.parse(new TextDecoder().decode(decoded)) };
+  } catch(e) { return defaults; }
+}
+
+const PARAMS = getAnimParams({
+  E0:  1350,        // Constante de rayonnement (W/m² à 1 UA)
+  star:'Soleil',    // Nom de l'étoile
+  p1:'Terre',   d1: 1.00,   // Planète 1 : nom + distance UA
+  p2:'Mars',    d2: 1.52,   // Planète 2
+  p3:'Jupiter', d3: 5.20,   // Planète 3
+});
+
+// ═══════════════════════════════════════════════════════════
+//  CONFIGURATION (depuis PARAMS)
+// ═══════════════════════════════════════════════════════════
+const E0       = PARAMS.E0;
+const STARNAME = PARAMS.star;
+
+// Angles, couleurs et tailles par index (fixes)
+const _ANG = [-0.40, +0.42, -0.14];
+const _COL = [[80,140,255],[220,80,50],[200,155,55]];
+const _SZ  = [0.018, 0.013, 0.030];
+
+const PLANETS = [
+  { name:PARAMS.p1, ua:PARAMS.d1 },
+  { name:PARAMS.p2, ua:PARAMS.d2 },
+  { name:PARAMS.p3, ua:PARAMS.d3 },
+].map((p,i) => ({ name:p.name, ua:p.ua, angle:_ANG[i], rgb:_COL[i], sz:_SZ[i], hl:0 }));
+
+// ═══════════════════════════════════════════════════════════
+//  CANVAS
+// ═══════════════════════════════════════════════════════════
+document.getElementById('lblStar').textContent = STARNAME;
+
+const cv = document.getElementById('c');
+const cx = cv.getContext('2d');
+let W, H;
+
+const sx   = () => W * 0.07;
+const sy   = () => H * 0.50;
+const pxAU = () => W * 0.86 / 6;     // 6 UA en 86 % de la largeur
+
+// Position vaisseau en coordonnées UA (relatives au soleil)
+let shipAUx = 1.20, shipAUy = -0.30;
+const spx    = () => sx() + shipAUx * pxAU();
+const spy    = () => sy() + shipAUy * pxAU();
+const shipR  = () => Math.sqrt(shipAUx**2 + shipAUy**2);
+const shipEw = () => { const r = shipR(); return r > 0.01 ? Math.round(E0/(r*r)) : 9999999; };
+const sc     = () => Math.max(14, W * 0.022);
+
+// Types d'ondes (couleurs UV / Visible / IR)
+const TYPES = [{rgb:[178,102,255]},{rgb:[255,224,74]},{rgb:[255,107,53]}];
+let typeIdx = 0, waves = [], probeFlash = 0, tick = 0, running = true;
+
+// Positions planètes
+const plx = p => sx() + p.ua * pxAU() * Math.cos(p.angle);
+const ply = p => sy() + p.ua * pxAU() * Math.sin(p.angle);
+
+// ── Étoiles de fond ─────────────────────────────────────────
+let stars = [];
+function buildStars() {
+  stars = Array.from({length:200}, () => ({
+    x:Math.random()*W, y:Math.random()*H,
+    r:Math.random()*1.0+0.2, base:0.25+Math.random()*0.65,
+    phase:Math.random()*Math.PI*2, freq:0.003+Math.random()*0.012
+  }));
+}
+
+function resize() {
+  W = cv.offsetWidth || 800;
+  H = Math.round(W * 0.52);
+  cv.width = W; cv.height = H;
+  buildStars();
+}
+
+// ── Play / Pause ────────────────────────────────────────────
+function togglePlay() {
+  running = !running;
+  document.getElementById('btnIco').textContent = running ? '⏸' : '▶';
+  document.getElementById('btnLbl').textContent = running ? 'Pause' : 'Reprendre';
+}
+
+// ── Drag ────────────────────────────────────────────────────
+let dragging = false, dOffX = 0, dOffY = 0;
+
+function evPos(e) {
+  const r = cv.getBoundingClientRect(), scX = W/r.width, scY = H/r.height;
+  if (e.touches) return { x:(e.touches[0].clientX-r.left)*scX, y:(e.touches[0].clientY-r.top)*scY };
+  return { x:(e.clientX-r.left)*scX, y:(e.clientY-r.top)*scY };
+}
+function nearShip(x,y) { return Math.sqrt((x-spx())**2+(y-spy())**2) < sc()*3; }
+function clampShip() {
+  const r = Math.sqrt(shipAUx**2+shipAUy**2);
+  if (r < 0.18) { const a=Math.atan2(shipAUy,shipAUx); shipAUx=0.18*Math.cos(a); shipAUy=0.18*Math.sin(a); }
+  shipAUx = Math.max(-0.5, Math.min(7.0, shipAUx));
+  const yMin = (H*0.06-sy())/pxAU(), yMax = (H*0.82-sy())/pxAU();
+  shipAUy = Math.max(yMin, Math.min(yMax, shipAUy));
+}
+
+cv.addEventListener('mousedown', e => {
+  const {x,y} = evPos(e);
+  if (nearShip(x,y)) { dragging=true; dOffX=shipAUx-(x-sx())/pxAU(); dOffY=shipAUy-(y-sy())/pxAU(); cv.style.cursor='grabbing'; e.preventDefault(); }
+});
+cv.addEventListener('mousemove', e => {
+  const {x,y} = evPos(e);
+  if (dragging) { shipAUx=(x-sx())/pxAU()+dOffX; shipAUy=(y-sy())/pxAU()+dOffY; clampShip(); cv.style.cursor='grabbing'; }
+  else cv.style.cursor = nearShip(x,y) ? 'grab' : 'default';
+});
+cv.addEventListener('mouseup',    () => { dragging=false; cv.style.cursor='default'; });
+cv.addEventListener('mouseleave', () => { dragging=false; });
+cv.addEventListener('touchstart', e => {
+  const {x,y}=evPos(e);
+  if (nearShip(x,y)) { dragging=true; dOffX=shipAUx-(x-sx())/pxAU(); dOffY=shipAUy-(y-sy())/pxAU(); e.preventDefault(); }
+}, {passive:false});
+cv.addEventListener('touchmove', e => {
+  if (!dragging) return;
+  const {x,y}=evPos(e); shipAUx=(x-sx())/pxAU()+dOffX; shipAUy=(y-sy())/pxAU()+dOffY; clampShip(); e.preventDefault();
+}, {passive:false});
+cv.addEventListener('touchend', () => { dragging=false; });
+
+// ── Logique animation ────────────────────────────────────────
+function emitWave() {
+  if (waves.length >= 20) return;
+  waves.push({ type:TYPES[typeIdx%3], r:6 });
+  typeIdx++;
+}
+
+function update() {
+  if (tick % 22 === 0) emitWave();
+  tick++;
+  const sd = Math.sqrt((spx()-sx())**2 + (spy()-sy())**2);
+  waves = waves.filter(w => {
+    w.r += 2.8;
+    if (Math.abs(w.r - sd) < 6) probeFlash = Math.max(probeFlash, 22);
+    return w.r < 7.2 * pxAU();
+  });
+  if (probeFlash > 0) probeFlash--;
+  const sr = shipR();
+  PLANETS.forEach(p => {
+    if (Math.abs(sr - p.ua) < 0.16) p.hl = Math.max(p.hl, 32);
+    if (p.hl > 0) p.hl--;
+  });
+}
+
+// ── HTML info panel ──────────────────────────────────────────
+function fmtE(v) {
+  if (v >= 1000000) return '>1 000 000';
+  return v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+function updateHTML() {
+  const fl = probeFlash > 0;
+  document.getElementById('vE').textContent = fmtE(shipEw()) + ' W/m²';
+  document.getElementById('vR').textContent = shipR().toFixed(2) + ' UA';
+  document.getElementById('panE').style.background = fl ? 'rgba(200,160,0,0.18)' : '';
+  document.getElementById('vE').style.color = fl ? 'rgba(200,140,0,1)' : '';
+  const near = PLANETS.find(p => p.hl > 5);
+  const pt = document.getElementById('vPlanet');
+  if (near) {
+    const [r,g,b] = near.rgb;
+    pt.style.cssText = `font-size:12px;margin-top:3px;transition:opacity .15s;opacity:1;color:rgb(${r},${g},${b});`;
+    pt.textContent = '● Orbite de ' + near.name;
+  } else {
+    pt.style.opacity = '0';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DESSIN
+// ═══════════════════════════════════════════════════════════
+function drawBg(ts) {
+  cx.fillStyle = '#040416'; cx.fillRect(0,0,W,H);
+  for (const s of stars) {
+    const a = s.base * (0.65 + 0.35*Math.sin(ts*s.freq+s.phase));
+    cx.beginPath(); cx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    cx.fillStyle = `rgba(255,255,255,${a})`; cx.fill();
+  }
+}
+
+function drawOrbits() {
+  PLANETS.forEach(p => {
+    const oR = p.ua * pxAU(), hl = p.hl/32, [cr,cg,cb] = p.rgb;
+    cx.beginPath(); cx.arc(sx(),sy(),oR,0,2*Math.PI);
+    cx.setLineDash([4,9]);
+    cx.strokeStyle = hl > 0 ? `rgba(${cr},${cg},${cb},${0.12+hl*0.38})` : `rgba(${cr},${cg},${cb},0.10)`;
+    cx.lineWidth = hl > 0 ? 1.8 : 0.7;
+    cx.stroke(); cx.setLineDash([]);
+  });
+}
+
+function drawWaves() {
+  for (const w of waves) {
+    const p = w.r/(pxAU()*6), alpha = Math.min(0.82, 0.10/(p*p+0.008));
+    const lw = Math.max(0.4, (1-p)*2.5+0.4), [r,g,b] = w.type.rgb;
+    cx.beginPath(); cx.arc(sx(),sy(),w.r,0,2*Math.PI);
+    cx.strokeStyle = `rgba(${r},${g},${b},${alpha})`; cx.lineWidth = lw; cx.stroke();
+  }
+}
+
+function drawPlanets() {
+  PLANETS.forEach(p => {
+    const x=plx(p), y=ply(p), r=Math.max(5,W*p.sz), hl=p.hl/32, [cr,cg,cb]=p.rgb;
+    if (hl > 0) {
+      cx.beginPath(); cx.arc(x,y,r*(1.8+hl*0.8),0,2*Math.PI);
+      cx.strokeStyle=`rgba(${cr},${cg},${cb},${hl*0.40})`; cx.lineWidth=r*1.0; cx.stroke();
+    }
+    cx.beginPath(); cx.arc(x,y,r,0,2*Math.PI);
+    cx.fillStyle=`rgba(${cr},${cg},${cb},0.90)`; cx.fill();
+    const fs = Math.max(10, Math.round(W*.012));
+    cx.fillStyle=`rgba(255,255,255,${0.55+hl*0.35})`;
+    cx.font=`${hl>0?'bold ':''}`+`${fs}px Arial`; cx.textAlign='center';
+    const off = p.angle < 0 ? -r-8 : r+16;
+    cx.fillText(p.name, x, y+off);
+    cx.fillStyle='rgba(255,255,255,0.28)'; cx.font=`${Math.max(9,Math.round(W*.010))}px Arial`;
+    cx.fillText(p.ua+' UA', x, y+off+(p.angle<0?-12:12));
+  });
+}
+
+function drawSun() {
+  const x=sx(), y=sy(), r=W*0.048, pulse=1+0.025*Math.sin(tick*0.05);
+  cx.beginPath(); cx.arc(x,y,r*1.6*pulse,0,2*Math.PI);
+  cx.strokeStyle='rgba(255,140,0,0.09)'; cx.lineWidth=r*0.7; cx.stroke();
+  const g = cx.createRadialGradient(x-r*.2,y-r*.2,0,x,y,r*pulse);
+  g.addColorStop(0,'#FFFFF8'); g.addColorStop(0.3,'#FFE04A');
+  g.addColorStop(0.75,'#FF8C00'); g.addColorStop(1,'#C03800');
+  cx.beginPath(); cx.arc(x,y,r*pulse,0,2*Math.PI); cx.fillStyle=g; cx.fill();
+  cx.fillStyle='#FFD60A'; cx.font=`500 ${Math.max(10,Math.round(W*.013))}px Arial`; cx.textAlign='center';
+  cx.fillText(STARNAME, x, y+r*pulse+17);
+}
+
+function drawShip() {
+  const p=spx(), cy=spy(), fl=probeFlash/22, s=sc();
+  const bW=s*.72, bH=s*1.10, pW=s*1.00, pH=s*.36, antL=s*.48;
+  // Bras panneaux
+  cx.strokeStyle='rgba(165,188,210,0.58)'; cx.lineWidth=Math.max(1,s*.06);
+  cx.beginPath(); cx.moveTo(p-bW/2,cy); cx.lineTo(p-bW/2-pW,cy); cx.stroke();
+  cx.beginPath(); cx.moveTo(p+bW/2,cy); cx.lineTo(p+bW/2+pW,cy); cx.stroke();
+  // Panneaux solaires
+  const pFill = fl>0 ? `rgba(255,${Math.round(210+fl*45)},20,0.97)` : 'rgba(18,70,185,0.88)';
+  [p-bW/2-pW, p+bW/2].forEach(lx => {
+    cx.fillStyle=pFill; cx.strokeStyle=fl>0?'rgba(255,225,60,0.7)':'rgba(88,128,215,0.55)'; cx.lineWidth=1;
+    cx.fillRect(lx,cy-pH/2,pW,pH); cx.strokeRect(lx,cy-pH/2,pW,pH);
+    cx.strokeStyle=fl>0?'rgba(190,160,10,0.4)':'rgba(48,82,175,0.38)'; cx.lineWidth=0.5;
+    for (let i=1;i<=2;i++) { const gx=lx+pW*i/3; cx.beginPath(); cx.moveTo(gx,cy-pH/2); cx.lineTo(gx,cy+pH/2); cx.stroke(); }
+    cx.beginPath(); cx.moveTo(lx,cy); cx.lineTo(lx+pW,cy); cx.stroke();
+  });
+  // Corps
+  cx.fillStyle=fl>0?`rgba(255,${Math.round(232+fl*23)},${Math.round(fl*60)},1)`:'rgba(200,215,228,1)';
+  cx.strokeStyle=fl>0?'rgba(255,210,40,0.88)':'rgba(132,158,178,0.78)'; cx.lineWidth=Math.max(1,s*.065);
+  cx.fillRect(p-bW/2,cy-bH/2,bW,bH); cx.strokeRect(p-bW/2,cy-bH/2,bW,bH);
+  // Hublot
+  cx.beginPath(); cx.arc(p,cy-bH*.16,s*.085,0,2*Math.PI);
+  cx.fillStyle=fl>0?'rgba(255,235,80,1)':'rgba(55,115,200,0.80)'; cx.fill();
+  // Antenne
+  cx.strokeStyle=fl>0?'rgba(255,228,90,0.90)':'rgba(185,208,225,0.85)'; cx.lineWidth=Math.max(1,s*.048);
+  cx.beginPath(); cx.moveTo(p,cy-bH/2); cx.lineTo(p,cy-bH/2-antL); cx.stroke();
+  cx.beginPath(); cx.arc(p,cy-bH/2-antL,s*.11,0,2*Math.PI);
+  cx.fillStyle=fl>0?'rgba(255,235,100,1)':'rgba(205,222,235,1)';
+  cx.strokeStyle=fl>0?'rgba(255,210,48,0.82)':'rgba(132,158,178,0.65)'; cx.lineWidth=0.8;
+  cx.fill(); cx.stroke();
+  // Tag distance
+  cx.fillStyle=fl>0?'rgba(255,215,60,0.95)':'rgba(190,212,228,0.68)';
+  cx.font=`bold ${Math.max(10,Math.round(W*.011))}px Arial`; cx.textAlign='center';
+  cx.fillText(shipR().toFixed(2)+' UA', p, cy-bH/2-antL-s*.11-7);
+}
+
+function drawRuler() {
+  const x0=sx(), yr=H*.88, fs=Math.max(10,Math.round(W*.011));
+  const maxUA = Math.min(6.5, Math.max(...PLANETS.map(p=>p.ua))*1.15+0.3);
+  cx.strokeStyle='rgba(255,255,255,.08)'; cx.lineWidth=1;
+  cx.beginPath(); cx.moveTo(x0,yr); cx.lineTo(x0+maxUA*pxAU(),yr); cx.stroke();
+  for (let i=1; i<=Math.floor(maxUA); i++) {
+    const x = x0+i*pxAU();
+    cx.strokeStyle='rgba(255,255,255,.18)'; cx.lineWidth=1;
+    cx.beginPath(); cx.moveTo(x,yr-4); cx.lineTo(x,yr+4); cx.stroke();
+    cx.fillStyle='rgba(255,255,255,.35)'; cx.font=`${fs}px Arial`; cx.textAlign='center';
+    cx.fillText(`${i} UA`, x, yr+15);
+  }
+  PLANETS.forEach(p => {
+    const x=x0+p.ua*pxAU(), hl=p.hl/32, [cr,cg,cb]=p.rgb;
+    if (hl > 0) {
+      cx.beginPath(); cx.arc(x,yr,10+hl*7,0,2*Math.PI);
+      cx.strokeStyle=`rgba(${cr},${cg},${cb},${hl*0.40})`; cx.lineWidth=3; cx.stroke();
+      cx.fillStyle=`rgba(${cr},${cg},${cb},${hl*0.95})`;
+      cx.font=`bold ${Math.max(10,Math.round(W*.012))}px Arial`; cx.textAlign='center';
+      cx.fillText('Orbite '+p.name, x, yr-24);
+    }
+    cx.beginPath(); cx.arc(x,yr,hl>0?6+hl*2:4,0,2*Math.PI);
+    cx.fillStyle=`rgba(${cr},${cg},${cb},${0.70+hl*0.30})`; cx.fill();
+  });
+  // Marqueur vaisseau sur la règle
+  const smx = Math.max(x0+4, Math.min(x0+maxUA*pxAU()-4, x0+shipR()*pxAU()));
+  cx.fillStyle='rgba(255,255,255,0.90)';
+  cx.beginPath(); cx.moveTo(smx,yr-6); cx.lineTo(smx-5,yr-14); cx.lineTo(smx+5,yr-14); cx.closePath(); cx.fill();
+}
+
+// ── Boucle principale ────────────────────────────────────────
+function loop(ts) {
+  requestAnimationFrame(loop);
+  if (running) update();
+  updateHTML();
+  drawBg(ts * .001);
+  drawOrbits();
+  drawWaves();
+  drawPlanets();
+  drawSun();
+  drawShip();
+  drawRuler();
+}
+requestAnimationFrame(loop);
+new ResizeObserver(resize).observe(cv);
+resize();
+</script>
+</body>
+</html>
