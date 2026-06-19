@@ -11,10 +11,16 @@ body { font-family: Arial, sans-serif; font-size: 13px; background: #f0f0f0; ove
 
 /* ── LEFT ── */
 .left {
-  width: 370px; flex-shrink: 0;
+  width: 370px; min-width: 180px; max-width: 80vw; flex-shrink: 0;
   display: flex; flex-direction: column;
-  background: #fff; border-right: 1px solid #ccc;
+  background: #fff;
 }
+/* Poignée de redimensionnement panneau */
+#panel-resize {
+  width: 5px; flex-shrink: 0; cursor: col-resize;
+  background: #ccc; transition: background 0.15s; z-index: 10;
+}
+#panel-resize:hover, #panel-resize.dragging { background: #185FA5; }
 .toolbar {
   padding: 7px 8px; background: #e8e8e8;
   border-bottom: 1px solid #ccc;
@@ -91,7 +97,7 @@ tbody tr.row-sel td { background: #eef3fc; }
 .resize-handle:hover, .resize-handle.dragging { background: rgba(24,95,165,0.35); }
 
 /* ── DATA CELLS ── */
-.dc { min-width: 45px; }
+.dc { min-width: 45px; position: relative; }
 .dc input {
   width: 100%; border: none; background: transparent;
   font-size: 12px; text-align: right; padding: 2px 5px; outline: none;
@@ -101,6 +107,73 @@ tbody tr.row-sel td { background: #eef3fc; }
 .dc.col-y1 { background: #efffee; }
 .dc.col-y2 { background: #fff0ee; }
 .dc.col-y3 { background: #f8eeff; }
+/* Cellule formule */
+.dc.cell-fx { background: #fffbe6 !important; }
+.dc.cell-fx input { color: #6b4f00; font-style: italic; cursor: default; }
+/* Cellule active (barre formule) */
+.dc.cell-sel { outline: 2px solid #185FA5; outline-offset: -2px; }
+/* Plage de cellules sélectionnées (Ctrl+C) */
+.dc.cell-range { background: rgba(24,95,165,0.13) !important; }
+.dc.cell-range-anchor { outline: 2px solid #185FA5; outline-offset: -2px; }
+
+/* ── BARRE DE STYLES SÉRIE ── */
+#styles-bar {
+  display: none; flex-shrink: 0; padding: 3px 8px;
+  background: #f5f7fb; border-bottom: 1px solid #e0e8f0;
+  gap: 10px; flex-wrap: wrap; align-items: center; font-size: 11px;
+}
+.serie-style {
+  display: flex; align-items: center; gap: 4px;
+}
+.serie-style .sname { font-weight: bold; }
+.serie-style select {
+  font-size: 11px; padding: 1px 3px; border: 1px solid #ccc;
+  border-radius: 3px; background: #fff; cursor: pointer;
+}
+
+/* ── BARRE DE FORMULE ── */
+#formula-bar {
+  flex-shrink: 0; border-bottom: 1px solid #ccc;
+  background: #fafafa;
+}
+#cst-bar {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 3px 6px; border-bottom: 1px solid #eee; min-height: 26px;
+  font-size: 11px;
+}
+#cst-bar .cst-tag {
+  display: flex; align-items: center; gap: 2px;
+  background: #e8f0fb; border: 1px solid #c5d5ef; border-radius: 3px;
+  padding: 1px 4px;
+}
+#cst-bar .cst-name { font-weight: bold; color: #185FA5; width: 40px; border: none; background: transparent; font-size: 11px; outline: none; }
+#cst-bar .cst-eq   { color: #888; }
+#cst-bar .cst-val  { width: 55px; border: none; background: transparent; font-size: 11px; outline: none; font-family: monospace; }
+#cst-bar .cst-del  { color: #c0392b; cursor: pointer; font-size: 13px; line-height: 1; margin-left: 1px; }
+#cst-add { font-size: 10px; padding: 2px 5px; border: 1px solid #bbb; border-radius: 3px; background: #fff; cursor: pointer; color: #555; }
+#cst-add:hover { background: #e8f0fb; }
+#fx-bar {
+  display: flex; align-items: center; gap: 0; padding: 2px 4px;
+}
+#fx-cell {
+  min-width: 58px; font-size: 11px; color: #185FA5; font-weight: bold;
+  padding: 0 5px; text-align: center; border-right: 1px solid #ddd;
+  font-family: monospace; white-space: nowrap;
+}
+#fx-label { color: #999; padding: 0 5px; font-size: 12px; font-style: italic; flex-shrink: 0; }
+#fx-input {
+  flex: 1; border: none; background: transparent; outline: none;
+  font-size: 12px; padding: 2px 4px; font-family: monospace; color: #333;
+}
+#fx-input:focus { background: #fffbe6; }
+
+/* ── FILL HANDLE ── */
+#fill-handle {
+  display: none; position: fixed; width: 7px; height: 7px;
+  background: #185FA5; border: 1px solid #fff;
+  cursor: crosshair; z-index: 200;
+}
+.dc.fill-preview { background: rgba(24,95,165,0.12) !important; }
 
 /* ── RIGHT ── */
 .right {
@@ -204,8 +277,90 @@ tbody tr.row-sel td { background: #eef3fc; }
       <button onclick="addRow()">+ ligne</button>
       <button onclick="initialiser()" style="margin-left:8px;color:#b03a2e;border-color:#e0b0b0">⟳ Initialiser</button>
     </div>
+    <!-- Barre de formule -->
+    <div id="formula-bar">
+      <div id="cst-bar">
+        <span style="color:#888;font-size:10px;flex-shrink:0;">Cst :</span>
+        <div id="cst-list" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+        <button id="cst-add" onclick="addConstant()" title="Ajouter une constante">+ Cst</button>
+      </div>
+      <div id="fx-bar">
+        <span id="fx-cell">—</span>
+        <span id="fx-label">fx</span>
+        <input id="fx-input" type="text" placeholder="valeur  ou  =formule" autocomplete="off" spellcheck="false"/>
+        <button onclick="openFuncsDlg()" title="Liste des fonctions disponibles"
+          style="flex-shrink:0;padding:1px 7px;border:1px solid #ccc;border-radius:3px;
+                 background:#f5f5f5;font-size:11px;cursor:pointer;color:#555;">ƒ(x)</button>
+      </div>
+    </div>
     <div class="sheet-wrap">
       <table id="sheet"></table>
+    </div>
+  </div>
+
+  <!-- Fill handle flottant -->
+  <div id="fill-handle" title="Tirer pour recopier"></div>
+
+  <!-- Dialog liste des fonctions -->
+  <div id="funcs-dlg" style="display:none;position:fixed;inset:0;z-index:10001;
+       background:rgba(0,0,0,0.35);align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:8px;box-shadow:0 6px 32px rgba(0,0,0,0.28);
+                width:460px;max-width:95vw;max-height:80vh;overflow:hidden;font-size:12px;display:flex;flex-direction:column;">
+      <div style="background:#185FA5;color:#fff;padding:10px 16px;font-weight:bold;
+                  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+        <span>ƒ(x) Fonctions disponibles</span>
+        <span onclick="document.getElementById('funcs-dlg').style.display='none'"
+              style="cursor:pointer;font-size:18px;line-height:1;">×</span>
+      </div>
+      <div style="overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:2px;">
+        <table style="border-collapse:collapse;width:100%;font-size:12px;">
+          <thead><tr style="background:#f0f4fa;">
+            <th style="padding:5px 8px;text-align:left;color:#185FA5;">Fonction</th>
+            <th style="padding:5px 8px;text-align:left;color:#555;">Description</th>
+            <th style="padding:5px 8px;text-align:left;color:#0F6E56;font-family:monospace;">Exemple</th>
+          </tr></thead>
+          <tbody id="funcs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dialog Codes M/C -->
+  <div id="codes-dlg" style="display:none;position:fixed;inset:0;z-index:10000;
+       background:rgba(0,0,0,0.35);align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:8px;box-shadow:0 6px 32px rgba(0,0,0,0.28);
+                width:340px;max-width:95vw;font-size:13px;overflow:hidden;">
+      <div style="background:#0F6E56;color:#fff;padding:10px 16px;font-weight:bold;
+                  display:flex;justify-content:space-between;align-items:center;">
+        <span>🔑 Codes de vérification</span>
+        <span onclick="document.getElementById('codes-dlg').style.display='none'"
+              style="cursor:pointer;font-size:18px;line-height:1;">×</span>
+      </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <span style="font-size:11px;color:#888;font-weight:bold;">CODE F — Formules</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span id="dlg-code-f" style="font-family:monospace;font-size:18px;font-weight:bold;
+                  color:#0F6E56;letter-spacing:2px;flex:1;">—</span>
+            <button onclick="copyCode('dlg-code-f',this)"
+              style="padding:4px 10px;background:#0F6E56;color:#fff;border:none;
+                     border-radius:4px;cursor:pointer;font-size:11px;transition:all 0.15s;">Copier</button>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <span style="font-size:11px;color:#888;font-weight:bold;">CODE C — Courbe</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span id="dlg-code-c" style="font-family:monospace;font-size:18px;font-weight:bold;
+                  color:#185FA5;letter-spacing:2px;flex:1;">—</span>
+            <button onclick="copyCode('dlg-code-c',this)"
+              style="padding:4px 10px;background:#185FA5;color:#fff;border:none;
+                     border-radius:4px;cursor:pointer;font-size:11px;transition:all 0.15s;">Copier</button>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:8px;">
+          Cliquez "Copier" ou sélectionnez le code pour le coller dans Moodle.
+        </div>
+      </div>
     </div>
   </div>
 
@@ -299,6 +454,9 @@ tbody tr.row-sel td { background: #eef3fc; }
     <div id="ctx-del-col"  class="danger" onclick="deleteSelectedCol()" style="display:none">🗑 Supprimer la colonne</div>
   </div>
 
+  <!-- Poignée redimensionnement panneau gauche/droit -->
+  <div id="panel-resize"></div>
+
   <!-- ════ RIGHT ════ -->
   <div class="right">
     <div class="axis-bar">
@@ -307,6 +465,8 @@ tbody tr.row-sel td { background: #eef3fc; }
       </div>
       <button id="trace-btn" onclick="trace()">▶ Tracer</button>
     </div>
+    <!-- Barre de styles par série (visible après tracé) -->
+    <div id="styles-bar" style="display:none;"></div>
     <div class="title-bar">
       <label for="chart-title">Titre :</label>
       <input type="text" id="chart-title" placeholder="ex : x₁ = f(t)" />
@@ -319,15 +479,12 @@ tbody tr.row-sel td { background: #eef3fc; }
       <canvas id="overlay-canvas"></canvas>
     </div>
 
-    <div class="codes">
-      <div class="code-box">
-        <span class="code-label">Code M — Mesures</span>
-        <span class="code-val" id="code-m">— — —</span>
-      </div>
-      <div class="code-box">
-        <span class="code-label">Code C — Courbe</span>
-        <span class="code-val" id="code-c">— — —</span>
-      </div>
+    <div style="flex-shrink:0;display:flex;justify-content:flex-end;padding:2px 4px;">
+      <button onclick="openCodesDlg()"
+        style="padding:4px 12px;background:#0F6E56;color:#fff;border:none;border-radius:4px;
+               cursor:pointer;font-size:12px;font-weight:bold;">
+        🔑 Codes M / C
+      </button>
     </div>
 
     <div id="trend-panel" style="display:none; flex-direction:column; gap:4px; flex-shrink:0;
@@ -340,6 +497,7 @@ tbody tr.row-sel td { background: #eef3fc; }
     <div class="bottom-bar">
       <button id="export-btn" onclick="exportJPG()">↓ Exporter JPG</button>
       <button id="copy-btn" onclick="copyChart()">⎘ Copier le graphique</button>
+      <button onclick="exportCSV()" style="padding:5px 14px;background:#7d3c98;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">↓ CSV</button>
       <span class="hint-txt" id="copy-hint"></span>
     </div>
   </div>
@@ -349,25 +507,39 @@ tbody tr.row-sel td { background: #eef3fc; }
 // ══════════════════════════════════════════
 //  ÉTAT
 // ══════════════════════════════════════════
-let nCols = 5;
+// ── Lancer parabolique par défaut ──
+// v0x = 3.0 m/s  v0y = 5.0 m/s  g = 9.81 m/s²
+// x(t) = v0x·t     y(t) = v0y·t − ½g·t²
+let nCols = 3;
 let nRows = 10;
-let colNames = ['t', 'x1', 'v', 'a', ''];
-let colUnits = ['s', 'm', 'm/s', 'm/s²', ''];
+let colNames = ['t', 'x', 'y'];
+let colUnits = ['s', 'm', 'm'];
 let data = [
-  ['0.0',  '0.00',  '0.00',  '9.81', ''],
-  ['0.5',  '0.12',  '4.91',  '9.81', ''],
-  ['1.0',  '0.49',  '9.81',  '9.81', ''],
-  ['1.5',  '1.10',  '14.72', '9.81', ''],
-  ['2.0',  '1.96',  '19.62', '9.81', ''],
-  ['2.5',  '3.07',  '24.53', '9.81', ''],
-  ['3.0',  '4.41',  '29.43', '9.81', ''],
-  ['3.5',  '6.00',  '34.34', '9.81', ''],
-  ['4.0',  '7.85',  '39.24', '9.81', ''],
-  ['4.5',  '9.92',  '44.15', '9.81', ''],
+  ['0.0', '0.00', '0.00'],
+  ['0.1', '0.30', '0.45'],
+  ['0.2', '0.60', '0.80'],
+  ['0.3', '0.90', '1.06'],
+  ['0.4', '1.20', '1.22'],
+  ['0.5', '1.50', '1.27'],
+  ['0.6', '1.80', '1.23'],
+  ['0.7', '2.10', '1.10'],
+  ['0.8', '2.40', '0.86'],
+  ['0.9', '2.70', '0.53'],
 ];
 let selectedCols = [];   // indices dans l'ordre de sélection; le plus petit index = X
-let selectedRow = null;
+let selectedRow  = null;
 let selectedCtxCol = null;
+let selectedCell = null;          // {r, c} cellule active
+let cellFormulas = [];            // cellFormulas[r][c] = "=..." | null
+let userConstants = {};           // {m: 0.5, g: 9.81, ...}
+let fillDragState = null;         // {r, c, endR}
+let formulaEditMode = false;      // true quand fx-input est actif avec =
+let seriesStyles   = {};          // {si: {marker:'circle', line:'solid'}}
+let cellSelection  = null;        // {r0,c0,r1,c1} plage sélectionnée
+let selAnchor      = null;        // {r,c} coin fixe de la sélection
+let selDragging    = false;
+let undoStack      = [];          // historique pour Ctrl+Z
+const MAX_UNDO     = 60;
 const _p = new URLSearchParams(location.search);
 let uncertainty = +(_p.get('incertitude') || _p.get('uncertainty') || 5);
 let chartDrawn = false;
@@ -481,6 +653,542 @@ function computeC(xCol, yCols) {
 }
 
 // ══════════════════════════════════════════
+//  FORMULES
+// ══════════════════════════════════════════
+
+function _escRx(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Insère du texte dans un <input> à la position du curseur
+function insertAtCursor(input, text) {
+  const s = input.selectionStart, e = input.selectionEnd, v = input.value;
+  input.value = v.slice(0, s) + text + v.slice(e);
+  input.selectionStart = input.selectionEnd = s + text.length;
+  input.focus();
+  formulaEditMode = input.value.startsWith('=');
+}
+
+function getCellFormula(r, c) {
+  return (cellFormulas[r] && cellFormulas[r][c]) || null;
+}
+
+// Évalue une formule pour la ligne r.  Syntaxe : =expr avec col[k] et fonctions math
+function evalFormula(formula, r) {
+  let expr = formula.startsWith('=') ? formula.slice(1) : formula;
+
+  // ^ = puissance (comme dans Generis/Excel), pas XOR
+  expr = expr.replace(/\^/g, '**');
+
+  // Trier les noms de colonnes par longueur décroissante
+  // (évite que "v" remplace le "v" dans "vx[2]")
+  const sortedCols = colNames
+    .map((n, i) => [n, i]).filter(([n]) => n)
+    .sort((a, b) => b[0].length - a[0].length);
+
+  // Encadre les nombres négatifs de () pour éviter -x**2 → SyntaxError JS
+  const safeNum = v => isNaN(v) ? 'NaN' : (v < 0 ? `(${v})` : String(v));
+
+  // 1. Remplace nom[k] — référence indexée (ex: vx[2], toto[5])
+  sortedCols.forEach(([name, c]) => {
+    expr = expr.replace(
+      new RegExp(_escRx(name) + '\\[(\\d+)\\]', 'g'),
+      (_, idx) => {
+        const k = +idx;
+        if (k < 0 || k >= nRows) return 'NaN';
+        return safeNum(parseNum(data[k][c]));
+      }
+    );
+  });
+
+  // 2. Remplace nom seul (ligne courante r), pas suivi de [ ni de (
+  sortedCols.forEach(([name, c]) => {
+    expr = expr.replace(
+      new RegExp(_escRx(name) + '(?![\\[(])', 'g'),
+      () => safeNum(parseNum(data[r][c]))
+    );
+  });
+
+  // 3. Constantes utilisateur
+  Object.entries(userConstants).forEach(([k, v]) => {
+    expr = expr.replace(new RegExp(_escRx(k) + '(?![\\[(])', 'g'), String(v));
+  });
+
+  // Scope math
+  const scope = {
+    pi: Math.PI, PI: Math.PI, e: Math.E,
+    sqrt: Math.sqrt, abs: Math.abs, pow: Math.pow,
+    sin: Math.sin, cos: Math.cos, tan: Math.tan,
+    asin: Math.asin, acos: Math.acos, atan: Math.atan, atan2: Math.atan2,
+    log: Math.log, log2: Math.log2, log10: Math.log10, exp: Math.exp,
+    floor: Math.floor, ceil: Math.ceil, round: Math.round,
+    min: Math.min, max: Math.max, sign: Math.sign
+  };
+
+  try {
+    const keys = Object.keys(scope), vals = Object.values(scope);
+    const result = new Function(...keys, `"use strict"; return (${expr});`)(...vals);
+    return (typeof result === 'number' && isFinite(result)) ? result : NaN;
+  } catch { return NaN; }
+}
+
+// Incrémente tous les indices [n] d'un delta (pour fill handle)
+function incrementFormula(formula, delta) {
+  return formula.replace(/\[(\d+)\]/g, (_, n) => `[${+n + delta}]`);
+}
+
+// Applique une formule sur une cellule (stocke + calcule + MAJ DOM)
+function setFormula(r, c, formula) {
+  if (!cellFormulas[r]) cellFormulas[r] = [];
+  cellFormulas[r][c] = formula;
+  const val = evalFormula(formula, r);
+  data[r][c] = isNaN(val) ? '' : parseFloat(val.toPrecision(8)).toString();
+  const inp = document.querySelector(`#sheet tbody input[data-r="${r}"][data-c="${c}"]`);
+  if (inp) {
+    inp.value = fmtD(data[r][c]);
+    inp.readOnly = true;
+    inp.closest('td').classList.add('cell-fx');
+  }
+}
+
+// Supprime la formule d'une cellule
+function clearFormula(r, c) {
+  if (cellFormulas[r]) cellFormulas[r][c] = null;
+  const inp = document.querySelector(`#sheet tbody input[data-r="${r}"][data-c="${c}"]`);
+  if (inp) { inp.readOnly = false; inp.closest('td').classList.remove('cell-fx'); }
+}
+
+// Recalcule toutes les cellules formule (2 passes pour les dépendances inter-colonnes)
+function recomputeFormulas() {
+  for (let pass = 0; pass < 2; pass++) {
+    for (let r = 0; r < nRows; r++) {
+      if (!cellFormulas[r]) continue;
+      for (let c = 0; c < nCols; c++) {
+        const f = cellFormulas[r][c];
+        if (!f) continue;
+        const val = evalFormula(f, r);
+        data[r][c] = isNaN(val) ? '' : parseFloat(val.toPrecision(8)).toString();
+        const inp = document.querySelector(`#sheet tbody input[data-r="${r}"][data-c="${c}"]`);
+        if (inp) inp.value = data[r][c];
+      }
+    }
+  }
+}
+
+// ── Sélection de cellule ──────────────────────────────────────────────────
+function selectCell(r, c) {
+  // Retire le surlignage précédent
+  if (selectedCell) {
+    const prev = document.querySelector(`#sheet tbody td.cell-sel[data-c="${selectedCell.c}"]`);
+    document.querySelectorAll('#sheet tbody td.cell-sel').forEach(el => el.classList.remove('cell-sel'));
+  }
+  selectedCell = { r, c };
+  const td = document.querySelector(`#sheet tbody input[data-r="${r}"][data-c="${c}"]`)?.closest('td');
+  if (td) td.classList.add('cell-sel');
+
+  // Barre de formule
+  const formula = getCellFormula(r, c);
+  const name = colNames[c] || ('C' + c);
+  document.getElementById('fx-cell').textContent = name + '[' + r + ']';
+  document.getElementById('fx-input').value = formula || data[r][c] || '';
+
+  positionFillHandle(r, c);
+}
+
+function positionFillHandle(r, c) {
+  const inp = document.querySelector(`#sheet tbody input[data-r="${r}"][data-c="${c}"]`);
+  if (!inp) { document.getElementById('fill-handle').style.display = 'none'; return; }
+  const rect = inp.closest('td').getBoundingClientRect();
+  const fh = document.getElementById('fill-handle');
+  fh.style.display = 'block';
+  fh.style.left = (rect.right - 5) + 'px';
+  fh.style.top  = (rect.bottom - 5) + 'px';
+}
+
+// ── Barre de formule ──────────────────────────────────────────────────────
+function initFormulaBar() {
+  const inp = document.getElementById('fx-input');
+
+  // Active le mode formule dès que la valeur commence par =
+  inp.addEventListener('focus', function() {
+    formulaEditMode = this.value.startsWith('=');
+  });
+  inp.addEventListener('input', function() {
+    formulaEditMode = this.value.startsWith('=');
+    // Mise à jour visuelle fx-input
+    this.style.color = formulaEditMode ? '#6b4f00' : '';
+  });
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      formulaEditMode = false;
+      // Restaurer la valeur précédente
+      if (selectedCell) {
+        const f = getCellFormula(selectedCell.r, selectedCell.c);
+        this.value = f || data[selectedCell.r][selectedCell.c] || '';
+      }
+      this.blur(); return;
+    }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    formulaEditMode = false;
+    applyFxInput();
+  });
+  inp.addEventListener('blur', function() {
+    // N'applique pas si on vient de cliquer une cellule pour insérer une référence
+    setTimeout(() => {
+      if (formulaEditMode) return; // clic dans cellule a intercepté → on reste en mode formule
+      if (document.activeElement !== document.getElementById('fill-handle'))
+        applyFxInput();
+    }, 80);
+  });
+}
+
+function applyFxInput() {
+  if (!selectedCell) return;
+  const { r, c } = selectedCell;
+  const val = document.getElementById('fx-input').value.trim();
+  if (val.startsWith('=')) {
+    setFormula(r, c, val);
+  } else {
+    clearFormula(r, c);
+    data[r][c] = val;
+    const inp = document.querySelector(`#sheet tbody input[data-r="${r}"][data-c="${c}"]`);
+    if (inp) inp.value = val;
+    recomputeFormulas();
+  }
+}
+
+// ── Fill handle (tirer vers le bas) ──────────────────────────────────────
+function initFillHandle() {
+  const fh = document.getElementById('fill-handle');
+  fh.addEventListener('mousedown', function(e) {
+    e.preventDefault(); e.stopPropagation();
+    if (!selectedCell) return;
+    fillDragState = { ...selectedCell, endR: selectedCell.r };
+  });
+  document.addEventListener('mousemove', function(e) {
+    if (!fillDragState) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el) return;
+    const inp = el.closest ? el.closest('input[data-r]') || el.querySelector?.('input[data-r]') : null;
+    const td  = el.closest ? el.closest('td.dc') : null;
+    let targetR = fillDragState.endR;
+    if (inp && inp.dataset.r !== undefined) targetR = +inp.dataset.r;
+    else if (td) { const i = td.querySelector('input'); if (i) targetR = +i.dataset.r; }
+    fillDragState.endR = Math.max(fillDragState.r, targetR);
+    // Aperçu
+    document.querySelectorAll('#sheet tbody td.fill-preview').forEach(td => td.classList.remove('fill-preview'));
+    for (let tr = fillDragState.r + 1; tr <= fillDragState.endR; tr++) {
+      const t = document.querySelector(`#sheet tbody input[data-r="${tr}"][data-c="${fillDragState.c}"]`)?.closest('td');
+      if (t) t.classList.add('fill-preview');
+    }
+  });
+  document.addEventListener('mouseup', function() {
+    if (!fillDragState) return;
+    const { r, c, endR } = fillDragState;
+    fillDragState = null;
+    document.querySelectorAll('#sheet tbody td.fill-preview').forEach(td => td.classList.remove('fill-preview'));
+    if (endR <= r) return;
+    const baseFormula = getCellFormula(r, c);
+    for (let tr = r + 1; tr <= endR; tr++) {
+      if (baseFormula) {
+        setFormula(tr, c, incrementFormula(baseFormula, tr - r));
+      } else {
+        data[tr][c] = data[r][c];
+        const inp = document.querySelector(`#sheet tbody input[data-r="${tr}"][data-c="${c}"]`);
+        if (inp) inp.value = data[r][c];
+      }
+    }
+    positionFillHandle(r, c);
+  });
+}
+
+// ── Constantes utilisateur ────────────────────────────────────────────────
+function renderConstants() {
+  const list = document.getElementById('cst-list');
+  list.innerHTML = '';
+  Object.entries(userConstants).forEach(([k, v]) => {
+    const tag = document.createElement('div'); tag.className = 'cst-tag';
+    const ni = document.createElement('input'); ni.className = 'cst-name'; ni.value = k; ni.title = 'Nom';
+    ni.addEventListener('change', function() {
+      const newK = this.value.trim();
+      if (!newK || newK === k) return;
+      userConstants[newK] = userConstants[k]; delete userConstants[k];
+      recomputeFormulas(); renderConstants();
+    });
+    const eq = document.createElement('span'); eq.className = 'cst-eq'; eq.textContent = '=';
+    const vi = document.createElement('input'); vi.className = 'cst-val'; vi.value = v; vi.title = 'Valeur';
+    vi.addEventListener('change', function() {
+      userConstants[k] = parseFloat(this.value) || 0; recomputeFormulas();
+    });
+    const del = document.createElement('span'); del.className = 'cst-del'; del.textContent = '×';
+    del.title = 'Supprimer';
+    del.addEventListener('click', () => { delete userConstants[k]; recomputeFormulas(); renderConstants(); });
+    tag.append(ni, eq, vi, del); list.appendChild(tag);
+  });
+}
+function addConstant() {
+  const name = 'cst' + (Object.keys(userConstants).length + 1);
+  userConstants[name] = 1; renderConstants();
+  // Focus sur le dernier nom
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('#cst-list .cst-name');
+    if (inputs.length) { const last = inputs[inputs.length-1]; last.select(); last.focus(); }
+  }, 30);
+}
+
+// ══════════════════════════════════════════
+//  UNDO (Ctrl+Z)
+// ══════════════════════════════════════════
+function pushUndo() {
+  undoStack.push({
+    data:         data.map(r => [...r]),
+    cellFormulas: cellFormulas.map(r => r ? [...r] : null),
+    colNames:     [...colNames],
+    colUnits:     [...colUnits],
+    nCols, nRows
+  });
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+}
+function undo() {
+  if (!undoStack.length) return;
+  const s = undoStack.pop();
+  data = s.data; cellFormulas = s.cellFormulas;
+  colNames = s.colNames; colUnits = s.colUnits;
+  nCols = s.nCols; nRows = s.nRows;
+  buildTable();
+  showMsg('Annulé (Ctrl+Z)', 'ok');
+}
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+});
+
+// ══════════════════════════════════════════
+//  EXPORT CSV (feature 3)
+// ══════════════════════════════════════════
+function exportCSV() {
+  const lines = [];
+  lines.push(colNames.join(';'));
+  lines.push(colUnits.join(';'));
+  for (let r = 0; r < nRows; r++)
+    lines.push(data[r].map(v => String(v).replace(',','.')).join(';'));
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'tableau.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════════
+//  SÉLECTION DE PLAGE + COPIE (feature 4)
+// ══════════════════════════════════════════
+function setSelection(r0, c0, r1, c1) {
+  cellSelection = {
+    r0: Math.min(r0,r1), c0: Math.min(c0,c1),
+    r1: Math.max(r0,r1), c1: Math.max(c0,c1)
+  };
+  refreshSelectionHighlight();
+}
+function clearSelection() {
+  cellSelection = null; selAnchor = null;
+  refreshSelectionHighlight();
+}
+function refreshSelectionHighlight() {
+  document.querySelectorAll('#sheet tbody td.cell-range').forEach(el => el.classList.remove('cell-range'));
+  document.querySelectorAll('#sheet tbody td.cell-range-anchor').forEach(el => el.classList.remove('cell-range-anchor'));
+  if (!cellSelection) return;
+  const {r0,c0,r1,c1} = cellSelection;
+  for (let r=r0;r<=r1;r++) for (let c=c0;c<=c1;c++) {
+    const inp = document.querySelector(`#sheet tbody input[data-r="${r}"][data-c="${c}"]`);
+    if (inp) {
+      const td = inp.closest('td');
+      td.classList.add('cell-range');
+      if (r===r0&&c===c0) td.classList.add('cell-range-anchor');
+    }
+  }
+}
+function copySelectionToClipboard() {
+  if (!cellSelection) return;
+  const {r0,c0,r1,c1} = cellSelection;
+  const lines = [];
+  for (let r=r0;r<=r1;r++) {
+    const row = [];
+    for (let c=c0;c<=c1;c++) row.push(data[r][c] ?? '');
+    lines.push(row.join('\t'));
+  }
+  navigator.clipboard.writeText(lines.join('\n')).then(() => showMsg('Copié !','ok'));
+}
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key==='c' && cellSelection) {
+    e.preventDefault(); copySelectionToClipboard();
+  }
+  if ((e.ctrlKey||e.metaKey) && e.key==='a') {
+    e.preventDefault();
+    setSelection(0, 0, nRows-1, nCols-1);
+  }
+});
+
+// ══════════════════════════════════════════
+//  STYLES SÉRIES (feature 2)
+// ══════════════════════════════════════════
+const MARKERS = [
+  {v:'circle',  l:'● Cercle'},
+  {v:'square',  l:'■ Carré'},
+  {v:'triangle',l:'▲ Triangle'},
+  {v:'diamond', l:'◆ Losange'},
+  {v:'cross',   l:'+ Croix'},
+  {v:'none',    l:'— Sans'},
+];
+const LINES = [
+  {v:'solid',    l:'— Plein'},
+  {v:'dashed',   l:'-- Tirets'},
+  {v:'dotted',   l:'··· Pointillés'},
+  {v:'dashdot',  l:'-· Mixte'},
+  {v:'none',     l:'Sans trait'},
+];
+function getSerieStyle(si) {
+  return seriesStyles[si] || { marker:'circle', line:'solid' };
+}
+function renderStylesBar(yCols) {
+  const bar = document.getElementById('styles-bar');
+  const colors = yCols.length===1 ? ['#185FA5'] : Y_COLORS;
+  bar.innerHTML = '<span style="color:#888;font-size:10px;margin-right:4px;">Styles :</span>';
+  yCols.forEach((yc, si) => {
+    const st = getSerieStyle(si);
+    const color = colors[si] || '#888';
+    const div = document.createElement('div'); div.className = 'serie-style';
+    const name = document.createElement('span');
+    name.className = 'sname'; name.style.color = color;
+    name.textContent = colNames[yc] || ('Y'+(si+1));
+    const mSel = document.createElement('select');
+    MARKERS.forEach(m => { const o=document.createElement('option'); o.value=m.v; o.textContent=m.l; if(m.v===st.marker) o.selected=true; mSel.appendChild(o); });
+    mSel.addEventListener('change', function() {
+      if (!seriesStyles[si]) seriesStyles[si]={marker:'circle',line:'solid'};
+      seriesStyles[si].marker = this.value; trace();
+    });
+    const lSel = document.createElement('select');
+    LINES.forEach(l => { const o=document.createElement('option'); o.value=l.v; o.textContent=l.l; if(l.v===st.line) o.selected=true; lSel.appendChild(o); });
+    lSel.addEventListener('change', function() {
+      if (!seriesStyles[si]) seriesStyles[si]={marker:'circle',line:'solid'};
+      seriesStyles[si].line = this.value; trace();
+    });
+    div.append(name, mSel, lSel); bar.appendChild(div);
+  });
+  bar.style.display = 'flex';
+}
+function drawMarker(ctx, x, y, marker, color, size) {
+  if (marker==='none') return;
+  ctx.save(); ctx.strokeStyle=color; ctx.fillStyle='#fff'; ctx.lineWidth=2;
+  size = size||4;
+  if (marker==='circle') {
+    ctx.beginPath(); ctx.arc(x,y,size,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  } else if (marker==='square') {
+    ctx.beginPath(); ctx.rect(x-size,y-size,size*2,size*2); ctx.fill(); ctx.stroke();
+  } else if (marker==='triangle') {
+    ctx.beginPath(); ctx.moveTo(x,y-size); ctx.lineTo(x+size,y+size); ctx.lineTo(x-size,y+size); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (marker==='diamond') {
+    ctx.beginPath(); ctx.moveTo(x,y-size); ctx.lineTo(x+size,y); ctx.lineTo(x,y+size); ctx.lineTo(x-size,y); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (marker==='cross') {
+    ctx.strokeStyle=color; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(x-size,y); ctx.lineTo(x+size,y); ctx.moveTo(x,y-size); ctx.lineTo(x,y+size); ctx.stroke();
+  }
+  ctx.restore();
+}
+function applyLineDash(ctx, lineStyle) {
+  const dashes = {solid:[],dashed:[8,4],dotted:[2,3],dashdot:[8,3,2,3]};
+  ctx.setLineDash(dashes[lineStyle] || []);
+}
+
+// ══════════════════════════════════════════
+//  CODE F — Formules utilisées
+// ══════════════════════════════════════════
+function computeF() {
+  const entries = [];
+  for (let c = 0; c < nCols; c++) {
+    for (let r = 0; r < nRows; r++) {
+      const f = getCellFormula(r, c);
+      if (f) {
+        // Normalise : retire espaces, associe nom de colonne
+        const norm = f.trim().replace(/\s+/g,'');
+        entries.push((colNames[c]||('C'+c)) + ':' + norm);
+        break; // une seule formule représentative par colonne
+      }
+    }
+  }
+  if (!entries.length) return null;
+  entries.sort();
+  return 'F-' + hash6(entries.join('|'));
+}
+
+// ══════════════════════════════════════════
+//  FENÊTRE FONCTIONS
+// ══════════════════════════════════════════
+function openFuncsDlg() {
+  const rows = [
+    ['sqrt(x)', 'Racine carrée', '=sqrt(vx**2+vy**2)'],
+    ['abs(x)', 'Valeur absolue', '=abs(a-b)'],
+    ['x**n  ou  x^n', 'Puissance', '=t**2  ou  =t^2'],
+    ['pow(x,n)', 'Puissance (alternative)', '=pow(v,2)'],
+    ['exp(x)', 'Exponentielle eˣ', '=exp(-t/tau)'],
+    ['log(x)', 'Logarithme naturel (ln)', '=log(N/N0)'],
+    ['log10(x)', 'Logarithme base 10', '=log10(I)'],
+    ['log2(x)', 'Logarithme base 2', '=log2(f)'],
+    ['sin(x)', 'Sinus (x en radians)', '=sin(omega*t)'],
+    ['cos(x)', 'Cosinus (x en radians)', '=cos(omega*t)'],
+    ['tan(x)', 'Tangente', '=tan(theta)'],
+    ['asin(x)', 'Arc sinus → radians', '=asin(y/r)'],
+    ['acos(x)', 'Arc cosinus → radians', '=acos(x/r)'],
+    ['atan(x)', 'Arc tangente → radians', '=atan(vy/vx)'],
+    ['atan2(y,x)', 'Arc tangente 2 arguments', '=atan2(vy,vx)'],
+    ['floor(x)', 'Partie entière inférieure', '=floor(t/dt)'],
+    ['ceil(x)', 'Partie entière supérieure', '=ceil(v)'],
+    ['round(x)', 'Arrondi à l\'entier le plus proche', '=round(d*100)/100'],
+    ['min(a,b)', 'Minimum', '=min(v1,v2)'],
+    ['max(a,b)', 'Maximum', '=max(v1,v2)'],
+    ['sign(x)', 'Signe : −1, 0 ou +1', '=sign(vx)'],
+    ['pi', 'π ≈ 3,14159…', '=2*pi*r'],
+    ['e', 'e ≈ 2,71828…', '=e**x'],
+    ['col[k]', 'Valeur ligne k d\'une colonne', '=(x[2]-x[0])/(t[2]-t[0])'],
+  ];
+  const tbody = document.getElementById('funcs-tbody');
+  tbody.innerHTML = rows.map((r,i) =>
+    `<tr style="background:${i%2===0?'#fff':'#f5f8ff'}">
+      <td style="padding:5px 8px;font-family:monospace;color:#185FA5;white-space:nowrap;border-bottom:1px solid #eee">${r[0]}</td>
+      <td style="padding:5px 8px;color:#333;border-bottom:1px solid #eee">${r[1]}</td>
+      <td style="padding:5px 8px;font-family:monospace;color:#0a7a40;font-size:11px;white-space:nowrap;border-bottom:1px solid #eee">${r[2]}</td>
+    </tr>`
+  ).join('');
+  document.getElementById('funcs-dlg').style.display = 'flex';
+}
+
+// ══════════════════════════════════════════
+//  FENÊTRE CODES
+// ══════════════════════════════════════════
+function openCodesDlg() {
+  const cf = computeF() || '—';
+  const xCol=getXCol(), yCols=getYCols();
+  const cc = (xCol!==null&&yCols.length) ? (computeC(xCol,yCols)||'—') : '—';
+  document.getElementById('dlg-code-f').textContent = cf;
+  document.getElementById('dlg-code-c').textContent = cc;
+  document.getElementById('codes-dlg').style.display = 'flex';
+}
+function copyCode(id, btn) {
+  const v = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(v).then(() => {
+    const orig = btn.textContent;
+    const origBg = btn.style.background || btn.dataset.origBg || '';
+    btn.dataset.origBg = origBg;
+    btn.textContent = '✓ Copié !';
+    btn.style.background = '#27ae60';
+    btn.style.transform = 'scale(1.08)';
+    btn.style.transition = 'all 0.15s';
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.style.background = origBg;
+      btn.style.transform = '';
+    }, 1400);
+  });
+}
+
+// ══════════════════════════════════════════
 //  CONSTRUCTION DU TABLEAU
 // ══════════════════════════════════════════
 function buildTable() {
@@ -565,10 +1273,44 @@ function buildTable() {
       td.className = 'dc'; td.dataset.c = c;
       const inp = document.createElement('input');
       inp.type = 'text'; inp.inputMode = 'decimal';
-      inp.value = data[r][c];
+      inp.value = fmtD(data[r][c]);
       inp.dataset.r = r; inp.dataset.c = c;
+      // Si la cellule a une formule : lecture seule
+      if (getCellFormula(r, c)) { inp.readOnly = true; td.classList.add('cell-fx'); }
+      inp.addEventListener('mousedown', function(e) {
+        if (formulaEditMode) {
+          // Mode formule : insérer référence
+          e.preventDefault();
+          const colName = colNames[+this.dataset.c] || ('C' + this.dataset.c);
+          insertAtCursor(document.getElementById('fx-input'), colName + '[' + this.dataset.r + ']');
+          document.querySelectorAll('#sheet tbody td.cell-sel').forEach(el => el.classList.remove('cell-sel'));
+          this.closest('td').classList.add('cell-sel');
+          return;
+        }
+        // Sélection de plage
+        const r = +this.dataset.r, c = +this.dataset.c;
+        if (e.shiftKey && selAnchor) {
+          setSelection(selAnchor.r, selAnchor.c, r, c);
+        } else {
+          selAnchor = {r, c};
+          setSelection(r, c, r, c);
+          selDragging = true;
+        }
+      });
+      inp.addEventListener('mousemove', function(e) {
+        if (!selDragging || !selAnchor || e.buttons===0) return;
+        setSelection(selAnchor.r, selAnchor.c, +this.dataset.r, +this.dataset.c);
+      });
+      inp.addEventListener('mouseup', function() { selDragging = false; });
+      inp.addEventListener('focus', function() {
+        if (formulaEditMode) return; // déjà géré par mousedown
+        selectCell(+this.dataset.r, +this.dataset.c);
+      });
       inp.addEventListener('input', function() {
+        if (this.readOnly) return;
+        pushUndo();
         data[+this.dataset.r][+this.dataset.c] = this.value;
+        recomputeFormulas();
       });
       inp.addEventListener('paste', function(e) {
         const html = (e.clipboardData || window.clipboardData).getData('text/html');
@@ -590,6 +1332,18 @@ function buildTable() {
         }
       });
       inp.addEventListener('keydown', function(e) {
+        // "=" depuis la cellule → basculer vers la barre de formule
+        if (e.key === '=') {
+          e.preventDefault();
+          selectCell(+this.dataset.r, +this.dataset.c);
+          const fxInp = document.getElementById('fx-input');
+          fxInp.value = '=';
+          fxInp.style.color = '#6b4f00';
+          formulaEditMode = true;
+          fxInp.focus();
+          fxInp.setSelectionRange(1, 1);
+          return;
+        }
         if (e.key !== 'Enter') return;
         e.preventDefault();
         const nextR = +this.dataset.r + 1;
@@ -854,12 +1608,12 @@ function _endColDrag() {
 //  AJOUTER / SUPPRIMER COLONNES
 // ══════════════════════════════════════════
 function updateColButtons() {
-  document.getElementById('btn-add-col').disabled = nCols >= 5;
+  document.getElementById('btn-add-col').disabled = nCols >= 10;
   document.getElementById('btn-rem-col').disabled = nCols <= 2;
 }
 
 function addCol() {
-  if (nCols >= 5) return;
+  if (nCols >= 10) return;
   colNames.push('col'+(nCols+1));
   colUnits.push('');
   data.forEach(row => row.push(''));
@@ -1384,18 +2138,19 @@ function trace() {
   series.forEach((pts, si) => {
     const color = serieColors[si] || '#888';
     const yc = yCols[si];
+    const st = getSerieStyle(si);
 
-    ctx.strokeStyle = color; ctx.lineWidth = 2;
-    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.beginPath();
-    pts.forEach(([x,y], i) => i===0 ? ctx.moveTo(px(x),py(y)) : ctx.lineTo(px(x),py(y)));
-    ctx.stroke();
+    // Trait
+    if (st.line !== 'none') {
+      ctx.strokeStyle=color; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.lineCap='round';
+      applyLineDash(ctx, st.line);
+      ctx.beginPath();
+      pts.forEach(([x,y],i) => i===0 ? ctx.moveTo(px(x),py(y)) : ctx.lineTo(px(x),py(y)));
+      ctx.stroke(); ctx.setLineDash([]);
+    }
 
-    pts.forEach(([x,y]) => {
-      ctx.beginPath(); ctx.arc(px(x), py(y), 4, 0, Math.PI*2);
-      ctx.fillStyle='#fff'; ctx.fill();
-      ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
-    });
+    // Marqueurs
+    pts.forEach(([x,y]) => drawMarker(ctx, px(x), py(y), st.marker, color, 4));
 
     // Légende (si plusieurs séries)
     if (yCols.length > 1) {
@@ -1416,10 +2171,8 @@ function trace() {
     }
   });
 
-  // Codes
-  document.getElementById('code-m').textContent = computeM() || '—';
-  document.getElementById('code-c').textContent = computeC(xCol, yCols) || '—';
   chartDrawn = true;
+  renderStylesBar(yCols);
   chartSeries = series;
 
   // Sauvegarde de l'échelle pour le curseur
@@ -1561,9 +2314,15 @@ function findNearestSeries(cpx,cpy) {
   return bestD<18 ? bestSi : null;
 }
 
+// Formatte un nombre pour affichage avec virgule décimale (locale FR)
+function fmtD(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace('.', ',');
+}
 function fmt(v) {
-  if (Math.abs(v) >= 1000 || (Math.abs(v) < 0.01 && v !== 0)) return v.toExponential(2);
-  return parseFloat(v.toPrecision(4)).toString();
+  if (Math.abs(v) >= 1000 || (Math.abs(v) < 0.01 && v !== 0))
+    return v.toExponential(2).replace('.', ',');
+  return parseFloat(v.toPrecision(4)).toString().replace('.', ',');
 }
 
 // ── Nice scale (algo Excel) ──
@@ -1608,11 +2367,11 @@ function minorTicksBetween(sc) {
   return ticks;
 }
 function fmtTick(v, step) {
-  if (!step) return String(v);
+  if (!step) return String(v).replace('.', ',');
   const dec = Math.max(0, -Math.floor(Math.log10(Math.abs(step) + 1e-10)));
   const s = parseFloat(v.toFixed(dec + 2)).toFixed(dec);
-  if (dec === 0 && Math.abs(v) >= 10000) return (+s).toExponential(2);
-  return s;
+  if (dec === 0 && Math.abs(v) >= 10000) return (+s).toExponential(2).replace('.', ',');
+  return s.replace('.', ',');
 }
 
 // ══════════════════════════════════════════
@@ -1700,10 +2459,17 @@ function exportJPG() {
     octx.beginPath(); octx.arc(px, py, 3, 0, Math.PI * 2);
     octx.fillStyle = 'rgba(80,80,80,0.7)'; octx.fill();
 
-    // Bulle de coordonnées
-    const xName = colNames[chartScale.xCol] || 'x';
-    const yName = colNames[chartScale.yCols[0]] || 'y';
-    const label = `${xName} = ${fmt(dataX)}   ${yName} = ${fmt(dataY)}`;
+    // Bulle de coordonnées — feature 1 : unités
+    const xCol2 = chartScale.xCol;
+    const yCols2 = chartScale.yCols;
+    const xName = colNames[xCol2] || 'x';
+    const xUnit = colUnits[xCol2] ? ' ' + colUnits[xCol2] : '';
+    // Unité Y : affichée si une seule courbe OU toutes les colonnes Y ont la même unité
+    const yUnits = yCols2.map(c => colUnits[c] || '');
+    const sameYUnit = yUnits.every(u => u === yUnits[0]);
+    const showYUnit = sameYUnit && yUnits[0];
+    const yUnit = showYUnit ? ' ' + yUnits[0] : '';
+    const label = `${xName} = ${fmt(dataX)}${xUnit}   y = ${fmt(dataY)}${yUnit}`;
     octx.font = '11px Arial';
     const tw = octx.measureText(label).width;
     const bw = tw + 12, bh = 20;
@@ -1727,7 +2493,37 @@ function exportJPG() {
 })();
 
 // ══════════════════════════════════════════
-//  RESIZE
+//  RESIZE PANNEAU GAUCHE ↔ DROIT
+// ══════════════════════════════════════════
+(function() {
+  const handle = document.getElementById('panel-resize');
+  const left   = document.querySelector('.left');
+  let dragging = false, startX = 0, startW = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true; startX = e.clientX; startW = left.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const w = Math.max(180, Math.min(window.innerWidth * 0.8, startW + e.clientX - startX));
+    left.style.width = w + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    if (chartDrawn) trace();
+  });
+})();
+
+// ══════════════════════════════════════════
+//  RESIZE FENÊTRE
 // ══════════════════════════════════════════
 let resizeTimer;
 window.addEventListener('resize', () => {
@@ -1739,6 +2535,9 @@ window.addEventListener('resize', () => {
 //  INIT
 // ══════════════════════════════════════════
 buildTable();
+initFormulaBar();
+initFillHandle();
+renderConstants();
 </script>
 </body>
 </html>
