@@ -1,0 +1,1744 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tableur XY Scientifique</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; font-size: 13px; background: #f0f0f0; overflow: hidden; height: 100vh; }
+.app { display: flex; height: 100vh; }
+
+/* ── LEFT ── */
+.left {
+  width: 370px; flex-shrink: 0;
+  display: flex; flex-direction: column;
+  background: #fff; border-right: 1px solid #ccc;
+}
+.toolbar {
+  padding: 7px 8px; background: #e8e8e8;
+  border-bottom: 1px solid #ccc;
+  display: flex; gap: 5px; align-items: center;
+}
+.toolbar button {
+  font-size: 11px; padding: 3px 8px;
+  border: 1px solid #bbb; border-radius: 3px;
+  background: #fff; cursor: pointer;
+}
+.toolbar button:hover { background: #d8d8d8; }
+.toolbar button:disabled { opacity: 0.4; cursor: default; }
+.toolbar label { font-size: 11px; color: #555; display: flex; align-items: center; gap: 4px; margin-left: 6px; }
+.toolbar select { font-size: 11px; padding: 2px 4px; border: 1px solid #bbb; border-radius: 3px; }
+
+.sheet-wrap { flex: 1; overflow: auto; }
+table { border-collapse: collapse; table-layout: fixed; width: 1px; }
+td, th { border: 1px solid #ddd; padding: 0; }
+
+.rn {
+  width: 26px; min-width: 26px;
+  background: #f5f5f5; text-align: center;
+  font-size: 10px; color: #aaa; padding: 2px; user-select: none;
+}
+tbody .rn { cursor: pointer; }
+tbody .rn:hover { background: #e0e4f0; color: #555; }
+tbody tr.row-sel .rn { background: #185FA5; color: #fff; font-weight: bold; }
+tbody tr.row-sel td { background: #eef3fc; }
+#ctx-menu {
+  display: none; position: fixed; z-index: 9999;
+  background: #fff; border: 1px solid #ccc; border-radius: 5px;
+  box-shadow: 2px 4px 14px rgba(0,0,0,0.18); min-width: 170px; overflow: hidden;
+}
+#ctx-menu div {
+  padding: 8px 14px; cursor: pointer; font-size: 13px; color: #333;
+}
+#ctx-menu div:hover { background: #f5f5f5; }
+#ctx-menu div.danger { color: #c0392b; }
+#ctx-menu div.danger:hover { background: #fff0f0; }
+
+/* ── COLUMN HEADER ── */
+.ch { min-width: 45px; vertical-align: top; background: #f0f0f0; cursor: pointer; position: relative; }
+.ch:hover .sel-strip { filter: brightness(0.92); }
+
+.sel-strip {
+  height: 6px; background: #d0d0d0;
+  transition: background 0.15s;
+}
+.ch.sel-x .sel-strip { background: #185FA5; }
+.ch.sel-y1 .sel-strip { background: #0a7a40; }
+.ch.sel-y2 .sel-strip { background: #b03a2e; }
+.ch.sel-y3 .sel-strip { background: #7d3c98; }
+
+.ch-inner { display: flex; flex-direction: column; }
+.ch-row { display: flex; align-items: center; }
+.ch-lbl {
+  font-size: 9px; color: #bbb; width: 26px; flex-shrink: 0;
+  text-align: right; padding-right: 3px; user-select: none;
+}
+.ch-row:first-child .ch-lbl { border-bottom: 1px solid #ddd; padding-bottom: 1px; }
+.ch input {
+  flex: 1; border: none; background: transparent; min-width: 0;
+  font-size: 12px; text-align: left; padding: 3px 4px; outline: none;
+  cursor: text;
+}
+.ch input.name { font-weight: bold; color: #222; border-bottom: 1px solid #ddd; }
+.ch input.unit { font-size: 11px; color: #666; font-style: italic; }
+.ch input:focus { background: #fffbe6; }
+
+.resize-handle {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 5px;
+  cursor: col-resize; z-index: 1;
+}
+.resize-handle:hover, .resize-handle.dragging { background: rgba(24,95,165,0.35); }
+
+/* ── DATA CELLS ── */
+.dc { min-width: 45px; }
+.dc input {
+  width: 100%; border: none; background: transparent;
+  font-size: 12px; text-align: right; padding: 2px 5px; outline: none;
+}
+.dc input:focus { background: #e8f4ff; }
+.dc.col-x  { background: #eef5ff; }
+.dc.col-y1 { background: #efffee; }
+.dc.col-y2 { background: #fff0ee; }
+.dc.col-y3 { background: #f8eeff; }
+
+/* ── RIGHT ── */
+.right {
+  flex: 1; display: flex; flex-direction: column;
+  background: #fff; padding: 10px; gap: 8px; overflow: hidden;
+}
+.title-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px; flex-shrink: 0;
+}
+.title-bar label { font-size: 12px; color: #555; white-space: nowrap; }
+#chart-title {
+  flex: 1; padding: 4px 7px; font-size: 13px;
+  border: 1px solid #ccc; border-radius: 4px; outline: none;
+}
+#chart-title:focus { border-color: #185FA5; }
+.axis-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: #f5f5f5;
+  border: 1px solid #ddd; border-radius: 5px; flex-shrink: 0;
+  min-height: 36px;
+}
+.axis-info { flex: 1; font-size: 12px; color: #666; line-height: 1.5; }
+.axis-info .hint { color: #bbb; font-style: italic; }
+.axis-info .tag {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-weight: bold; font-size: 11px; margin: 1px 2px;
+}
+.tag-x  { background: #deeeff; color: #185FA5; }
+.tag-y1 { background: #d5f5e3; color: #0a7a40; }
+.tag-y2 { background: #fde8e8; color: #b03a2e; }
+.tag-y3 { background: #f3e8ff; color: #7d3c98; }
+
+#trace-btn {
+  padding: 5px 16px; background: #185FA5; color: #fff;
+  border: none; border-radius: 4px; cursor: pointer;
+  font-size: 13px; font-weight: bold; flex-shrink: 0;
+}
+#trace-btn:hover { background: #1a72c2; }
+#trace-btn:active { transform: scale(0.97); }
+
+.chart-wrap {
+  flex: 1; min-height: 150px;
+  border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: #fff;
+  position: relative;
+}
+#chart-canvas, #overlay-canvas {
+  display: block; position: absolute; top: 0; left: 0;
+}
+#overlay-canvas { cursor: crosshair; }
+
+.codes { display: flex; gap: 8px; flex-shrink: 0; }
+.code-box {
+  flex: 1; padding: 7px 12px;
+  background: #f8f8f8; border: 1px solid #ddd; border-radius: 5px;
+}
+.code-label {
+  font-size: 10px; color: #999; font-weight: bold;
+  text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 3px;
+}
+.code-val {
+  font-family: 'Courier New', monospace; font-size: 17px;
+  font-weight: bold; color: #185FA5; letter-spacing: 2px;
+}
+
+.bottom-bar { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+#export-btn, #copy-btn {
+  padding: 5px 14px; color: #fff;
+  border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+#export-btn { background: #0F6E56; }
+#export-btn:hover { background: #0c5b47; }
+#copy-btn { background: #185FA5; }
+#copy-btn:hover { background: #1a72c2; }
+.hint-txt { font-size: 11px; color: #bbb; }
+.tl-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; padding: 2px 0;
+}
+.tl-remove {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 1px solid #ccc; background: #fff;
+  cursor: pointer; font-size: 11px; color: #999;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; line-height: 1;
+}
+.tl-remove:hover { background: #fff0f0; border-color: #e08080; color: #c0392b; }
+
+.msg { font-size: 12px; padding: 4px 8px; border-radius: 3px; display: none; flex-shrink: 0; }
+.msg.err { background: #fff0f0; color: #c0392b; border: 1px solid #f5c6cb; display: block; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ════ LEFT ════ -->
+  <div class="left">
+    <div class="toolbar">
+      <button id="btn-add-col" onclick="addCol()">+ col</button>
+      <button id="btn-rem-col" onclick="removeCol()">− col</button>
+      <button onclick="addRow()">+ ligne</button>
+      <button onclick="initialiser()" style="margin-left:8px;color:#b03a2e;border-color:#e0b0b0">⟳ Initialiser</button>
+    </div>
+    <div class="sheet-wrap">
+      <table id="sheet"></table>
+    </div>
+  </div>
+
+  <!-- Menu contextuel graphe -->
+  <div id="chart-ctx-menu" style="display:none;position:fixed;z-index:9999;
+       background:#fff;border:1px solid #ccc;border-radius:5px;
+       box-shadow:2px 4px 14px rgba(0,0,0,0.18);min-width:180px;overflow:hidden;">
+    <div onclick="openTrendDlg()"
+         style="padding:8px 14px;cursor:pointer;font-size:13px;color:#333;"
+         onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background=''">
+      📈 Courbe de tendance…
+    </div>
+  </div>
+
+  <!-- Dialog courbe de tendance -->
+  <div id="trend-dlg" style="display:none;position:fixed;inset:0;z-index:10000;
+       background:rgba(0,0,0,0.35);align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:8px;box-shadow:0 6px 32px rgba(0,0,0,0.28);
+                width:380px;max-width:95vw;overflow:hidden;font-size:13px;">
+      <!-- Titre -->
+      <div style="background:#185FA5;color:#fff;padding:10px 16px;font-weight:bold;font-size:14px;
+                  display:flex;justify-content:space-between;align-items:center;">
+        <span>Courbe de tendance — <span id="td-series" style="font-weight:normal;"></span></span>
+        <span onclick="closeTrendDlg()" style="cursor:pointer;font-size:18px;line-height:1;">×</span>
+      </div>
+      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+        <!-- Type -->
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="color:#888;width:80px;">Type</span>
+          <select id="td-type" onchange="onTrendTypeChange()"
+            style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;
+                   font-size:13px;color:#185FA5;font-weight:bold;background:#eef3fc;cursor:pointer;">
+            <option value="linear">Linéaire  —  y = a·x + b</option>
+            <option value="inverse">Inverse  —  y = k / x</option>
+            <option value="polynomial">Polynomiale  —  y = aₙxⁿ + … + b</option>
+          </select>
+        </div>
+        <!-- Degré (polynomial uniquement) -->
+        <div id="td-degree-row" style="display:none;align-items:center;gap:8px;">
+          <span style="color:#888;width:80px;">Degré</span>
+          <select id="td-degree" onchange="onTrendTypeChange()"
+            style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;
+                   font-size:13px;color:#8e44ad;font-weight:bold;background:#f5eefb;cursor:pointer;">
+            <option value="2">2 — quadratique</option>
+            <option value="3">3 — cubique</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+        <!-- Résultats -->
+        <div style="background:#f8f9fb;border:1px solid #e0e8f0;border-radius:6px;padding:10px 14px;">
+          <div id="td-eq"  style="font-family:'Courier New',monospace;font-size:13px;font-weight:bold;margin-bottom:4px;"></div>
+          <div id="td-r2"  style="font-family:'Courier New',monospace;font-size:12px;color:#444;"></div>
+        </div>
+        <!-- Prévision -->
+        <div style="display:flex;gap:16px;align-items:center;font-size:12px;color:#555;">
+          <span>Prévision :</span>
+          <label style="display:flex;align-items:center;gap:5px;">
+            Avancer <input type="number" id="td-fwd" value="0" min="0" step="any"
+              style="width:60px;padding:2px 5px;border:1px solid #ccc;border-radius:3px;font-size:12px;">
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;">
+            Reculer <input type="number" id="td-bwd" value="0" min="0" step="any"
+              style="width:60px;padding:2px 5px;border:1px solid #ccc;border-radius:3px;font-size:12px;">
+          </label>
+        </div>
+        <!-- Boutons -->
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
+          <button onclick="removeTrendDlg()"
+            style="padding:5px 12px;border:1px solid #e0b0b0;background:#fff5f5;
+                   color:#c0392b;border-radius:4px;cursor:pointer;font-size:12px;">
+            Supprimer
+          </button>
+          <button onclick="applyTrendDlg()"
+            style="padding:5px 14px;background:#185FA5;color:#fff;
+                   border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:bold;">
+            Appliquer
+          </button>
+          <button onclick="closeTrendDlg()"
+            style="padding:5px 12px;border:1px solid #ccc;background:#f5f5f5;
+                   border-radius:4px;cursor:pointer;font-size:12px;">
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Menu contextuel lignes / colonnes -->
+  <div id="ctx-menu">
+    <div id="ctx-del-row"  class="danger" onclick="deleteSelectedRow()">🗑 Supprimer la ligne</div>
+    <div id="ctx-del-col"  class="danger" onclick="deleteSelectedCol()" style="display:none">🗑 Supprimer la colonne</div>
+  </div>
+
+  <!-- ════ RIGHT ════ -->
+  <div class="right">
+    <div class="axis-bar">
+      <div class="axis-info" id="axis-info">
+        <span class="hint">Cliquez sur les en-têtes pour sélectionner les colonnes à tracer</span>
+      </div>
+      <button id="trace-btn" onclick="trace()">▶ Tracer</button>
+    </div>
+    <div class="title-bar">
+      <label for="chart-title">Titre :</label>
+      <input type="text" id="chart-title" placeholder="ex : x₁ = f(t)" />
+    </div>
+
+    <div id="msg" class="msg"></div>
+
+    <div class="chart-wrap" id="chart-wrap">
+      <canvas id="chart-canvas"></canvas>
+      <canvas id="overlay-canvas"></canvas>
+    </div>
+
+    <div class="codes">
+      <div class="code-box">
+        <span class="code-label">Code M — Mesures</span>
+        <span class="code-val" id="code-m">— — —</span>
+      </div>
+      <div class="code-box">
+        <span class="code-label">Code C — Courbe</span>
+        <span class="code-val" id="code-c">— — —</span>
+      </div>
+    </div>
+
+    <div id="trend-panel" style="display:none; flex-direction:column; gap:4px; flex-shrink:0;
+         background:#f8f9fb; border:1px solid #dce4f0; border-radius:6px; padding:7px 10px;">
+      <div style="font-size:10px;color:#888;font-weight:bold;text-transform:uppercase;
+                  letter-spacing:.4px;margin-bottom:2px;">Courbes de tendance</div>
+      <div id="trend-panel-rows"></div>
+    </div>
+
+    <div class="bottom-bar">
+      <button id="export-btn" onclick="exportJPG()">↓ Exporter JPG</button>
+      <button id="copy-btn" onclick="copyChart()">⎘ Copier le graphique</button>
+      <span class="hint-txt" id="copy-hint"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+//  ÉTAT
+// ══════════════════════════════════════════
+let nCols = 5;
+let nRows = 10;
+let colNames = ['t', 'x1', 'v', 'a', ''];
+let colUnits = ['s', 'm', 'm/s', 'm/s²', ''];
+let data = [
+  ['0.0',  '0.00',  '0.00',  '9.81', ''],
+  ['0.5',  '0.12',  '4.91',  '9.81', ''],
+  ['1.0',  '0.49',  '9.81',  '9.81', ''],
+  ['1.5',  '1.10',  '14.72', '9.81', ''],
+  ['2.0',  '1.96',  '19.62', '9.81', ''],
+  ['2.5',  '3.07',  '24.53', '9.81', ''],
+  ['3.0',  '4.41',  '29.43', '9.81', ''],
+  ['3.5',  '6.00',  '34.34', '9.81', ''],
+  ['4.0',  '7.85',  '39.24', '9.81', ''],
+  ['4.5',  '9.92',  '44.15', '9.81', ''],
+];
+let selectedCols = [];   // indices dans l'ordre de sélection; le plus petit index = X
+let selectedRow = null;
+let selectedCtxCol = null;
+const _p = new URLSearchParams(location.search);
+let uncertainty = +(_p.get('incertitude') || _p.get('uncertainty') || 5);
+let chartDrawn = false;
+let chartScale = null;
+let chartSeries = null;   // série de points pour trendlines
+let trendlines  = {};     // { seriesIdx: {slope,intercept,r2,showEq,showR2,fwd,bwd} }
+let _chartCtxSi = null;   // série visée par le clic droit
+
+const Y_COLORS  = ['#0a7a40', '#b03a2e', '#7d3c98'];
+const Y_CLASSES = ['col-y1', 'col-y2', 'col-y3'];
+const TAG_CLS   = ['tag-y1', 'tag-y2', 'tag-y3'];
+
+// ══════════════════════════════════════════
+//  HELPERS DE SÉLECTION
+// ══════════════════════════════════════════
+function getXCol() {
+  if (selectedCols.length === 0) return null;
+  return Math.min(...selectedCols);
+}
+function getYCols() {
+  const x = getXCol();
+  return [...selectedCols].filter(c => c !== x).sort((a, b) => a - b);
+}
+
+function toggleCol(c) {
+  const idx = selectedCols.indexOf(c);
+  if (idx === -1) {
+    if (selectedCols.length >= 4) return showMsg('Maximum 4 colonnes sélectionnées (1 X + 3 Y).', 'err');
+    selectedCols.push(c);
+  } else {
+    selectedCols.splice(idx, 1);
+  }
+  refreshHighlight();
+  updateAxisInfo();
+}
+
+// ══════════════════════════════════════════
+//  HASH FNV-1a 32 bits → base36 → 6 chars
+// ══════════════════════════════════════════
+function hash6(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(36).toUpperCase().padStart(6,'0').slice(0,6);
+}
+
+// ══════════════════════════════════════════
+//  PARSING NUMÉRIQUE (. et , acceptés)
+// ══════════════════════════════════════════
+function parseNum(s) {
+  if (s === null || s === undefined) return NaN;
+  return parseFloat(String(s).trim().replace(',', '.'));
+}
+
+// ══════════════════════════════════════════
+//  ARRONDI
+// ══════════════════════════════════════════
+function roundSig(v, n) {
+  if (v === 0) return 0;
+  const d = Math.floor(Math.log10(Math.abs(v))) + 1;
+  const f = Math.pow(10, n - d);
+  return Math.round(v * f) / f;
+}
+function sigFigs(u) {
+  if (u >= 10) return 1; if (u >= 5) return 2; if (u >= 2) return 3; return 4;
+}
+
+// ══════════════════════════════════════════
+//  CODE M
+// ══════════════════════════════════════════
+function computeM() {
+  const n = sigFigs(uncertainty);
+  const vals = [];
+  for (let r = 0; r < nRows; r++)
+    for (let c = 0; c < nCols; c++) {
+      const v = parseNum(data[r][c]);
+      if (!isNaN(v)) vals.push(roundSig(v, n));
+    }
+  if (!vals.length) return null;
+  vals.sort((a, b) => a - b);
+  return 'M-' + hash6(vals.join(','));
+}
+
+// ══════════════════════════════════════════
+//  CODE C (toutes les courbes Y combinées)
+// ══════════════════════════════════════════
+function computeC(xCol, yCols) {
+  const parts = [];
+  for (const yc of yCols) {
+    const pairs = [];
+    for (let r = 0; r < nRows; r++) {
+      const xv = parseNum(data[r][xCol]);
+      const yv = parseNum(data[r][yc]);
+      if (!isNaN(xv) && !isNaN(yv)) pairs.push([xv, yv]);
+    }
+    if (pairs.length < 2) continue;
+    pairs.sort((a, b) => a[0] - b[0]);
+    const xs = pairs.map(p => p[0]), ys = pairs.map(p => p[1]);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const norm = pairs.map(([x, y]) => [
+      xMax === xMin ? 0 : Math.round(((x-xMin)/(xMax-xMin))*20)/20,
+      yMax === yMin ? 0 : Math.round(((y-yMin)/(yMax-yMin))*20)/20
+    ]);
+    parts.push(norm.map(p => p[0]+':'+p[1]).join('|'));
+  }
+  if (!parts.length) return null;
+  return 'C-' + hash6(parts.join('§'));
+}
+
+// ══════════════════════════════════════════
+//  CONSTRUCTION DU TABLEAU
+// ══════════════════════════════════════════
+function buildTable() {
+  const table = document.getElementById('sheet');
+  table.innerHTML = '';
+  const thead = table.createTHead();
+  const hr = thead.insertRow();
+  const rn0 = document.createElement('th');
+  rn0.className = 'rn'; hr.appendChild(rn0);
+
+  for (let c = 0; c < nCols; c++) {
+    const th = document.createElement('th');
+    th.className = 'ch'; th.dataset.c = c;
+
+    // Bande de sélection (clic)
+    const strip = document.createElement('div');
+    strip.className = 'sel-strip';
+    strip.title = 'Cliquer pour sélectionner la colonne';
+    strip.addEventListener('click', () => toggleCol(c));
+    th.appendChild(strip);
+
+    const inner = document.createElement('div');
+    inner.className = 'ch-inner';
+
+    const ni = document.createElement('input');
+    ni.type = 'text'; ni.className = 'name';
+    ni.value = colNames[c]; ni.placeholder = 'variable';
+    ni.dataset.c = c;
+    ni.addEventListener('input', function() {
+      colNames[+this.dataset.c] = this.value;
+      updateAxisInfo();
+    });
+
+    const ui = document.createElement('input');
+    ui.type = 'text'; ui.className = 'unit';
+    ui.value = colUnits[c]; ui.placeholder = 'unité';
+    ui.dataset.c = c;
+    ui.addEventListener('input', function() {
+      colUnits[+this.dataset.c] = this.value;
+      updateAxisInfo();
+    });
+
+    const rowN = document.createElement('div'); rowN.className = 'ch-row';
+    const lblN = document.createElement('span'); lblN.className = 'ch-lbl'; lblN.textContent = 'var.';
+    rowN.appendChild(lblN); rowN.appendChild(ni);
+
+    const rowU = document.createElement('div'); rowU.className = 'ch-row';
+    const lblU = document.createElement('span'); lblU.className = 'ch-lbl'; lblU.textContent = 'unité';
+    rowU.appendChild(lblU); rowU.appendChild(ui);
+
+    inner.appendChild(rowN); inner.appendChild(rowU);
+    th.appendChild(inner);
+
+    // Clic gauche sur le <th> : sélectionner la colonne (hors inputs)
+    th.addEventListener('click', function(e) {
+      if (e.target === this || e.target === inner) toggleCol(c);
+    });
+    // Clic droit sur le <th> : menu contextuel colonne
+    th.addEventListener('contextmenu', e => showCtxMenu(e, 'col', c));
+    // Glisser-déplacer : réordonner la colonne
+    th.addEventListener('mousedown', makeColDragHandler(th, c));
+
+    // Poignée de redimensionnement
+    const rh = document.createElement('div');
+    rh.className = 'resize-handle';
+    rh.addEventListener('mousedown', makeResizeHandler(th));
+    th.appendChild(rh);
+
+    hr.appendChild(th);
+  }
+
+  // Corps
+  const tbody = table.createTBody();
+  for (let r = 0; r < nRows; r++) {
+    const tr = tbody.insertRow();
+    const rnum = tr.insertCell();
+    rnum.className = 'rn'; rnum.textContent = r + 1;
+    rnum.addEventListener('click', () => selectRow(r));
+    tr.addEventListener('contextmenu', e => showCtxMenu(e, 'row', r));
+    for (let c = 0; c < nCols; c++) {
+      const td = tr.insertCell();
+      td.className = 'dc'; td.dataset.c = c;
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.inputMode = 'decimal';
+      inp.value = data[r][c];
+      inp.dataset.r = r; inp.dataset.c = c;
+      inp.addEventListener('input', function() {
+        data[+this.dataset.r][+this.dataset.c] = this.value;
+      });
+      inp.addEventListener('paste', function(e) {
+        const html = (e.clipboardData || window.clipboardData).getData('text/html');
+        const text = (e.clipboardData || window.clipboardData).getData('text');
+        // Essayer HTML d'abord (détection en-têtes)
+        if (html) {
+          const parsed = parseHTMLTable(html);
+          if (parsed && (parsed.rows.length > 1 || (parsed.rows[0] && parsed.rows[0].length > 1))) {
+            e.preventDefault();
+            pasteBlock(+this.dataset.r, +this.dataset.c, parsed.rows, parsed.headers);
+            return;
+          }
+        }
+        // Fallback TSV
+        const rows = text.split(/\r?\n/).map(r => r.split('\t'));
+        if (rows.length > 1 || rows[0].length > 1) {
+          e.preventDefault();
+          pasteBlock(+this.dataset.r, +this.dataset.c, rows);
+        }
+      });
+      inp.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const nextR = +this.dataset.r + 1;
+        const nextC = +this.dataset.c;
+        const next = document.querySelector(`#sheet tbody input[data-r="${nextR}"][data-c="${nextC}"]`);
+        if (next) {
+          setTimeout(() => { next.focus(); next.select(); }, 0);
+        } else {
+          const r = nextR, c = nextC;
+          addRow(() => {
+            const n = document.querySelector(`#sheet tbody input[data-r="${r}"][data-c="${c}"]`);
+            if (n) { n.focus(); n.select(); }
+          });
+        }
+      });
+      td.appendChild(inp);
+    }
+  }
+
+  refreshHighlight();
+  updateAxisInfo();
+  updateColButtons();
+
+  // Largeurs initiales via mesure canvas (ne remplace pas une largeur déjà fixée par l'user)
+  document.querySelectorAll('#sheet thead .ch').forEach(th => {
+    if (!th.style.width) autoFitCol(th);
+  });
+}
+
+// ══════════════════════════════════════════
+//  SURLIGNAGE DES COLONNES
+// ══════════════════════════════════════════
+function refreshHighlight() {
+  const xCol = getXCol();
+  const yCols = getYCols();
+
+  // Headers
+  document.querySelectorAll('#sheet thead .ch').forEach(th => {
+    th.classList.remove('sel-x','sel-y1','sel-y2','sel-y3');
+    const c = +th.dataset.c;
+    if (c === xCol) th.classList.add('sel-x');
+    else {
+      const yi = yCols.indexOf(c);
+      if (yi !== -1) th.classList.add('sel-y' + (yi+1));
+    }
+  });
+
+  // Data cells
+  document.querySelectorAll('#sheet tbody .dc').forEach(td => {
+    td.classList.remove('col-x','col-y1','col-y2','col-y3');
+    const c = +td.dataset.c;
+    if (c === xCol) td.classList.add('col-x');
+    else {
+      const yi = yCols.indexOf(c);
+      if (yi !== -1) td.classList.add(Y_CLASSES[yi]);
+    }
+  });
+}
+
+// ══════════════════════════════════════════
+//  INFO AXES (barre du haut)
+// ══════════════════════════════════════════
+function colLabel(c) {
+  return (colNames[c] || ('col'+(c+1))) + (colUnits[c] ? ' / '+colUnits[c] : '');
+}
+function updateAxisInfo() {
+  const xCol = getXCol();
+  const yCols = getYCols();
+  const el = document.getElementById('axis-info');
+  if (selectedCols.length === 0) {
+    el.innerHTML = '<span class="hint">Cliquez sur les bandes colorées des en-têtes pour sélectionner les colonnes à tracer</span>';
+    return;
+  }
+  let html = '';
+  if (xCol !== null) html += `<span class="tag tag-x">X : ${colLabel(xCol)}</span>`;
+  yCols.forEach((yc, i) => {
+    html += `<span class="tag ${TAG_CLS[i]}">Y${yCols.length>1?i+1:''} : ${colLabel(yc)}</span>`;
+  });
+  if (selectedCols.length === 1) html += ' <span class="hint"> — sélectionnez au moins une colonne Y</span>';
+  el.innerHTML = html;
+}
+
+// ══════════════════════════════════════════
+//  REDIMENSIONNEMENT DES COLONNES
+// ══════════════════════════════════════════
+const _cvs = document.createElement('canvas');
+const _ctx = _cvs.getContext('2d');
+
+function measureCol(c) {
+  let maxW = 60;
+  // En-tête : nom de variable
+  _ctx.font = '9px Arial';
+  const lblW = _ctx.measureText('var. ').width;
+  _ctx.font = 'bold 12px Arial';
+  maxW = Math.max(maxW, lblW + _ctx.measureText(colNames[c] || '').width + 18);
+  // En-tête : unité
+  _ctx.font = '9px Arial';
+  const lblU = _ctx.measureText('unité ').width;
+  _ctx.font = '11px Arial';
+  maxW = Math.max(maxW, lblU + _ctx.measureText(colUnits[c] || '').width + 18);
+  // Cellules de données
+  _ctx.font = '12px Arial';
+  for (let r = 0; r < nRows; r++) {
+    const v = data[r][c] || '';
+    if (v) maxW = Math.max(maxW, _ctx.measureText(v).width + 16);
+  }
+  return Math.ceil(maxW);
+}
+
+function autoFitCol(th) {
+  th.style.width = measureCol(+th.dataset.c) + 'px';
+}
+
+let _rLastClick = { th: null, t: 0 };
+
+function makeResizeHandler(th) {
+  return function(e) {
+    e.preventDefault(); e.stopPropagation();
+    const now = Date.now();
+    if (th === _rLastClick.th && now - _rLastClick.t < 400) {
+      _rLastClick = { th: null, t: 0 };
+      autoFitCol(th); return;
+    }
+    _rLastClick = { th, t: now };
+    const handle = e.target;
+    handle.classList.add('dragging');
+    const startX = e.clientX;
+    const startW = th.offsetWidth;
+    function onMove(ev) {
+      const w = Math.max(45, startW + ev.clientX - startX);
+      th.style.width = w + 'px';
+    }
+    function onUp() {
+      handle.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+}
+
+// ══════════════════════════════════════════
+//  GLISSER-DÉPLACER COLONNES
+// ══════════════════════════════════════════
+let _colDrag = null;
+
+function makeColDragHandler(th, c) {
+  return function(e) {
+    if (e.button !== 0) return;
+    if (e.target.tagName === 'INPUT') return;
+    if (e.target.classList.contains('resize-handle')) return;
+
+    const startX = e.clientX;
+    let dragging = false;
+
+    function onMove(ev) {
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) < 6) return;
+        dragging = true;
+        _startColDrag(c, ev);
+      }
+      _updateColDrag(ev);
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (dragging) {
+        _endColDrag();
+        // Absorber le click qui suit le mouseup
+        const absorb = ev => { ev.stopPropagation(); th.removeEventListener('click', absorb, true); };
+        th.addEventListener('click', absorb, true);
+      }
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+}
+
+function _startColDrag(c, e) {
+  const ghost = document.createElement('div');
+  ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9998;
+    background:#e8eef8;border:2px solid #185FA5;border-radius:4px;
+    padding:3px 10px;font:bold 12px Arial;color:#185FA5;
+    opacity:0.9;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.18);`;
+  ghost.textContent = colNames[c] || ('col ' + (c + 1));
+  document.body.appendChild(ghost);
+  _colDrag = { col: c, ghost, dropIdx: c };
+  _updateColDrag(e);
+}
+
+function _updateColDrag(e) {
+  if (!_colDrag) return;
+  _colDrag.ghost.style.left = (e.clientX + 14) + 'px';
+  _colDrag.ghost.style.top  = (e.clientY - 12) + 'px';
+
+  const ths = Array.from(document.querySelectorAll('#sheet thead .ch'));
+  let dropIdx = nCols;
+  for (let i = 0; i < ths.length; i++) {
+    const r = ths[i].getBoundingClientRect();
+    if (e.clientX < r.left + r.width / 2) { dropIdx = i; break; }
+  }
+  _colDrag.dropIdx = dropIdx;
+
+  // Trait indicateur vertical
+  let line = document.getElementById('col-drag-line');
+  if (!line) {
+    line = document.createElement('div');
+    line.id = 'col-drag-line';
+    line.style.cssText = 'position:fixed;pointer-events:none;z-index:9997;width:3px;background:#185FA5;border-radius:2px;';
+    document.body.appendChild(line);
+  }
+  const tbody = document.querySelector('#sheet tbody');
+  const tbRect = tbody ? tbody.getBoundingClientRect() : null;
+  let x, top, height;
+  const thHead = ths[0] ? ths[0].getBoundingClientRect() : null;
+  if (dropIdx < ths.length) {
+    const r = ths[dropIdx].getBoundingClientRect();
+    x = r.left; top = thHead ? thHead.top : r.top;
+    height = tbRect ? tbRect.bottom - top : r.height;
+  } else {
+    const r = ths[ths.length - 1].getBoundingClientRect();
+    x = r.right; top = thHead ? thHead.top : r.top;
+    height = tbRect ? tbRect.bottom - top : r.height;
+  }
+  line.style.left = (x - 1.5) + 'px';
+  line.style.top  = top + 'px';
+  line.style.height = height + 'px';
+}
+
+function _endColDrag() {
+  if (!_colDrag) return;
+  _colDrag.ghost.remove();
+  const line = document.getElementById('col-drag-line');
+  if (line) line.remove();
+
+  const fromCol = _colDrag.col;
+  const toCol   = _colDrag.dropIdx;
+  _colDrag = null;
+
+  if (toCol === fromCol || toCol === fromCol + 1) return; // pas de changement
+
+  const insertAt = toCol > fromCol ? toCol - 1 : toCol;
+
+  // Réordonner colNames, colUnits, data
+  const nm = colNames.splice(fromCol, 1)[0]; colNames.splice(insertAt, 0, nm);
+  const un = colUnits.splice(fromCol, 1)[0]; colUnits.splice(insertAt, 0, un);
+  data.forEach(row => { const v = row.splice(fromCol, 1)[0]; row.splice(insertAt, 0, v); });
+
+  // Mettre à jour selectedCols
+  selectedCols = selectedCols.map(sc => {
+    if (sc === fromCol) return insertAt;
+    if (fromCol < insertAt && sc > fromCol && sc <= insertAt) return sc - 1;
+    if (fromCol > insertAt && sc >= insertAt && sc < fromCol) return sc + 1;
+    return sc;
+  });
+
+  buildTable();
+}
+
+// ══════════════════════════════════════════
+//  AJOUTER / SUPPRIMER COLONNES
+// ══════════════════════════════════════════
+function updateColButtons() {
+  document.getElementById('btn-add-col').disabled = nCols >= 5;
+  document.getElementById('btn-rem-col').disabled = nCols <= 2;
+}
+
+function addCol() {
+  if (nCols >= 5) return;
+  colNames.push('col'+(nCols+1));
+  colUnits.push('');
+  data.forEach(row => row.push(''));
+  nCols++;
+  buildTable();
+}
+
+function removeCol() {
+  if (nCols <= 2) return;
+  const lastC = nCols - 1;
+  const hasContent = colNames[lastC] || colUnits[lastC] || data.some(row => row[lastC] !== '');
+  if (hasContent && !confirm(`La colonne "${colNames[lastC] || 'col '+(lastC+1)}" contient des données. Supprimer quand même ?`)) return;
+  colNames.pop(); colUnits.pop();
+  data.forEach(row => row.pop());
+  nCols--;
+  selectedCols = selectedCols.filter(c => c < nCols);
+  buildTable();
+}
+
+function initialiser() {
+  if (!confirm('Réinitialiser le tableau ? Toutes les données seront effacées.')) return;
+  nCols = 5; nRows = 10;
+  colNames = ['', '', '', '', ''];
+  colUnits = ['', '', '', '', ''];
+  data = Array.from({length: nRows}, () => Array(nCols).fill(''));
+  selectedCols = [];
+  chartDrawn = false;
+  document.querySelectorAll('#sheet thead .ch').forEach(th => { th.style.width = ''; });
+  document.getElementById('code-m').textContent = '— — —';
+  document.getElementById('code-c').textContent = '— — —';
+  const canvas = document.getElementById('chart-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  buildTable();
+}
+
+function addRow(cb) {
+  data.push(Array(nCols).fill(''));
+  nRows++;
+  buildTable();
+  if (cb) requestAnimationFrame(cb);
+}
+
+// ══════════════════════════════════════════
+//  MENU CONTEXTUEL LIGNES / COLONNES
+// ══════════════════════════════════════════
+function showCtxMenu(e, mode, idx) {
+  e.preventDefault(); e.stopPropagation();
+  const m = document.getElementById('ctx-menu');
+  document.getElementById('ctx-del-row').style.display = mode === 'row' ? '' : 'none';
+  document.getElementById('ctx-del-col').style.display = mode === 'col' ? '' : 'none';
+  if (mode === 'row') { selectRow(idx); }
+  if (mode === 'col') { selectedCtxCol = idx; }
+  m.style.left = e.clientX + 'px';
+  m.style.top  = e.clientY + 'px';
+  m.style.display = 'block';
+}
+function hideCtxMenu() {
+  document.getElementById('ctx-menu').style.display = 'none';
+  document.getElementById('chart-ctx-menu').style.display = 'none';
+}
+document.addEventListener('click', hideCtxMenu);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtxMenu(); });
+
+function selectRow(r) {
+  selectedRow = r;
+  document.querySelectorAll('#sheet tbody tr').forEach((tr, i) =>
+    tr.classList.toggle('row-sel', i === r));
+}
+
+function deleteSelectedRow() {
+  if (selectedRow === null) return;
+  if (nRows <= 1) { hideCtxMenu(); return; }
+  data.splice(selectedRow, 1);
+  nRows--;
+  selectedRow = null;
+  hideCtxMenu();
+  buildTable();
+}
+
+function deleteSelectedCol() {
+  if (selectedCtxCol === null) return;
+  const c = selectedCtxCol;
+  if (nCols <= 2) { hideCtxMenu(); return; }
+  const hasContent = colNames[c] || colUnits[c] || data.some(row => row[c] !== '');
+  if (hasContent && !confirm(`La colonne "${colNames[c] || 'col '+(c+1)}" contient des données. Supprimer ?`)) { hideCtxMenu(); return; }
+  colNames.splice(c, 1); colUnits.splice(c, 1);
+  data.forEach(row => row.splice(c, 1));
+  selectedCols = selectedCols.filter(s => s !== c).map(s => s > c ? s - 1 : s);
+  nCols--;
+  selectedCtxCol = null;
+  hideCtxMenu();
+  buildTable();
+  updateColButtons();
+}
+
+// ══════════════════════════════════════════
+//  DÉTECTION EN-TÊTES HTML AU COLLAGE
+// ══════════════════════════════════════════
+function parseHTMLTable(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  const table = div.querySelector('table');
+  if (!table) return null;
+  const headers = [], rows = [];
+  table.querySelectorAll('tr').forEach(tr => {
+    const cells = Array.from(tr.querySelectorAll('th, td'));
+    if (!cells.length) return;
+    const vals = cells.map(c => c.textContent.replace(/\s+/g, ' ').trim());
+    if (cells.every(c => c.tagName === 'TH')) {
+      headers.push(...vals);  // ligne 100% <th> = en-têtes de colonnes
+    } else {
+      rows.push(vals);
+    }
+  });
+  // Si le tableau a une colonne de labels de lignes (ex: mois), headers a 1 de moins
+  if (headers.length > 0 && rows.length > 0 && headers.length === rows[0].length - 1) {
+    headers.unshift(''); // la 1ère col n'a pas d'en-tête
+  }
+  return { headers, rows };
+}
+
+// ══════════════════════════════════════════
+//  COPIER-COLLER BLOC (TSV depuis tableur)
+// ══════════════════════════════════════════
+function pasteBlock(r0, c0, rows, headers = []) {
+  // Supprimer lignes vides finales
+  while (rows.length && rows[rows.length - 1].every(v => !v.trim())) rows.pop();
+  if (!rows.length) return;
+
+  const pasteCols = Math.max(...rows.map(r => r.length));
+
+  // Étendre les colonnes (max 5)
+  const maxC = Math.min(c0 + pasteCols - 1, 4);
+  while (nCols <= maxC) {
+    colNames.push(''); colUnits.push('');
+    data.forEach(row => row.push(''));
+    nCols++;
+  }
+
+  // Étendre les lignes
+  const maxR = r0 + rows.length - 1;
+  while (nRows <= maxR) {
+    data.push(Array(nCols).fill(''));
+    nRows++;
+  }
+
+  // Appliquer les en-têtes détectés (collage HTML)
+  if (headers.length > 0) {
+    headers.forEach((h, i) => {
+      const c = c0 + i;
+      if (c < nCols) colNames[c] = h;
+    });
+  }
+
+  // Remplir
+  rows.forEach((rowData, ri) => {
+    rowData.forEach((val, ci) => {
+      const r = r0 + ri, c = c0 + ci;
+      if (r < nRows && c < nCols) data[r][c] = val.trim();
+    });
+  });
+
+  buildTable();
+  updateColButtons();
+}
+
+// ══════════════════════════════════════════
+//  MESSAGE
+// ══════════════════════════════════════════
+function showMsg(txt, type) {
+  const el = document.getElementById('msg');
+  el.textContent = txt; el.className = 'msg ' + type;
+  setTimeout(() => { el.className = 'msg'; }, 3500);
+}
+
+// ══════════════════════════════════════════
+//  DIALOG COURBE DE TENDANCE
+// ══════════════════════════════════════════
+// ── Régression inverse y = k/x ──
+function computeInverseReg(pts) {
+  const vp = pts.filter(([x]) => x !== 0);
+  if (vp.length < 2) return null;
+  let suu=0, suy=0, sumY=0;
+  vp.forEach(([x,y]) => { const u=1/x; suu+=u*u; suy+=u*y; sumY+=y; });
+  if (Math.abs(suu) < 1e-15) return null;
+  const k = suy / suu;
+  const yMean = sumY / vp.length;
+  let ssTot=0, ssRes=0;
+  vp.forEach(([x,y]) => { ssTot+=(y-yMean)**2; ssRes+=(y-k/x)**2; });
+  const r2 = ssTot < 1e-15 ? 1 : 1 - ssRes/ssTot;
+  return { k, r2 };
+}
+
+function fmtInverseEqHTML(k, xName, yName) {
+  return `${yName||'y'} = <span style="color:${COL_SLOPE};font-weight:bold">${fmtCoeff(k)}</span> / ${xName||'x'}`;
+}
+
+function fmtInverseEq(k, xName, yName) {
+  return `${yName||'y'} = ${fmtCoeff(k)} / ${xName||'x'}`;
+}
+
+// ── Régression polynomiale y = a0 + a1·x + … + an·xⁿ ──
+const POLY_COLORS = ['#1a7a40','#185FA5','#c0392b','#d35400','#8e44ad']; // a0..a4
+const POLY_SUPS   = ['','','²','³','⁴'];
+
+function computePolyReg(pts, degree) {
+  const n = pts.length;
+  if (n < degree + 1) return null;
+  const d = degree + 1;
+  // Équations normales X^T X · c = X^T y (élimination gaussienne)
+  const A = Array.from({length:d}, () => new Array(d+1).fill(0));
+  pts.forEach(([x, y]) => {
+    const xp = Array.from({length:2*degree+1}, (_,i) => Math.pow(x,i));
+    for (let r=0;r<d;r++) {
+      for (let c=0;c<d;c++) A[r][c] += xp[r+c];
+      A[r][d] += y * xp[r];
+    }
+  });
+  for (let col=0;col<d;col++) {
+    let mx=col;
+    for (let r=col+1;r<d;r++) if (Math.abs(A[r][col])>Math.abs(A[mx][col])) mx=r;
+    [A[col],A[mx]]=[A[mx],A[col]];
+    if (Math.abs(A[col][col])<1e-12) return null;
+    for (let r=0;r<d;r++) {
+      if (r===col) continue;
+      const f=A[r][col]/A[col][col];
+      for (let c=col;c<=d;c++) A[r][c]-=f*A[col][c];
+    }
+  }
+  const coeffs = Array.from({length:d},(_,i)=>A[i][d]/A[i][i]);
+  const evalP  = x => coeffs.reduce((s,c,i)=>s+c*Math.pow(x,i),0);
+  const yMean  = pts.reduce((s,[,y])=>s+y,0)/n;
+  let ssTot=0,ssRes=0;
+  pts.forEach(([x,y])=>{ ssTot+=(y-yMean)**2; ssRes+=(y-evalP(x))**2; });
+  const r2 = ssTot<1e-15 ? 1 : 1-ssRes/ssTot;
+  return { coeffs, r2, degree };
+}
+
+function fmtPolyEqHTML(coeffs, xName, yName) {
+  const terms=[];
+  for (let i=coeffs.length-1;i>=0;i--) {
+    const c=coeffs[i];
+    if (Math.abs(c)<1e-12) continue;
+    const col   = POLY_COLORS[Math.min(i,POLY_COLORS.length-1)];
+    const xpart = i===0 ? '' : (i===1 ? `·${xName}` : `·${xName}${POLY_SUPS[i]}`);
+    terms.push({ neg:c<0, html:`<span style="color:${col};font-weight:bold">${fmtCoeff(Math.abs(c))}</span>${xpart}` });
+  }
+  if (!terms.length) return `${yName||'y'} = 0`;
+  let eq=`${yName||'y'} = `;
+  terms.forEach((t,i)=>{
+    if (i>0) eq+=t.neg?' − ':' + ';
+    else if (t.neg) eq+='−';
+    eq+=t.html;
+  });
+  return eq;
+}
+
+function fmtPolyEq(coeffs, xName, yName) {
+  // version texte
+  const sups=['','','²','³','⁴'];
+  const terms=[];
+  for (let i=coeffs.length-1;i>=0;i--) {
+    const c=coeffs[i];
+    if (Math.abs(c)<1e-12) continue;
+    const xp=i===0?'':(i===1?`·${xName}`:`·${xName}${sups[i]}`);
+    terms.push((c<0?' − ':terms.length?' + ':'')+fmtCoeff(Math.abs(c))+xp);
+  }
+  return `${yName||'y'} = ${terms.join('')||'0'}`;
+}
+
+// Affiche/cache la ligne degré et calcule la régression
+function _setDegreeRowVisibility(type) {
+  document.getElementById('td-degree-row').style.display = type === 'polynomial' ? 'flex' : 'none';
+}
+
+function _computeAndShowReg(type, pts, xName, yName) {
+  _setDegreeRowVisibility(type);
+  if (type === 'inverse') {
+    const reg = computeInverseReg(pts); if (!reg) return null;
+    document.getElementById('td-eq').innerHTML   = fmtInverseEqHTML(reg.k, xName, yName);
+    document.getElementById('td-r2').textContent = 'R² = ' + reg.r2.toFixed(5);
+    return reg;
+  } else if (type === 'polynomial') {
+    const degree = +document.getElementById('td-degree').value || 2;
+    const reg = computePolyReg(pts, degree); if (!reg) return null;
+    document.getElementById('td-eq').innerHTML   = fmtPolyEqHTML(reg.coeffs, xName, yName);
+    document.getElementById('td-r2').textContent = 'R² = ' + reg.r2.toFixed(5);
+    return reg;
+  } else {
+    const reg = computeLinearReg(pts); if (!reg) return null;
+    document.getElementById('td-eq').innerHTML   = fmtLinearEqHTML(reg.slope, reg.intercept, xName, yName);
+    document.getElementById('td-r2').textContent = 'R² = ' + reg.r2.toFixed(5);
+    return reg;
+  }
+}
+
+function onTrendTypeChange() {
+  if (_chartCtxSi === null || !chartSeries) return;
+  const type  = document.getElementById('td-type').value;
+  const pts   = chartSeries[_chartCtxSi];
+  const yCols = chartScale ? chartScale.yCols : [];
+  const xName = chartScale ? (colNames[chartScale.xCol]||'x') : 'x';
+  const yName = colNames[yCols[_chartCtxSi]] || ('Y'+(_chartCtxSi+1));
+  _computeAndShowReg(type, pts, xName, yName);
+}
+
+function openTrendDlg() {
+  document.getElementById('chart-ctx-menu').style.display = 'none';
+  if (_chartCtxSi === null || !chartSeries) return;
+  const si    = _chartCtxSi;
+  const pts   = chartSeries[si];
+  const yCols = chartScale ? chartScale.yCols : [];
+  const xName = chartScale ? (colNames[chartScale.xCol]||'x') : 'x';
+  const yName = colNames[yCols[si]] || ('Y'+(si+1));
+
+  const tl = trendlines[si] || { type:'linear', fwd:0, bwd:0 };
+  trendlines[si] = tl;
+
+  document.getElementById('td-type').value   = tl.type || 'linear';
+  document.getElementById('td-degree').value = tl.degree || 2;
+  const reg = _computeAndShowReg(tl.type || 'linear', pts, xName, yName);
+  if (!reg) return showMsg('Pas assez de points pour la régression.','err');
+
+  document.getElementById('td-series').textContent = yName + ' = f(' + xName + ')';
+  document.getElementById('td-fwd').value = tl.fwd||0;
+  document.getElementById('td-bwd').value = tl.bwd||0;
+  document.getElementById('trend-dlg').style.display = 'flex';
+}
+
+function applyTrendDlg() {
+  if (_chartCtxSi === null) return;
+  const tl   = trendlines[_chartCtxSi]; if (!tl) return;
+  const type = document.getElementById('td-type').value;
+  const pts  = chartSeries[_chartCtxSi];
+  tl.type    = type;
+  tl.fwd     = +document.getElementById('td-fwd').value || 0;
+  tl.bwd     = +document.getElementById('td-bwd').value || 0;
+  tl.removed = false;
+  delete tl.slope; delete tl.intercept; delete tl.k; delete tl.coeffs; delete tl.degree;
+
+  if (type === 'inverse') {
+    const reg = computeInverseReg(pts); if (!reg) return;
+    tl.k = reg.k; tl.r2 = reg.r2;
+  } else if (type === 'polynomial') {
+    tl.degree = +document.getElementById('td-degree').value || 2;
+    const reg = computePolyReg(pts, tl.degree); if (!reg) return;
+    tl.coeffs = reg.coeffs; tl.r2 = reg.r2;
+  } else {
+    const reg = computeLinearReg(pts); if (!reg) return;
+    tl.slope = reg.slope; tl.intercept = reg.intercept; tl.r2 = reg.r2;
+  }
+
+  refreshTrendPanel();
+  trace();
+  document.getElementById('trend-dlg').style.display = 'none';
+}
+
+function removeTrendDlg() {
+  if (_chartCtxSi !== null && trendlines[_chartCtxSi])
+    trendlines[_chartCtxSi].removed = true;
+  refreshTrendPanel(); // cacher le panel en premier si plus de trendlines
+  trace();
+  document.getElementById('trend-dlg').style.display = 'none';
+}
+
+function closeTrendDlg() {
+  document.getElementById('trend-dlg').style.display = 'none';
+}
+
+function refreshTrendPanel() {
+  if (!chartScale) return;
+  const yCols = chartScale.yCols;
+  const xName = colNames[chartScale.xCol] || 'x';
+  const rows = document.getElementById('trend-panel-rows');
+  rows.innerHTML = '';
+  let any = false;
+  Object.entries(trendlines).forEach(([siStr, tl]) => {
+    if (!tl || tl.removed) return;
+    any = true;
+    const si = +siStr;
+    const yName = colNames[yCols[si]] || ('Y'+(si+1));
+    const serieColors = (chartSeries||[]).length === 1 ? ['#185FA5'] : Y_COLORS;
+    const color = serieColors[si] || '#888';
+    const row = document.createElement('div');
+    row.className = 'tl-row';
+    row.innerHTML = `
+      <button class="tl-remove" title="Supprimer" onclick="removeTrendFromPanel(${si})">✕</button>
+      <span style="width:10px;height:2px;background:${color};display:inline-block;
+                   border-top:2px dashed ${color};border-radius:1px;flex-shrink:0;"></span>
+      <span style="font-weight:bold;color:${color};">${yName}</span>
+      <span style="font-family:'Courier New',monospace;font-size:11px;">
+        ${tl.type === 'polynomial'
+          ? fmtPolyEqHTML(tl.coeffs, xName, yName)
+          : tl.type === 'inverse'
+            ? fmtInverseEqHTML(tl.k, xName, yName)
+            : fmtLinearEqHTML(tl.slope, tl.intercept, xName, yName)}
+      </span>
+      <span style="color:#888;font-size:11px;white-space:nowrap;">R²&nbsp;=&nbsp;${tl.r2.toFixed(4)}</span>`;
+    rows.appendChild(row);
+  });
+  document.getElementById('trend-panel').style.display = any ? 'flex' : 'none';
+}
+
+function removeTrendFromPanel(si) {
+  if (trendlines[si]) trendlines[si].removed = true;
+  refreshTrendPanel(); // panel se cache d'abord si plus rien
+  trace();
+}
+
+// ══════════════════════════════════════════
+//  TRACÉ (Canvas natif, plusieurs Y)
+// ══════════════════════════════════════════
+function trace() {
+  const xCol = getXCol();
+  const yCols = getYCols();
+
+  if (xCol === null || yCols.length === 0)
+    return showMsg('Sélectionnez au moins 2 colonnes (1 X + 1 Y).', 'err');
+
+  // Collecter tous les points par série
+  const series = yCols.map(yc => {
+    const pts = [];
+    for (let r = 0; r < nRows; r++) {
+      const xv = parseNum(data[r][xCol]);
+      const yv = parseNum(data[r][yc]);
+      if (!isNaN(xv) && !isNaN(yv)) pts.push([xv, yv]);
+    }
+    pts.sort((a, b) => a[0] - b[0]);
+    return pts;
+  }).filter(pts => pts.length >= 2);
+
+  if (series.length === 0)
+    return showMsg('Il faut au moins 2 points valides par série.', 'err');
+
+  const wrap = document.getElementById('chart-wrap');
+  const canvas = document.getElementById('chart-canvas');
+  const overlay = document.getElementById('overlay-canvas');
+  canvas.width  = overlay.width  = wrap.clientWidth  || 500;
+  canvas.height = overlay.height = wrap.clientHeight || 320;
+  const ctx = canvas.getContext('2d');
+
+  const M = { top: 18, right: 100, bottom: 46, left: 60 };
+  const W = canvas.width  - M.left - M.right;
+  const H = canvas.height - M.top  - M.bottom;
+
+  // Étendues globales → nice scale
+  const allX = series.flatMap(pts => pts.map(p => p[0]));
+  const allY = series.flatMap(pts => pts.map(p => p[1]));
+  const xScale = niceScale(Math.min(...allX), Math.max(...allX), 10);
+  const yScale = niceScale(Math.min(...allY), Math.max(...allY), 10);
+  let xMin = xScale.min, xMax = xScale.max;
+  let yMin = yScale.min, yMax = yScale.max;
+  const xTicks = scaleTicks(xScale);
+  const yTicks = scaleTicks(yScale);
+
+  const px = x => M.left + (x-xMin)/(xMax-xMin)*W;
+  const py = y => M.top  + H - (y-yMin)/(yMax-yMin)*H;
+
+  // Fond
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // ── Grille papier millimétré ──
+  const xMinor = minorTicksBetween(xScale);
+  const yMinor = minorTicksBetween(yScale);
+
+  // Grille secondaire (très légère)
+  ctx.strokeStyle = 'rgba(0,0,0,0.055)'; ctx.lineWidth = 0.5;
+  xMinor.forEach(v => { const gx=px(v); ctx.beginPath(); ctx.moveTo(gx,M.top); ctx.lineTo(gx,M.top+H); ctx.stroke(); });
+  yMinor.forEach(v => { const gy=py(v); ctx.beginPath(); ctx.moveTo(M.left,gy); ctx.lineTo(M.left+W,gy); ctx.stroke(); });
+
+  // Grille principale (légère)
+  ctx.strokeStyle = 'rgba(0,0,0,0.13)'; ctx.lineWidth = 0.8;
+  xTicks.forEach(v => { const gx=px(v); ctx.beginPath(); ctx.moveTo(gx,M.top); ctx.lineTo(gx,M.top+H); ctx.stroke(); });
+  yTicks.forEach(v => { const gy=py(v); ctx.beginPath(); ctx.moveTo(M.left,gy); ctx.lineTo(M.left+W,gy); ctx.stroke(); });
+
+  // Axes
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(M.left, M.top);     ctx.lineTo(M.left, M.top+H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(M.left, M.top+H);   ctx.lineTo(M.left+W, M.top+H); ctx.stroke();
+
+  // Ticks secondaires X
+  ctx.strokeStyle = '#bbb'; ctx.lineWidth = 0.7;
+  xMinor.forEach(v => { const gx=px(v); ctx.beginPath(); ctx.moveTo(gx,M.top+H); ctx.lineTo(gx,M.top+H+3); ctx.stroke(); });
+  // Ticks secondaires Y
+  yMinor.forEach(v => { const gy=py(v); ctx.beginPath(); ctx.moveTo(M.left,gy); ctx.lineTo(M.left-3,gy); ctx.stroke(); });
+
+  // Ticks principaux X + labels
+  ctx.fillStyle = '#555'; ctx.font = '11px Arial';
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+  xTicks.forEach(v => {
+    const gx = px(v);
+    ctx.beginPath(); ctx.moveTo(gx, M.top+H); ctx.lineTo(gx, M.top+H+5); ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillText(fmtTick(v, xScale.step), gx, M.top+H+16);
+  });
+
+  // Ticks principaux Y + labels
+  yTicks.forEach(v => {
+    const gy = py(v);
+    ctx.beginPath(); ctx.moveTo(M.left, gy); ctx.lineTo(M.left-5, gy); ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtTick(v, yScale.step), M.left-7, gy+4);
+  });
+
+  // Titre du graphique
+  const chartTitle = (document.getElementById('chart-title').value || '').trim();
+  if (chartTitle) {
+    ctx.textAlign = 'center'; ctx.fillStyle = '#222'; ctx.font = 'bold 14px Arial';
+    ctx.fillText(chartTitle, M.left + W/2, M.top - 4);
+  }
+
+  // Titre axe X
+  const xLabel = (colNames[xCol]||'X') + (colUnits[xCol] ? ' / '+colUnits[xCol] : '');
+  ctx.textAlign='center'; ctx.fillStyle='#185FA5'; ctx.font='bold 12px Arial';
+  ctx.fillText(xLabel, M.left+W/2, canvas.height-5);
+
+  // Série Y (une par Y sélectionné)
+  const serieColors = yCols.length === 1 ? ['#185FA5'] : Y_COLORS;
+
+  series.forEach((pts, si) => {
+    const color = serieColors[si] || '#888';
+    const yc = yCols[si];
+
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath();
+    pts.forEach(([x,y], i) => i===0 ? ctx.moveTo(px(x),py(y)) : ctx.lineTo(px(x),py(y)));
+    ctx.stroke();
+
+    pts.forEach(([x,y]) => {
+      ctx.beginPath(); ctx.arc(px(x), py(y), 4, 0, Math.PI*2);
+      ctx.fillStyle='#fff'; ctx.fill();
+      ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+    });
+
+    // Légende (si plusieurs séries)
+    if (yCols.length > 1) {
+      const ly = M.top + 8 + si * 18;
+      const lx = M.left + W + 8;
+      ctx.beginPath(); ctx.moveTo(lx, ly+6); ctx.lineTo(lx+18, ly+6);
+      ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(lx+9, ly+6, 3, 0, Math.PI*2);
+      ctx.fillStyle='#fff'; ctx.fill(); ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+      ctx.fillStyle=color; ctx.font='bold 11px Arial'; ctx.textAlign='left';
+      ctx.fillText(colNames[yc]||('Y'+(si+1)), lx+22, ly+10);
+    } else {
+      // Titre axe Y (une seule série)
+      const yLabel = (colNames[yc]||'Y') + (colUnits[yc] ? ' / '+colUnits[yc] : '');
+      ctx.save(); ctx.translate(13, M.top+H/2); ctx.rotate(-Math.PI/2);
+      ctx.textAlign='center'; ctx.fillStyle='#185FA5'; ctx.font='bold 12px Arial';
+      ctx.fillText(yLabel, 0, 0); ctx.restore();
+    }
+  });
+
+  // Codes
+  document.getElementById('code-m').textContent = computeM() || '—';
+  document.getElementById('code-c').textContent = computeC(xCol, yCols) || '—';
+  chartDrawn = true;
+  chartSeries = series;
+
+  // Sauvegarde de l'échelle pour le curseur
+  chartScale = { M, xMin, xMax, yMin, yMax, W, H, xCol, yCols, xStep: xScale.step, yStep: yScale.step };
+
+  // Courbes de tendance
+  drawTrendlines(ctx, series, chartScale, yCols);
+}
+
+// ══════════════════════════════════════════
+//  COURBE DE TENDANCE
+// ══════════════════════════════════════════
+function computeLinearReg(pts) {
+  const n = pts.length;
+  if (n < 2) return null;
+  let sx=0,sy=0,sxx=0,sxy=0;
+  pts.forEach(([x,y])=>{ sx+=x; sy+=y; sxx+=x*x; sxy+=x*y; });
+  const d = n*sxx - sx*sx;
+  if (Math.abs(d) < 1e-15) return null;
+  const slope = (n*sxy - sx*sy) / d;
+  const intercept = (sy - slope*sx) / n;
+  const yMean = sy/n;
+  let ssTot=0, ssRes=0;
+  pts.forEach(([x,y])=>{ ssTot+=(y-yMean)**2; ssRes+=(y-(slope*x+intercept))**2; });
+  const r2 = ssTot < 1e-15 ? 1 : 1 - ssRes/ssTot;
+  return { slope, intercept, r2 };
+}
+
+const COL_SLOPE = '#c0392b';  // coef. directeur
+const COL_INTCP = '#1a7a40';  // ordonnée à l'origine
+
+function fmtCoeff(v) {
+  if (v === 0) return '0';
+  const absV = Math.abs(v);
+  if (absV >= 10000 || (absV < 0.001)) {
+    // notation scientifique 4 chiffres significatifs
+    return parseFloat(v.toPrecision(4)).toExponential(3);
+  }
+  return parseFloat(v.toPrecision(4)).toString();
+}
+
+// Version texte (pour export / fallback)
+function fmtLinearEq(slope, intercept, xName, yName) {
+  const a    = fmtCoeff(slope);
+  const b    = fmtCoeff(Math.abs(intercept));
+  const sign = intercept >= 0 ? ' + ' : ' − ';
+  return `${yName||'y'} = ${a}·${xName||'x'}${sign}${b}`;
+}
+
+// Version HTML colorée (panel + dialog)
+function fmtLinearEqHTML(slope, intercept, xName, yName) {
+  const a    = fmtCoeff(slope);
+  const b    = fmtCoeff(Math.abs(intercept));
+  const sign = intercept >= 0 ? ' + ' : ' − ';
+  return `${yName||'y'} = `
+    + `<span style="color:${COL_SLOPE};font-weight:bold">${a}</span>`
+    + `·${xName||'x'}${sign}`
+    + `<span style="color:${COL_INTCP};font-weight:bold">${b}</span>`;
+}
+
+function drawTrendlines(ctx, series, sc, yCols) {
+  if (!sc) return;
+  const { M, W, H, xMin, xMax, yMin, yMax } = sc;
+  const toPx = x => M.left + (x-xMin)/(xMax-xMin)*W;
+  const toPy = y => M.top  + (1-(y-yMin)/(yMax-yMin))*H;
+  const serieColors = series.length === 1 ? ['#185FA5'] : Y_COLORS;
+
+  Object.entries(trendlines).forEach(([siStr, tl]) => {
+    if (!tl || tl.removed) return;
+    const si = +siStr;
+    if (si >= series.length) return;
+    const pts = series[si];
+    const { fwd, bwd, type } = tl;
+    const xs = pts.filter(([x])=>x!==0).map(p=>p[0]);
+    if (!xs.length) return;
+    const x0 = Math.min(...xs) - (bwd||0);
+    const x1 = Math.max(...xs) + (fwd||0);
+
+    ctx.save();
+    const color = serieColors[si] || '#888';
+    ctx.strokeStyle = color; ctx.lineWidth = 1.8;
+    ctx.setLineDash([7,4]); ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    if (type === 'inverse' && tl.k !== undefined) {
+      // Courbe y = k/x : tracer par échantillonnage (éviter x=0)
+      const steps = 120;
+      let first = true;
+      for (let i=0; i<=steps; i++) {
+        const x = x0 + (x1-x0)*i/steps;
+        if (Math.abs(x) < 1e-12) { first=true; continue; }
+        const y = tl.k / x;
+        const px = toPx(x), py = toPy(y);
+        // Couper si hors zone graphique (évite les traits verticaux)
+        if (py < M.top - 5 || py > M.top + H + 5) { first=true; continue; }
+        first ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
+        first = false;
+      }
+    } else if (type === 'polynomial' && tl.coeffs) {
+      // Courbe polynomiale : échantillonnage
+      const evalP = x => tl.coeffs.reduce((s,c,i) => s + c*Math.pow(x,i), 0);
+      const steps = 200; let first = true;
+      for (let i=0; i<=steps; i++) {
+        const x = x0 + (x1-x0)*i/steps;
+        const y = evalP(x);
+        const px = toPx(x), py = toPy(y);
+        if (py < M.top - 5 || py > M.top + H + 5) { first=true; continue; }
+        first ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
+        first = false;
+      }
+    } else if (tl.slope !== undefined) {
+      ctx.moveTo(toPx(x0), toPy(tl.slope*x0+tl.intercept));
+      ctx.lineTo(toPx(x1), toPy(tl.slope*x1+tl.intercept));
+    }
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    ctx.restore();
+  });
+}
+
+// Distance point → segment (pixels)
+function _distSeg(px,py,ax,ay,bx,by) {
+  const dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy;
+  if (l2===0) return Math.hypot(px-ax,py-ay);
+  const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/l2));
+  return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));
+}
+
+function findNearestSeries(cpx,cpy) {
+  if (!chartScale||!chartSeries) return null;
+  const { M,W,H,xMin,xMax,yMin,yMax } = chartScale;
+  const toPx = x => M.left+(x-xMin)/(xMax-xMin)*W;
+  const toPy = y => M.top+(1-(y-yMin)/(yMax-yMin))*H;
+  let bestSi=-1, bestD=Infinity;
+  chartSeries.forEach((pts,si) => {
+    for (let i=1;i<pts.length;i++) {
+      const d=_distSeg(cpx,cpy,toPx(pts[i-1][0]),toPy(pts[i-1][1]),toPx(pts[i][0]),toPy(pts[i][1]));
+      if (d<bestD){bestD=d;bestSi=si;}
+    }
+  });
+  return bestD<18 ? bestSi : null;
+}
+
+function fmt(v) {
+  if (Math.abs(v) >= 1000 || (Math.abs(v) < 0.01 && v !== 0)) return v.toExponential(2);
+  return parseFloat(v.toPrecision(4)).toString();
+}
+
+// ── Nice scale (algo Excel) ──
+function niceNum(r, round) {
+  if (r === 0) return 1;
+  const exp = Math.floor(Math.log10(Math.abs(r)));
+  const f = r / Math.pow(10, exp);
+  let nf;
+  if (round) { nf = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10; }
+  else       { nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10; }
+  return nf * Math.pow(10, exp);
+}
+function niceScale(dMin, dMax, maxTicks) {
+  maxTicks = maxTicks || 6;
+  if (dMin === dMax) { dMin -= 1; dMax += 1; }
+  const step = niceNum(niceNum(dMax - dMin, false) / (maxTicks - 1), true);
+  return {
+    min:  Math.floor(dMin / step) * step,
+    max:  Math.ceil(dMax  / step) * step,
+    step: step
+  };
+}
+function scaleTicks(sc) {
+  const ticks = [], f = 1 / sc.step;
+  const i0 = Math.round(sc.min * f), i1 = Math.round(sc.max * f);
+  for (let i = i0; i <= i1; i++) ticks.push(i / f);
+  return ticks;
+}
+function minorDivisions(step) {
+  const exp = Math.floor(Math.log10(Math.abs(step)));
+  const f = Math.round(step / Math.pow(10, exp));
+  return f === 2 ? 4 : 5; // 2→4 subdiv, 1 et 5→5 subdiv
+}
+function minorTicksBetween(sc) {
+  const nDiv = minorDivisions(sc.step);
+  const mStep = sc.step / nDiv;
+  const majTicks = scaleTicks(sc);
+  const ticks = [];
+  for (let i = 0; i < majTicks.length - 1; i++)
+    for (let j = 1; j < nDiv; j++)
+      ticks.push(majTicks[i] + j * mStep);
+  return ticks;
+}
+function fmtTick(v, step) {
+  if (!step) return String(v);
+  const dec = Math.max(0, -Math.floor(Math.log10(Math.abs(step) + 1e-10)));
+  const s = parseFloat(v.toFixed(dec + 2)).toFixed(dec);
+  if (dec === 0 && Math.abs(v) >= 10000) return (+s).toExponential(2);
+  return s;
+}
+
+// ══════════════════════════════════════════
+//  COPIER LE GRAPHIQUE
+// ══════════════════════════════════════════
+function copyChart() {
+  if (!chartDrawn) return showMsg('Tracez d\'abord la courbe.', 'err');
+  const canvas = document.getElementById('chart-canvas');
+  const hint = document.getElementById('copy-hint');
+  canvas.toBlob(blob => {
+    try {
+      navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        .then(() => {
+          hint.textContent = '✓ Copié !';
+          setTimeout(() => { hint.textContent = ''; }, 2000);
+        })
+        .catch(() => showMsg('Copie refusée par le navigateur (HTTPS requis).', 'err'));
+    } catch {
+      showMsg('Copie non supportée par ce navigateur.', 'err');
+    }
+  }, 'image/png');
+}
+
+// ══════════════════════════════════════════
+//  EXPORT JPG
+// ══════════════════════════════════════════
+function exportJPG() {
+  if (!chartDrawn) return showMsg('Tracez d\'abord la courbe.', 'err');
+  const canvas = document.getElementById('chart-canvas');
+  const xCol = getXCol(); const yCols = getYCols();
+  const yNames = yCols.map(c => colNames[c]||'y').join('-');
+  const link = document.createElement('a');
+  link.download = 'courbe_' + yNames + '_f_' + (colNames[xCol]||'x') + '.jpg';
+  link.href = canvas.toDataURL('image/jpeg', 0.92);
+  link.click();
+}
+
+// ══════════════════════════════════════════
+//  CURSEUR GRAPHE
+// ══════════════════════════════════════════
+(function() {
+  let ov, octx;
+  function init() {
+    ov = document.getElementById('overlay-canvas');
+    if (!ov) return;
+    octx = ov.getContext('2d');
+    ov.addEventListener('mousemove', onMove);
+    ov.addEventListener('mouseleave', () => octx.clearRect(0, 0, ov.width, ov.height));
+    ov.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      if (!chartScale || !chartSeries) return;
+      const rect = ov.getBoundingClientRect();
+      const cpx = (e.clientX-rect.left)*(ov.width/rect.width);
+      const cpy = (e.clientY-rect.top )*(ov.height/rect.height);
+      const si = findNearestSeries(cpx, cpy);
+      if (si === null) return;
+      _chartCtxSi = si;
+      const m = document.getElementById('chart-ctx-menu');
+      m.style.left = e.clientX+'px'; m.style.top = e.clientY+'px';
+      m.style.display = 'block';
+    });
+  }
+  function onMove(e) {
+    if (!chartScale) return;
+    const rect = ov.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (ov.width / rect.width);
+    const py = (e.clientY - rect.top)  * (ov.height / rect.height);
+    const { M, xMin, xMax, yMin, yMax, W, H } = chartScale;
+    octx.clearRect(0, 0, ov.width, ov.height);
+    if (px < M.left || px > M.left + W || py < M.top || py > M.top + H) return;
+
+    const dataX = xMin + (px - M.left) / W * (xMax - xMin);
+    const dataY = yMax - (py - M.top)  / H * (yMax - yMin);
+
+    // Lignes du réticule
+    octx.save();
+    octx.strokeStyle = 'rgba(80,80,80,0.5)';
+    octx.lineWidth = 1;
+    octx.setLineDash([4, 3]);
+    octx.beginPath(); octx.moveTo(px, M.top);    octx.lineTo(px, M.top + H); octx.stroke();
+    octx.beginPath(); octx.moveTo(M.left, py);   octx.lineTo(M.left + W, py); octx.stroke();
+    octx.setLineDash([]);
+
+    // Point central
+    octx.beginPath(); octx.arc(px, py, 3, 0, Math.PI * 2);
+    octx.fillStyle = 'rgba(80,80,80,0.7)'; octx.fill();
+
+    // Bulle de coordonnées
+    const xName = colNames[chartScale.xCol] || 'x';
+    const yName = colNames[chartScale.yCols[0]] || 'y';
+    const label = `${xName} = ${fmt(dataX)}   ${yName} = ${fmt(dataY)}`;
+    octx.font = '11px Arial';
+    const tw = octx.measureText(label).width;
+    const bw = tw + 12, bh = 20;
+    let bx = px + 10, by = py - 26;
+    if (bx + bw > M.left + W) bx = px - bw - 10;
+    if (by < M.top) by = py + 8;
+
+    octx.fillStyle = 'rgba(255,255,255,0.92)';
+    octx.strokeStyle = 'rgba(80,80,80,0.4)';
+    octx.lineWidth = 0.5;
+    octx.beginPath();
+    octx.roundRect(bx, by, bw, bh, 3);
+    octx.fill(); octx.stroke();
+
+    octx.fillStyle = '#333';
+    octx.fillText(label, bx + 6, by + 13);
+    octx.restore();
+  }
+  document.addEventListener('DOMContentLoaded', init);
+  setTimeout(init, 0);
+})();
+
+// ══════════════════════════════════════════
+//  RESIZE
+// ══════════════════════════════════════════
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (chartDrawn) trace(); }, 200);
+});
+
+// ══════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════
+buildTable();
+</script>
+</body>
+</html>
