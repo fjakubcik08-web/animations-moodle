@@ -325,7 +325,62 @@ tbody tr.row-sel td { background: #eef3fc; }
     </div>
   </div>
 
-  <!-- Dialog Codes M/C -->
+  <!-- Dialog Statistiques -->
+  <div id="stats-dlg" style="display:none;position:fixed;inset:0;z-index:10003;
+       background:rgba(0,0,0,0.38);align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:8px;box-shadow:0 6px 32px rgba(0,0,0,0.28);
+                width:360px;max-width:96vw;font-size:13px;overflow:hidden;">
+      <div style="background:#185FA5;color:#fff;padding:10px 16px;font-weight:bold;
+                  display:flex;justify-content:space-between;align-items:center;">
+        <span id="stats-title">📊 Statistiques</span>
+        <span onclick="document.getElementById('stats-dlg').style.display='none'"
+              style="cursor:pointer;font-size:18px;line-height:1;">×</span>
+      </div>
+      <div style="padding:12px 16px;">
+        <table id="stats-table" style="width:100%;border-collapse:collapse;font-size:13px;"></table>
+        <div style="margin-top:10px;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:8px;">
+          Valeurs non numériques ignorées.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dialog Import HTML -->
+  <div id="import-dlg" style="display:none;position:fixed;inset:0;z-index:10002;
+       background:rgba(0,0,0,0.4);align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:8px;box-shadow:0 6px 32px rgba(0,0,0,0.3);
+                width:520px;max-width:96vw;font-size:13px;overflow:hidden;display:flex;flex-direction:column;">
+      <div style="background:#185FA5;color:#fff;padding:10px 16px;font-weight:bold;
+                  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+        <span>⬇ Importer un tableau</span>
+        <span onclick="document.getElementById('import-dlg').style.display='none'"
+              style="cursor:pointer;font-size:18px;line-height:1;">×</span>
+      </div>
+      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+        <div style="font-size:12px;color:#555;">
+          Copiez le tableau depuis Moodle et collez-le ici (Ctrl+V) :
+        </div>
+        <textarea id="import-textarea"
+          style="width:100%;height:160px;font-family:monospace;font-size:11px;
+                 border:1px solid #ccc;border-radius:4px;padding:6px;resize:vertical;box-sizing:border-box;"
+          placeholder="heure&#9;Eclairement(W/m²)&#10;00:00&#9;0.0&#10;01:00&#9;31.15&#10;..."></textarea>
+        <div id="import-msg" style="font-size:11px;min-height:16px;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button onclick="document.getElementById('import-dlg').style.display='none'"
+            style="padding:5px 16px;border:1px solid #bbb;border-radius:4px;background:#f5f5f5;cursor:pointer;">
+            Annuler
+          </button>
+          <button onclick="doImportHTML()"
+            style="padding:5px 16px;border:none;border-radius:4px;background:#185FA5;
+                   color:#fff;font-weight:bold;cursor:pointer;">
+            OK — Importer
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dialog Codes -->
   <div id="codes-dlg" style="display:none;position:fixed;inset:0;z-index:10000;
        background:rgba(0,0,0,0.35);align-items:center;justify-content:center;">
     <div style="background:#fff;border-radius:8px;box-shadow:0 6px 32px rgba(0,0,0,0.28);
@@ -338,12 +393,32 @@ tbody tr.row-sel td { background: #eef3fc; }
       </div>
       <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
         <div style="display:flex;flex-direction:column;gap:4px;">
-          <span style="font-size:11px;color:#888;font-weight:bold;">CODE F — Formules</span>
+          <span style="font-size:11px;color:#888;font-weight:bold;">CODE M — Mesures</span>
           <div style="display:flex;align-items:center;gap:6px;">
-            <span id="dlg-code-f" style="font-family:monospace;font-size:18px;font-weight:bold;
+            <span id="dlg-code-m" style="font-family:monospace;font-size:18px;font-weight:bold;
                   color:#0F6E56;letter-spacing:2px;flex:1;">—</span>
-            <button onclick="copyCode('dlg-code-f',this)"
+            <button onclick="copyCode('dlg-code-m',this)"
               style="padding:4px 10px;background:#0F6E56;color:#fff;border:none;
+                     border-radius:4px;cursor:pointer;font-size:11px;transition:all 0.15s;">Copier</button>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <span style="font-size:11px;color:#888;font-weight:bold;">CODE N — Noms des colonnes</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span id="dlg-code-n" style="font-family:monospace;font-size:18px;font-weight:bold;
+                  color:#185FA5;letter-spacing:2px;flex:1;">—</span>
+            <button onclick="copyCode('dlg-code-n',this)"
+              style="padding:4px 10px;background:#185FA5;color:#fff;border:none;
+                     border-radius:4px;cursor:pointer;font-size:11px;transition:all 0.15s;">Copier</button>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <span style="font-size:11px;color:#888;font-weight:bold;">CODE U — Unités</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span id="dlg-code-u" style="font-family:monospace;font-size:18px;font-weight:bold;
+                  color:#8e44ad;letter-spacing:2px;flex:1;">—</span>
+            <button onclick="copyCode('dlg-code-u',this)"
+              style="padding:4px 10px;background:#8e44ad;color:#fff;border:none;
                      border-radius:4px;cursor:pointer;font-size:11px;transition:all 0.15s;">Copier</button>
           </div>
         </div>
@@ -351,9 +426,9 @@ tbody tr.row-sel td { background: #eef3fc; }
           <span style="font-size:11px;color:#888;font-weight:bold;">CODE C — Courbe</span>
           <div style="display:flex;align-items:center;gap:6px;">
             <span id="dlg-code-c" style="font-family:monospace;font-size:18px;font-weight:bold;
-                  color:#185FA5;letter-spacing:2px;flex:1;">—</span>
+                  color:#c0392b;letter-spacing:2px;flex:1;">—</span>
             <button onclick="copyCode('dlg-code-c',this)"
-              style="padding:4px 10px;background:#185FA5;color:#fff;border:none;
+              style="padding:4px 10px;background:#c0392b;color:#fff;border:none;
                      border-radius:4px;cursor:pointer;font-size:11px;transition:all 0.15s;">Copier</button>
           </div>
         </div>
@@ -448,8 +523,11 @@ tbody tr.row-sel td { background: #eef3fc; }
     </div>
   </div>
 
-  <!-- Menu contextuel lignes / colonnes -->
+  <!-- Menu contextuel lignes / colonnes / cellules -->
   <div id="ctx-menu">
+    <div id="ctx-stats"  onclick="openStatsDlg()" style="display:none">📊 Statistiques…</div>
+    <div id="ctx-import" onclick="openImportDlg()" style="display:none">⬇ Importer ici…</div>
+    <div style="height:1px;background:#eee;margin:3px 0;" id="ctx-sep" class="ctx-sep"></div>
     <div id="ctx-del-row"  class="danger" onclick="deleteSelectedRow()">🗑 Supprimer la ligne</div>
     <div id="ctx-del-col"  class="danger" onclick="deleteSelectedCol()" style="display:none">🗑 Supprimer la colonne</div>
   </div>
@@ -498,6 +576,7 @@ tbody tr.row-sel td { background: #eef3fc; }
       <button id="export-btn" onclick="exportJPG()">↓ Exporter JPG</button>
       <button id="copy-btn" onclick="copyChart()">⎘ Copier le graphique</button>
       <button onclick="exportCSV()" style="padding:5px 14px;background:#7d3c98;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">↓ CSV</button>
+      <button onclick="copyCSV(this)" style="padding:5px 14px;background:#7d3c98;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">⎘ Copier CSV</button>
       <span class="hint-txt" id="copy-hint"></span>
     </div>
   </div>
@@ -774,6 +853,16 @@ function recomputeFormulas() {
 }
 
 // ── Sélection de cellule ──────────────────────────────────────────────────
+function selectRow(r) {
+  // Surlignage CSS de la ligne
+  document.querySelectorAll('#sheet tbody tr.row-sel').forEach(el => el.classList.remove('row-sel'));
+  const tr = document.querySelector(`#sheet tbody tr[data-r="${r}"]`);
+  if (tr) tr.classList.add('row-sel');
+  selectedRow = r;
+  // Sélectionne toute la ligne pour les stats / copie
+  setSelection(r, 0, r, nCols - 1);
+}
+
 function selectCell(r, c) {
   // Retire le surlignage précédent
   if (selectedCell) {
@@ -977,6 +1066,21 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
+function copyCSV(btn) {
+  const lines = [];
+  lines.push(colNames.join(';'));
+  lines.push(colUnits.join(';'));
+  for (let r = 0; r < nRows; r++)
+    lines.push(data[r].map(v => String(v).replace(',','.')).join(';'));
+  const txt = lines.join('\r\n');
+  navigator.clipboard.writeText(txt).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copié !';
+    btn.style.background = '#27ae60';
+    setTimeout(() => { btn.textContent = orig; btn.style.background = '#7d3c98'; }, 1400);
+  }).catch(() => showMsg('Copie non supportée par ce navigateur.', 'err'));
+}
+
 // ══════════════════════════════════════════
 //  SÉLECTION DE PLAGE + COPIE (feature 4)
 // ══════════════════════════════════════════
@@ -1098,24 +1202,25 @@ function applyLineDash(ctx, lineStyle) {
 }
 
 // ══════════════════════════════════════════
-//  CODE F — Formules utilisées
+//  CODE N — Noms des colonnes (ordre indépendant)
 // ══════════════════════════════════════════
-function computeF() {
-  const entries = [];
-  for (let c = 0; c < nCols; c++) {
-    for (let r = 0; r < nRows; r++) {
-      const f = getCellFormula(r, c);
-      if (f) {
-        // Normalise : retire espaces, associe nom de colonne
-        const norm = f.trim().replace(/\s+/g,'');
-        entries.push((colNames[c]||('C'+c)) + ':' + norm);
-        break; // une seule formule représentative par colonne
-      }
-    }
-  }
-  if (!entries.length) return null;
-  entries.sort();
-  return 'F-' + hash6(entries.join('|'));
+function computeN() {
+  const names = colNames.filter(n => n).map(n => n.trim()).sort();
+  if (!names.length) return null;
+  return 'N-' + hash6(names.join('|'));
+}
+
+// ══════════════════════════════════════════
+//  CODE U — Unités (ordre indépendant)
+// ══════════════════════════════════════════
+function computeU() {
+  // On associe chaque nom à son unité, puis on trie par nom
+  const pairs = colNames
+    .map((n, i) => [n.trim(), (colUnits[i]||'').trim()])
+    .filter(([n]) => n)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  if (!pairs.length) return null;
+  return 'U-' + hash6(pairs.map(([n,u]) => n+':'+u).join('|'));
 }
 
 // ══════════════════════════════════════════
@@ -1162,12 +1267,94 @@ function openFuncsDlg() {
 // ══════════════════════════════════════════
 //  FENÊTRE CODES
 // ══════════════════════════════════════════
+//  IMPORT HTML
+// ══════════════════════════════════════════
+function openImportDlg() {
+  document.getElementById('import-textarea').value = '';
+  document.getElementById('import-msg').textContent = '';
+  document.getElementById('import-dlg').style.display = 'flex';
+  setTimeout(() => document.getElementById('import-textarea').focus(), 50);
+}
+
+function doImportHTML() {
+  const raw = document.getElementById('import-textarea').value;
+  const msg = document.getElementById('import-msg');
+  if (!raw.trim()) { msg.style.color='#c0392b'; msg.textContent='Collez un tableau avant de cliquer OK.'; return; }
+
+  // Découper en lignes non vides
+  const lines = raw.split(/\r?\n/).filter(l => l.trim() !== '');
+  if (lines.length < 2) { msg.style.color='#c0392b'; msg.textContent='Il faut au moins 2 lignes (entête + données).'; return; }
+
+  // Détecter le séparateur : tabulation, point-virgule ou virgule
+  const sep = lines[0].includes('\t') ? '\t' : lines[0].includes(';') ? ';' : ',';
+
+  // Première ligne = noms de colonnes importées
+  const importNames = lines[0].split(sep).map(s => s.trim());
+  if (!importNames.length || importNames.every(n => !n)) {
+    msg.style.color='#c0392b'; msg.textContent='Impossible de lire l\'entête.'; return;
+  }
+
+  // Lignes de données importées
+  const importData = lines.slice(1).map(l => {
+    const cells = l.split(sep);
+    return importNames.map((_, ci) => cells[ci] !== undefined ? cells[ci].trim() : '');
+  });
+
+  const startCol = _importStartCol;
+  const endCol   = startCol + importNames.length - 1;  // dernière col nécessaire
+
+  // Agrandir le tableau si besoin (colonnes)
+  const neededCols = endCol + 1;
+  if (neededCols > 20) { msg.style.color='#c0392b'; msg.textContent='Trop de colonnes résultantes (max 20).'; return; }
+
+  pushUndo();
+
+  // Étendre les colonnes si nécessaire
+  while (nCols < neededCols) {
+    colNames.push('');
+    colUnits.push('');
+    for (let r = 0; r < nRows; r++) {
+      data[r].push('');
+      if (cellFormulas[r]) cellFormulas[r].push(null);
+    }
+    nCols++;
+  }
+
+  // Étendre les lignes si nécessaire
+  const neededRows = importData.length;
+  while (nRows < neededRows) {
+    data.push(Array(nCols).fill(''));
+    cellFormulas.push(Array(nCols).fill(null));
+    nRows++;
+  }
+
+  // Mapper les noms et les données à partir de startCol
+  importNames.forEach((name, i) => {
+    const c = startCol + i;
+    colNames[c] = name;
+    // colUnits[c] inchangé (on ne touche pas aux unités)
+  });
+  importData.forEach((row, r) => {
+    row.forEach((val, i) => {
+      const c = startCol + i;
+      data[r][c] = val;
+      if (cellFormulas[r]) cellFormulas[r][c] = null; // supprimer formule si existante
+    });
+  });
+
+  buildTable();
+  document.getElementById('import-dlg').style.display = 'none';
+  showMsg('Importé à partir de la colonne ' + (startCol+1) + ' : ' + importNames.length + ' col., ' + importData.length + ' lignes', 'ok');
+}
+
+// ══════════════════════════════════════════
 function openCodesDlg() {
-  const cf = computeF() || '—';
   const xCol=getXCol(), yCols=getYCols();
-  const cc = (xCol!==null&&yCols.length) ? (computeC(xCol,yCols)||'—') : '—';
-  document.getElementById('dlg-code-f').textContent = cf;
-  document.getElementById('dlg-code-c').textContent = cc;
+  document.getElementById('dlg-code-m').textContent = computeM() || '—';
+  document.getElementById('dlg-code-n').textContent = computeN() || '—';
+  document.getElementById('dlg-code-u').textContent = computeU() || '—';
+  document.getElementById('dlg-code-c').textContent =
+    (xCol!==null&&yCols.length) ? (computeC(xCol,yCols)||'—') : '—';
   document.getElementById('codes-dlg').style.display = 'flex';
 }
 function copyCode(id, btn) {
@@ -1264,6 +1451,7 @@ function buildTable() {
   const tbody = table.createTBody();
   for (let r = 0; r < nRows; r++) {
     const tr = tbody.insertRow();
+    tr.dataset.r = r;
     const rnum = tr.insertCell();
     rnum.className = 'rn'; rnum.textContent = r + 1;
     rnum.addEventListener('click', () => selectRow(r));
@@ -1302,6 +1490,9 @@ function buildTable() {
         setSelection(selAnchor.r, selAnchor.c, +this.dataset.r, +this.dataset.c);
       });
       inp.addEventListener('mouseup', function() { selDragging = false; });
+      inp.addEventListener('contextmenu', function(e) {
+        showCtxMenu(e, 'cell', {r: +this.dataset.r, c: +this.dataset.c});
+      });
       inp.addEventListener('focus', function() {
         if (formulaEditMode) return; // déjà géré par mousedown
         selectCell(+this.dataset.r, +this.dataset.c);
@@ -1608,12 +1799,12 @@ function _endColDrag() {
 //  AJOUTER / SUPPRIMER COLONNES
 // ══════════════════════════════════════════
 function updateColButtons() {
-  document.getElementById('btn-add-col').disabled = nCols >= 10;
+  document.getElementById('btn-add-col').disabled = nCols >= 20;
   document.getElementById('btn-rem-col').disabled = nCols <= 2;
 }
 
 function addCol() {
-  if (nCols >= 10) return;
+  if (nCols >= 20) return;
   colNames.push('col'+(nCols+1));
   colUnits.push('');
   data.forEach(row => row.push(''));
@@ -1660,13 +1851,27 @@ function addRow(cb) {
 // ══════════════════════════════════════════
 //  MENU CONTEXTUEL LIGNES / COLONNES
 // ══════════════════════════════════════════
+let _importStartCol = 0;
+let _statsCtx = null; // {mode, idx}
+
 function showCtxMenu(e, mode, idx) {
   e.preventDefault(); e.stopPropagation();
   const m = document.getElementById('ctx-menu');
-  document.getElementById('ctx-del-row').style.display = mode === 'row' ? '' : 'none';
-  document.getElementById('ctx-del-col').style.display = mode === 'col' ? '' : 'none';
-  if (mode === 'row') { selectRow(idx); }
-  if (mode === 'col') { selectedCtxCol = idx; }
+  const isCell = mode === 'cell';
+  const isCol  = mode === 'col';
+  const isRow  = mode === 'row';
+  // Stats : disponible pour col, row, cell (si sélection active)
+  const hasSel = cellSelection !== null;
+  const showStats = isCol || isRow || (isCell && hasSel);
+  document.getElementById('ctx-stats').style.display   = showStats ? '' : 'none';
+  document.getElementById('ctx-import').style.display  = (isCell || isCol) ? '' : 'none';
+  document.getElementById('ctx-del-row').style.display = isRow  ? '' : 'none';
+  document.getElementById('ctx-del-col').style.display = isCol  ? '' : 'none';
+  document.getElementById('ctx-sep').style.display     = showStats ? '' : 'none';
+  _statsCtx = {mode, idx};
+  if (isRow)  { selectRow(idx); }
+  if (isCol)  { selectedCtxCol = idx; _importStartCol = idx; }
+  if (isCell) { _importStartCol = idx.c; }
   m.style.left = e.clientX + 'px';
   m.style.top  = e.clientY + 'px';
   m.style.display = 'block';
@@ -1677,6 +1882,107 @@ function hideCtxMenu() {
 }
 document.addEventListener('click', hideCtxMenu);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtxMenu(); });
+
+// ══════════════════════════════════════════
+//  STATISTIQUES
+// ══════════════════════════════════════════
+function getStatsValues() {
+  if (!_statsCtx) return [];
+  const {mode, idx} = _statsCtx;
+  const vals = [];
+  if (mode === 'col') {
+    for (let r = 0; r < nRows; r++) vals.push(parseNum(data[r][idx]));
+  } else if (mode === 'row') {
+    for (let c = 0; c < nCols; c++) vals.push(parseNum(data[idx][c]));
+  } else if (mode === 'cell' && cellSelection) {
+    const {r0,c0,r1,c1} = cellSelection;
+    const rMin=Math.min(r0,r1), rMax=Math.max(r0,r1);
+    const cMin=Math.min(c0,c1), cMax=Math.max(c0,c1);
+    for (let r=rMin; r<=rMax; r++)
+      for (let c=cMin; c<=cMax; c++)
+        vals.push(parseNum(data[r][c]));
+  }
+  return vals.filter(v => !isNaN(v));
+}
+
+function statsTitle() {
+  if (!_statsCtx) return 'Statistiques';
+  const {mode, idx} = _statsCtx;
+  if (mode === 'col') return 'Statistiques — colonne ' + (colNames[idx] || ('C'+(idx+1)));
+  if (mode === 'row') return 'Statistiques — ligne ' + (idx+1);
+  return 'Statistiques — sélection';
+}
+
+function computeStats(vals) {
+  const n = vals.length;
+  if (!n) return null;
+  const sorted = [...vals].sort((a,b) => a-b);
+  const sum  = vals.reduce((a,b)=>a+b, 0);
+  const mean = sum / n;
+  const varPop  = vals.reduce((a,v)=>a+(v-mean)**2, 0) / n;
+  const varSamp = n > 1 ? vals.reduce((a,v)=>a+(v-mean)**2, 0) / (n-1) : NaN;
+  // Médiane
+  const med = n%2===0 ? (sorted[n/2-1]+sorted[n/2])/2 : sorted[Math.floor(n/2)];
+  // Quartiles (méthode lycée France : interpolation linéaire)
+  const quartile = (arr, q) => {
+    const pos = q * (arr.length - 1);
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    return lo === hi ? arr[lo] : arr[lo] + (pos-lo)*(arr[hi]-arr[lo]);
+  };
+  const q1  = quartile(sorted, 0.25);
+  const q3  = quartile(sorted, 0.75);
+  // Mode (valeur la plus fréquente, arrondie à 4 chiffres significatifs)
+  const freq = {};
+  vals.forEach(v => { const k=parseFloat(v.toPrecision(4)); freq[k]=(freq[k]||0)+1; });
+  const maxF = Math.max(...Object.values(freq));
+  const modes = Object.keys(freq).filter(k=>freq[k]===maxF).map(Number);
+  return { n, sum, mean, med, varPop, varSamp,
+           sigPop:Math.sqrt(varPop), sigSamp:Math.sqrt(varSamp),
+           min:sorted[0], max:sorted[n-1], range:sorted[n-1]-sorted[0],
+           q1, q3, iqr:q3-q1, modes, maxF };
+}
+
+function openStatsDlg() {
+  hideCtxMenu();
+  const vals = getStatsValues();
+  document.getElementById('stats-title').textContent = '📊 ' + statsTitle();
+  const tbl = document.getElementById('stats-table');
+  if (!vals.length) {
+    tbl.innerHTML = '<tr><td style="color:#c0392b;padding:8px">Aucune valeur numérique dans la sélection.</td></tr>';
+    document.getElementById('stats-dlg').style.display = 'flex';
+    return;
+  }
+  const s = computeStats(vals);
+  const fv = v => isNaN(v) ? '—' : fmtD(parseFloat(v.toPrecision(6)));
+  const rows = [
+    ['n', s.n, 'Effectif'],
+    ['Σ x', fv(s.sum), 'Somme'],
+    ['x̄', fv(s.mean), 'Moyenne'],
+    ['Me', fv(s.med), 'Médiane'],
+    ...(s.maxF > 1 ? [['Mo', s.modes.map(fv).join(' ; '), 'Mode (valeur la plus fréquente)']] : []),
+    ['Min', fv(s.min), 'Minimum'],
+    ['Max', fv(s.max), 'Maximum'],
+    ['E', fv(s.range), 'Étendue (Max − Min)'],
+    ['Q₁', fv(s.q1), 'Premier quartile'],
+    ['Q₃', fv(s.q3), 'Troisième quartile'],
+    ['IQ', fv(s.iqr), 'Écart interquartile'],
+    ['σ', fv(s.sigPop), 'Écart-type population'],
+    ['s', fv(s.sigSamp), 'Écart-type échantillon (n−1)'],
+    ['σ²', fv(s.varPop), 'Variance population'],
+    ['s²', fv(s.varSamp), 'Variance échantillon (n−1)'],
+  ];
+  tbl.innerHTML = rows.map((r,i) =>
+    `<tr style="background:${i%2?'#f5f8ff':'#fff'}">
+      <td style="padding:4px 8px;font-family:monospace;font-weight:bold;color:#185FA5;
+                 white-space:nowrap;width:36px;border-bottom:1px solid #eee">${r[0]}</td>
+      <td style="padding:4px 8px;font-family:monospace;font-weight:bold;text-align:right;
+                 white-space:nowrap;border-bottom:1px solid #eee;min-width:90px">${r[1]}</td>
+      <td style="padding:4px 8px;color:#666;font-size:11px;
+                 border-bottom:1px solid #eee">${r[2]}</td>
+    </tr>`
+  ).join('');
+  document.getElementById('stats-dlg').style.display = 'flex';
+}
 
 function selectRow(r) {
   selectedRow = r;
