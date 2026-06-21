@@ -936,6 +936,31 @@ function applyFxInput() {
 // ── Fill handle (tirer vers le bas) ──────────────────────────────────────
 function initFillHandle() {
   const fh = document.getElementById('fill-handle');
+  fh.addEventListener('dblclick', function(e) {
+    e.preventDefault(); e.stopPropagation();
+    if (!selectedCell) return;
+    const { r, c } = selectedCell;
+    // Trouver la dernière ligne avec des données dans les colonnes adjacentes
+    let lastR = r;
+    for (let col = 0; col < nCols; col++) {
+      if (col === c) continue;
+      for (let row = nRows - 1; row > lastR; row--) {
+        if (data[row][col] !== '') { lastR = row; break; }
+      }
+    }
+    if (lastR <= r) return;
+    const baseFormula = getCellFormula(r, c);
+    for (let tr = r + 1; tr <= lastR; tr++) {
+      if (baseFormula) {
+        setFormula(tr, c, incrementFormula(baseFormula, tr - r));
+      } else {
+        data[tr][c] = data[r][c];
+        const inp = document.querySelector(`#sheet tbody input[data-r="${tr}"][data-c="${c}"]`);
+        if (inp) inp.value = data[r][c];
+      }
+    }
+    positionFillHandle(r, c);
+  });
   fh.addEventListener('mousedown', function(e) {
     e.preventDefault(); e.stopPropagation();
     if (!selectedCell) return;
@@ -1395,6 +1420,11 @@ function buildTable() {
     ni.addEventListener('input', function() {
       colNames[+this.dataset.c] = this.value;
       updateAxisInfo();
+    });
+    ni.addEventListener('keydown', function(e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      ui.focus(); ui.select();
     });
 
     const ui = document.createElement('input');
@@ -2696,10 +2726,44 @@ function exportJPG() {
   const canvas = document.getElementById('chart-canvas');
   const xCol = getXCol(); const yCols = getYCols();
   const yNames = yCols.map(c => colNames[c]||'y').join('-');
-  const link = document.createElement('a');
-  link.download = 'courbe_' + yNames + '_f_' + (colNames[xCol]||'x') + '.jpg';
-  link.href = canvas.toDataURL('image/jpeg', 0.92);
-  link.click();
+  const defaultName = 'courbe_' + yNames + '_f_' + (colNames[xCol]||'x');
+  const dlg = document.createElement('div');
+  dlg.style.cssText = 'position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;';
+  dlg.innerHTML = `
+    <div style="background:#fff;border-radius:8px;box-shadow:0 6px 32px rgba(0,0,0,0.28);width:380px;overflow:hidden;font-size:13px;">
+      <div style="background:#185FA5;color:#fff;padding:10px 16px;font-weight:bold;display:flex;justify-content:space-between;align-items:center;">
+        <span>↓ Exporter JPG</span>
+        <span id="_exp_close" style="cursor:pointer;font-size:18px;line-height:1;">×</span>
+      </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <label style="font-size:12px;color:#555;">Nom du fichier&nbsp;:</label>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input id="_exp_name" type="text" value="${defaultName}"
+            style="flex:1;padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px;outline:none;"
+            spellcheck="false"/>
+          <span style="color:#888;font-size:12px;">.jpg</span>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button id="_exp_cancel" style="padding:5px 14px;border:1px solid #bbb;border-radius:4px;background:#f5f5f5;cursor:pointer;">Annuler</button>
+          <button id="_exp_ok" style="padding:5px 14px;border:none;border-radius:4px;background:#185FA5;color:#fff;font-weight:bold;cursor:pointer;">Télécharger</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(dlg);
+  const inp = dlg.querySelector('#_exp_name');
+  setTimeout(() => { inp.focus(); inp.select(); }, 30);
+  const doExport = () => {
+    const name = (inp.value.trim() || defaultName).replace(/\.jpg$/i, '');
+    const link = document.createElement('a');
+    link.download = name + '.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.92);
+    link.click();
+    document.body.removeChild(dlg);
+  };
+  dlg.querySelector('#_exp_ok').addEventListener('click', doExport);
+  dlg.querySelector('#_exp_cancel').addEventListener('click', () => document.body.removeChild(dlg));
+  dlg.querySelector('#_exp_close').addEventListener('click', () => document.body.removeChild(dlg));
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') doExport(); if (e.key === 'Escape') document.body.removeChild(dlg); });
 }
 
 // ══════════════════════════════════════════
