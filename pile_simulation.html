@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Caractéristique d'une pile — Simulation</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e8ecf2;color:#222;font-family:Arial,sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+header{background:#fff;padding:10px 20px;border-bottom:2px solid #ccd;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+header h1{font-size:1.1em;color:#c0392b;letter-spacing:.5px}
+#switch-btn{background:#eee;border:2px solid #bbb;border-radius:6px;color:#444;padding:6px 16px;cursor:pointer;font-size:.85em;font-weight:bold;transition:all .2s}
+#switch-btn.closed{background:#e8ffe8;border-color:#27ae60;color:#1a6a1a}
+#switch-label{font-size:.75em;color:#888;margin-left:8px}
+#workspace{display:flex;flex:1;overflow:hidden}
+#circuit-area{flex:1;display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden;background:#e8ecf2}
+#circuit-svg{width:100%;height:100%;max-height:100%}
+#divider{width:6px;background:#ccd;cursor:col-resize;flex-shrink:0;transition:background .15s;position:relative}
+#divider:hover,#divider.dragging{background:#7a99cc}
+#divider::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:30px;border-radius:1px;background:rgba(100,130,180,.5)}
+#right-panel{width:245px;background:#f0f2f8;display:flex;flex-direction:column;gap:10px;padding:10px;overflow-y:auto;flex-shrink:0}
+
+/* MULTIMETER */
+.multimeter{border-radius:14px;padding:10px;box-shadow:0 4px 16px rgba(0,0,0,.14),inset 0 1px 0 rgba(255,255,255,.8)}
+.mm-am{background:linear-gradient(160deg,#fffde6,#f5ead0);border:2px solid #c8a000}
+.mm-vm{background:linear-gradient(160deg,#eaf2ff,#d0e4f8);border:2px solid #1a5ab8}
+.mm-brand{text-align:center;font-size:.56em;letter-spacing:1px;margin-bottom:6px;font-weight:bold}
+.mm-am .mm-brand{color:#a07800}
+.mm-vm .mm-brand{color:#1a5ab8}
+.mm-screen{background:#0d1f0d;border:2px solid #1a3a1a;border-radius:6px;padding:6px 8px;margin-bottom:8px;box-shadow:inset 0 3px 10px rgba(0,0,0,.8);position:relative;min-height:56px}
+.mm-screen-top{display:flex;justify-content:space-between}
+.mm-mode-tag{color:#2a6a2a;font-size:.58em;font-family:monospace;background:#071407;padding:1px 3px;border-radius:2px}
+.mm-range-tag{color:#2a6a2a;font-size:.58em;font-family:monospace}
+.mm-reading{color:#00ff41;font-family:'Courier New',monospace;font-size:1.85em;font-weight:bold;text-align:right;text-shadow:0 0 8px #00cc33,0 0 14px #005500;letter-spacing:1px;margin-top:1px}
+.mm-reading.ol{color:#ffaa00;text-shadow:0 0 8px #ff8800}
+.mm-reading.off-disp{color:#1a4a1a;text-shadow:none}
+.mm-unit{color:#2a7a2a;font-size:.6em;text-align:right;margin-top:1px}
+.mm-sel-wrap{margin:4px 0 6px}
+.mm-sel{display:flex;flex-direction:column;gap:2px}
+.mm-sel-btn{display:flex;align-items:center;gap:0;padding:3px 7px;border-radius:5px;cursor:pointer;border:1.5px solid transparent;transition:all .12s;user-select:none}
+.mm-sel-btn:hover{filter:brightness(.94)}
+.mm-sel-btn.active{border-color:rgba(0,0,0,.25);font-weight:bold}
+.mm-sel-icon{font-size:.72em;font-weight:bold;min-width:28px;font-family:monospace}
+.mm-sel-range{font-size:.72em;font-family:monospace;flex:1;text-align:right}
+.mm-sel-dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:0;margin-left:5px;flex-shrink:0;transition:opacity .12s}
+.mm-sel-btn.active .mm-sel-dot{opacity:1}
+.mm-sel-sep{height:1px;background:rgba(0,0,0,.1);margin:3px 2px}
+.mm-jacks{display:flex;justify-content:space-around;padding-top:5px;border-top:1px solid rgba(0,0,0,.1)}
+.mm-jack-g{display:flex;flex-direction:column;align-items:center;gap:2px}
+.mm-jack{width:13px;height:16px;border-radius:3px;background:#222;border:2px solid #555;display:flex;align-items:center;justify-content:center}
+.mm-jack::after{content:'';width:5px;height:5px;border-radius:50%;background:#111;border:1px solid #777}
+.mm-jack.red{border-color:#aa3333}.mm-jack.red::after{border-color:#cc5555}
+.mm-jack.yel{border-color:#aaaa22}.mm-jack.yel::after{border-color:#cccc33}
+.mm-jack-lbl{color:#888;font-size:.48em;text-align:center}
+
+#res-bank{background:#fff;border-bottom:2px solid #ccd;padding:7px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.06);flex-wrap:wrap}
+#res-bank-label{color:#2255aa;font-size:.7em;font-weight:bold;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;flex-shrink:0}
+#res-grid{display:flex;flex-wrap:wrap;gap:5px;flex:1}
+.res-chip{background:linear-gradient(135deg,#c8a050,#e0bc6a,#c8a050);border:2px solid #8a6000;border-radius:5px;padding:3px 9px;cursor:grab;font-size:.76em;font-weight:bold;color:#2a1800;user-select:none;transition:transform .1s,box-shadow .1s}
+.res-chip:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(180,130,0,.4)}
+.res-chip.dragging{opacity:.4}
+.res-chip.selected{box-shadow:0 0 0 2px #27ae60,0 4px 12px rgba(0,160,68,.3)}
+.tooltip{font-size:.6em;color:#aaa;margin-left:4px;white-space:nowrap}
+#drag-ghost{position:fixed;pointer-events:none;z-index:9999;display:none;background:linear-gradient(135deg,#c8a050,#e0bc6a);border:2px solid #8a6000;border-radius:5px;padding:4px 8px;font-size:.75em;font-weight:bold;color:#2a1800;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+@keyframes flowRight{to{stroke-dashoffset:-26}}
+.flow{animation:flowRight .5s linear infinite}
+@keyframes svgFlash{0%{opacity:.55}100%{opacity:0}}
+.svg-flash{animation:svgFlash .25s ease-out forwards;pointer-events:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Caractéristique d'une pile — Simulation</h1>
+  <div style="display:flex;align-items:center;gap:8px">
+    <button id="switch-btn" onclick="toggleSwitch()">Interrupteur OUVERT</button>
+    <span id="switch-label">Circuit ouvert</span>
+  </div>
+</header>
+<div id="res-bank">
+  <span id="res-bank-label">🔧 Résistances</span>
+  <div id="res-grid"></div>
+  <span class="tooltip">Double-clic ou glisser · × pour retirer</span>
+</div>
+<div id="workspace">
+  <div id="circuit-area">
+    <svg id="circuit-svg" viewBox="0 0 700 430" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid" width="25" height="25" patternUnits="userSpaceOnUse">
+          <path d="M25 0L0 0 0 25" fill="none" stroke="rgba(0,0,0,0.04)" stroke-width=".5"/>
+        </pattern>
+        <filter id="glow2" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="2" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <linearGradient id="battBody" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#2e2e2e"/>
+          <stop offset="55%" stop-color="#181818"/>
+          <stop offset="100%" stop-color="#0a0a0a"/>
+        </linearGradient>
+        <linearGradient id="battShine" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.14)"/>
+          <stop offset="35%" stop-color="rgba(255,255,255,0.03)"/>
+          <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+        </linearGradient>
+        <linearGradient id="battLabel" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#1a4a9a"/>
+          <stop offset="100%" stop-color="#071a50"/>
+        </linearGradient>
+        <linearGradient id="termP" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#c02020"/>
+          <stop offset="60%" stop-color="#e03030"/>
+          <stop offset="100%" stop-color="#901818"/>
+        </linearGradient>
+        <linearGradient id="termN" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#252525"/>
+          <stop offset="60%" stop-color="#3a3a3a"/>
+          <stop offset="100%" stop-color="#181818"/>
+        </linearGradient>
+      </defs>
+
+      <rect width="700" height="430" fill="#fafaf8" rx="10"/>
+      <rect width="700" height="430" fill="url(#grid)" rx="10"/>
+
+      <!-- WIRES — dark blue (battery+ side) -->
+      <line x1="80" y1="65" x2="138" y2="65" stroke="#2a4a88" stroke-width="3" stroke-linecap="round"/>
+      <line x1="282" y1="65" x2="358" y2="65" stroke="#2a4a88" stroke-width="3" stroke-linecap="round"/>
+      <line x1="80" y1="65" x2="80" y2="235" stroke="#2a4a88" stroke-width="3" stroke-linecap="round"/>
+      <line x1="80" y1="235" x2="210" y2="235" stroke="#2a4a88" stroke-width="3" stroke-linecap="round"/>
+      <!-- WIRES — amber (battery- / ammeter side) -->
+      <line x1="498" y1="65" x2="620" y2="65" stroke="#c89000" stroke-width="3" stroke-linecap="round"/>
+      <line x1="620" y1="65" x2="620" y2="155" stroke="#c89000" stroke-width="3" stroke-linecap="round"/>
+      <line x1="620" y1="221" x2="620" y2="235" stroke="#c89000" stroke-width="3" stroke-linecap="round"/>
+      <line x1="620" y1="235" x2="490" y2="235" stroke="#c89000" stroke-width="3" stroke-linecap="round"/>
+      <!-- VOLTMETER probe wires (blue) — vertical stubs offset outward from battery -->
+      <line x1="210" y1="235" x2="170" y2="235" stroke="#1a55cc" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="170" y1="235" x2="170" y2="340" stroke="#1a55cc" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="170" y1="340" x2="314" y2="340" stroke="#1a55cc" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="490" y1="235" x2="530" y2="235" stroke="#1a55cc" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="530" y1="235" x2="530" y2="340" stroke="#1a55cc" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="386" y1="340" x2="530" y2="340" stroke="#1a55cc" stroke-width="2.5" stroke-linecap="round"/>
+
+      <!-- Junction dots -->
+      <circle cx="80" cy="235" r="4.5" fill="#2a4a88"/>
+      <circle cx="620" cy="235" r="4.5" fill="#c89000"/>
+      <circle cx="620" cy="65" r="4.5" fill="#c89000"/>
+
+      <!-- CURRENT FLOW ANIMATION -->
+      <g id="flow-layer" opacity="0">
+        <line x1="210" y1="235" x2="80" y2="235" stroke="#ffaa00" stroke-width="2" stroke-dasharray="8 5" class="flow"/>
+        <line x1="80" y1="235" x2="80" y2="65" stroke="#ffaa00" stroke-width="2" stroke-dasharray="8 5" class="flow"/>
+        <line x1="80" y1="65" x2="138" y2="65" stroke="#ffaa00" stroke-width="2" stroke-dasharray="8 5" class="flow"/>
+        <line x1="282" y1="65" x2="358" y2="65" stroke="#ffaa00" stroke-width="2" stroke-dasharray="8 5" class="flow"/>
+        <line x1="498" y1="65" x2="620" y2="65" stroke="#ffaa00" stroke-width="2" stroke-dasharray="8 5" class="flow"/>
+        <line x1="620" y1="65" x2="620" y2="155" stroke="#ffaa00" stroke-width="2" stroke-dasharray="8 5" class="flow"/>
+        <line x1="620" y1="221" x2="620" y2="235" stroke="#ffaa00" stroke-width="2" stroke-dasharray="8 5" class="flow"/>
+        <line x1="620" y1="235" x2="490" y2="235" stroke="#ffaa00" stroke-width="2" stroke-dasharray="8 5" class="flow"/>
+      </g>
+
+      <!-- ===== BATTERY ===== -->
+      <rect x="232" y="196" width="236" height="86" rx="9" fill="rgba(0,0,0,0.17)"/>
+      <rect x="230" y="193" width="236" height="84" rx="8" fill="url(#battBody)"/>
+      <rect x="230" y="193" width="236" height="84" rx="8" fill="url(#battShine)"/>
+      <rect x="230" y="193" width="236" height="9" rx="4" fill="rgba(255,255,255,0.09)"/>
+      <rect x="230" y="193" width="236" height="84" rx="8" fill="none" stroke="#3a3a3a" stroke-width="1.5"/>
+      <rect x="261" y="199" width="174" height="72" rx="4" fill="url(#battLabel)"/>
+      <rect x="263" y="201" width="170" height="13" rx="3" fill="rgba(255,255,255,0.07)"/>
+      <text x="348" y="217" text-anchor="middle" fill="rgba(255,255,255,0.82)" font-size="10" font-weight="bold" font-family="Arial" letter-spacing="1">Pile PBayle</text>
+      <text x="348" y="242" text-anchor="middle" fill="#ffcc00" font-size="22" font-weight="bold" font-family="Arial" filter="url(#glow2)">9V</text>
+      <line x1="264" y1="255" x2="432" y2="255" stroke="#1a3a7a" stroke-width="1"/>
+      <text x="348" y="263" text-anchor="middle" fill="#112255" font-size="6.5" font-family="Arial" letter-spacing="3">▮ ▮ ▮ ▮ ▮</text>
+      <!-- + terminal face -->
+      <rect x="230" y="193" width="31" height="84" rx="8" fill="url(#termP)"/>
+      <rect x="250" y="193" width="11" height="84" fill="url(#termP)"/>
+      <rect x="232" y="195" width="27" height="9" rx="4" fill="rgba(255,255,255,0.18)"/>
+      <text x="245" y="240" text-anchor="middle" fill="white" font-size="22" font-weight="bold" font-family="Arial" filter="url(#glow2)">+</text>
+      <!-- - terminal face -->
+      <rect x="435" y="193" width="31" height="84" rx="8" fill="url(#termN)"/>
+      <rect x="435" y="193" width="11" height="84" fill="url(#termN)"/>
+      <rect x="437" y="195" width="27" height="9" rx="4" fill="rgba(255,255,255,0.07)"/>
+      <text x="451" y="241" text-anchor="middle" fill="#aaa" font-size="18" font-weight="bold" font-family="Arial">−</text>
+      <!-- Terminal knobs -->
+      <circle cx="210" cy="235" r="8" fill="#ff4444" stroke="#ff7777" stroke-width="1.5"/>
+      <circle cx="210" cy="235" r="3.5" fill="#881111"/>
+      <circle cx="490" cy="235" r="8" fill="#555" stroke="#888" stroke-width="1.5"/>
+      <circle cx="490" cy="235" r="3.5" fill="#222"/>
+
+      <!-- ===== RESISTOR SLOT ===== -->
+      <g id="res-slot-g" transform="translate(138,50)">
+        <rect id="res-dropzone" x="0" y="0" width="144" height="30" rx="5" fill="rgba(42,74,136,0.05)" stroke="#2a4a88" stroke-width="1.5" stroke-dasharray="6 3"/>
+        <text id="res-empty-txt" x="72" y="20" text-anchor="middle" fill="#2a4a88" font-size="10" font-family="Arial" opacity=".7">résistance réglable</text>
+        <g id="res-body" display="none">
+          <line x1="0" y1="15" x2="14" y2="15" stroke="#2a4a88" stroke-width="3"/>
+          <line x1="130" y1="15" x2="144" y2="15" stroke="#2a4a88" stroke-width="3"/>
+          <rect x="14" y="4" width="116" height="22" rx="4" fill="#c8a050" stroke="#7a5800" stroke-width="2"/>
+          <rect x="30" y="4" width="7" height="22" fill="#8B0000" opacity=".75"/>
+          <rect x="44" y="4" width="7" height="22" fill="#222" opacity=".75"/>
+          <rect x="58" y="4" width="7" height="22" fill="#cc6600" opacity=".75"/>
+          <rect x="80" y="4" width="7" height="22" fill="#FFD700" opacity=".75"/>
+          <text id="res-val-txt" x="72" y="19" text-anchor="middle" fill="#1a0800" font-size="11" font-weight="bold" font-family="Arial">—</text>
+          <circle cx="130" cy="7" r="7" fill="#cc2222" opacity=".85" style="cursor:pointer" id="res-remove-btn"/>
+          <text x="130" y="11" text-anchor="middle" fill="white" font-size="10" font-weight="bold" style="pointer-events:none">×</text>
+        </g>
+      </g>
+
+      <!-- ===== SWITCH ===== -->
+      <g id="switch-g" transform="translate(358,50)">
+        <!-- clickable background (entire zone) -->
+        <rect x="-5" y="-25" width="150" height="55" fill="transparent" style="cursor:pointer" onclick="toggleSwitch()"/>
+        <!-- wires stop just before contacts -->
+        <line x1="0" y1="15" x2="16" y2="15" stroke="#2a4a88" stroke-width="3"/>
+        <line x1="124" y1="15" x2="140" y2="15" stroke="#c89000" stroke-width="3"/>
+        <!-- contact circles at wire level y=15 -->
+        <circle cx="20" cy="15" r="6" fill="#ddd" stroke="#aaa" stroke-width="2"/>
+        <circle cx="120" cy="15" r="6" fill="#ddd" stroke="#aaa" stroke-width="2"/>
+        <!-- arm: open = tilted up / closed = green bar connecting contacts -->
+        <line id="sw-arm" x1="20" y1="15" x2="108" y2="-4" stroke="#aaa" stroke-width="4" stroke-linecap="round"/>
+        <text x="70" y="35" text-anchor="middle" fill="#bbb" font-size="9" font-family="Arial" style="pointer-events:none">interrupteur</text>
+      </g>
+
+      <!-- ===== AMMETER CIRCLE (YELLOW) ===== -->
+      <circle cx="622" cy="191" r="33" fill="rgba(0,0,0,0.12)"/>
+      <circle cx="620" cy="188" r="33" fill="#fffbe0" stroke="#c89000" stroke-width="2.5"/>
+      <rect x="596" y="174" width="48" height="28" rx="3" fill="#0a0a1a"/>
+      <text x="620" y="183" text-anchor="middle" fill="#aa7700" font-size="6.5" font-family="monospace" id="am-mode-svg">DCA</text>
+      <text id="am-val-svg" x="620" y="196" text-anchor="middle" fill="#ffcc44" font-size="10" font-weight="bold" font-family="'Courier New',monospace">0.00</text>
+      <text id="am-unit-svg" x="620" y="212" text-anchor="middle" fill="#c89000" font-size="9" font-family="Arial" font-weight="bold">mA</text>
+
+      <!-- ===== VOLTMETER CIRCLE (BLUE) ===== -->
+      <circle cx="352" cy="343" r="36" fill="rgba(0,0,0,0.12)"/>
+      <circle cx="350" cy="340" r="36" fill="#eaf2ff" stroke="#1a55cc" stroke-width="2.5"/>
+      <rect x="322" y="323" width="56" height="30" rx="3" fill="#0a0010"/>
+      <text x="350" y="333" text-anchor="middle" fill="#4488ff" font-size="6.5" font-family="monospace" id="vm-mode-svg">DCV</text>
+      <text id="vm-val-svg" x="350" y="347" text-anchor="middle" fill="#88aaff" font-size="11" font-weight="bold" font-family="'Courier New',monospace">0.00</text>
+      <text id="vm-unit-svg" x="350" y="363" text-anchor="middle" fill="#1a55cc" font-size="9" font-family="Arial" font-weight="bold">V</text>
+
+    </svg>
+  </div>
+
+  <div id="divider"></div>
+  <div id="right-panel">
+    <!-- AMMETER (YELLOW) -->
+    <div class="multimeter mm-am">
+      <div class="mm-brand">FJ Bayle 1311</div>
+      <div class="mm-screen">
+        <div class="mm-screen-top">
+          <span class="mm-mode-tag" id="am-mode-tag">DCA</span>
+          <span class="mm-range-tag" id="am-range-tag">200mA</span>
+        </div>
+        <div class="mm-reading" id="am-reading">0.00</div>
+        <div class="mm-unit" id="am-unit">mA</div>
+      </div>
+      <div class="mm-sel-wrap">
+        <div id="am-sel" class="mm-sel"></div>
+      </div>
+      <div class="mm-jacks">
+        <div class="mm-jack-g"><div class="mm-jack"></div><div class="mm-jack-lbl">COM</div></div>
+        <div class="mm-jack-g"><div class="mm-jack yel"></div><div class="mm-jack-lbl">VΩmA</div></div>
+        <div class="mm-jack-g"><div class="mm-jack red"></div><div class="mm-jack-lbl">10A</div></div>
+      </div>
+    </div>
+
+    <!-- VOLTMETER (BLUE) -->
+    <div class="multimeter mm-vm">
+      <div class="mm-brand">FJ Bayle 1311</div>
+      <div class="mm-screen">
+        <div class="mm-screen-top">
+          <span class="mm-mode-tag" id="vm-mode-tag">DCV</span>
+          <span class="mm-range-tag" id="vm-range-tag">20V</span>
+        </div>
+        <div class="mm-reading" id="vm-reading">9.000</div>
+        <div class="mm-unit" id="vm-unit">V</div>
+      </div>
+      <div class="mm-sel-wrap">
+        <div id="vm-sel" class="mm-sel"></div>
+      </div>
+      <div class="mm-jacks">
+        <div class="mm-jack-g"><div class="mm-jack"></div><div class="mm-jack-lbl">COM</div></div>
+        <div class="mm-jack-g"><div class="mm-jack yel"></div><div class="mm-jack-lbl">VΩmA</div></div>
+        <div class="mm-jack-g"><div class="mm-jack red"></div><div class="mm-jack-lbl">10A</div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+<div id="drag-ghost"></div>
+
+<script>
+// ==================== DÉCODAGE PARAMÈTRES (système FJmoodle) ====================
+function getAnimParams(defaults) {
+  const KEY = [83,17,204,61,128,42,75,199,33,91,156,47,113,8,240,66];
+  try {
+    const raw = new URLSearchParams(location.search).get('param');
+    if (!raw) return defaults;
+    const b64   = raw.replace(/-/g,'+').replace(/_/g,'/');
+    const bytes = Uint8Array.from(atob(b64 + '=='), c => c.charCodeAt(0));
+    const dec   = bytes.map((b,i) => b ^ KEY[i % KEY.length]);
+    return { ...defaults, ...JSON.parse(new TextDecoder().decode(dec)) };
+  } catch(e) { return defaults; }
+}
+
+// Paramètres de l'animation (modifiables via ?param=...)
+// E  : FEM de la pile (V)
+// r  : résistance interne (Ω)
+// R  : liste des résistances [Ω] — null = liste standard
+const PARAMS_RAW = getAnimParams({ E: 9, r: 10, R: null });
+
+const PARAMS = { fem: PARAMS_RAW.E, r_int: PARAMS_RAW.r };
+
+const DEFAULT_RESISTORS = [10, 22, 33, 47, 56, 68, 82, 100, 150, 220, 330, 470];
+const RESISTOR_VALUES = (Array.isArray(PARAMS_RAW.R) && PARAMS_RAW.R.length > 0)
+  ? PARAMS_RAW.R
+  : DEFAULT_RESISTORS;
+
+// ==================== DIAL SECTORS ====================
+const SECTORS = [
+  { startA:0,   endA:45,  mode:'OFF', range:'',      l1:'OFF',  l2:'',     fill:'#d4d4d4', tc:'#555' },
+  { startA:45,  endA:90,  mode:'ACV', range:'750V',  l1:'V ≈',  l2:'750V', fill:'#ffe566', tc:'#443300' },
+  { startA:90,  endA:135, mode:'DCV', range:'200V',  l1:'V =',  l2:'200V', fill:'#88aaff', tc:'#001188' },
+  { startA:135, endA:180, mode:'DCV', range:'20V',   l1:'V =',  l2:'20V',  fill:'#4488ee', tc:'#001166' },
+  { startA:180, endA:225, mode:'DCA', range:'10A',   l1:'A =',  l2:'10A',  fill:'#ff9966', tc:'#550000' },
+  { startA:225, endA:270, mode:'DCA', range:'200mA', l1:'A =',  l2:'200m', fill:'#ff6633', tc:'#440000' },
+  { startA:270, endA:315, mode:'Ω',   range:'2k',    l1:'Ω',    l2:'2k',   fill:'#55cc77', tc:'#003322' },
+  { startA:315, endA:360, mode:'ACA', range:'200mA', l1:'A ≈',  l2:'200m', fill:'#ffcc44', tc:'#443300' },
+];
+
+// ==================== STATE ====================
+let state = {
+  switchClosed: false,
+  R: null,
+  am: { mode:'OFF', range:'', sIdx:0 },
+  vm: { mode:'OFF', range:'', sIdx:0 },
+};
+
+// ==================== PHYSICS ====================
+function calculate() {
+  if (!state.switchClosed || state.R === null) {
+    return { I:0, U:PARAMS.fem, open:true };
+  }
+  const I = PARAMS.fem / (state.R + PARAMS.r_int);
+  return { I, U: PARAMS.fem - I * PARAMS.r_int, open:false };
+}
+
+// ==================== METER VALUES ====================
+function getMeterValue(id, I, U, open) {
+  const s = state[id];
+  if (s.mode === 'OFF' || s.mode === 'Ω') return null;
+  if (s.mode.startsWith('AC')) return 0;
+  if (s.mode.endsWith('A')) return id==='am' ? I : 0;
+  return id==='vm' ? (open ? PARAMS.fem : U) : 0;
+}
+
+function formatValue(id, raw) {
+  const s = state[id];
+  if (s.mode === 'OFF')        return { disp:'-----', unit:'', cls:'off-disp' };
+  if (s.mode === 'Ω')          return { disp:'- - -', unit:'Ω', cls:'' };
+  if (raw === null)             return { disp:'0', unit:'', cls:'' };
+  if (s.mode.startsWith('AC')) return { disp:'0.000', unit:s.mode.endsWith('A')?'A~':'V~', cls:'' };
+
+  const rangeMax = parseRange(s.range);
+  if (rangeMax !== null && Math.abs(raw) > rangeMax * 1.01) return { disp:' OL', unit:'', cls:'ol' };
+
+  if (s.mode.endsWith('A')) {
+    if (s.range === '10A') return { disp: raw.toFixed(3), unit:'A', cls:'' };
+    return { disp: (raw*1000).toFixed(2), unit:'mA', cls:'' };
+  }
+  return { disp: raw.toFixed(3), unit:'V', cls:'' };
+}
+
+function parseRange(r) {
+  return ({'200mA':.2,'10A':10,'20V':20,'200V':200,'750V':750,'2k':2000})[r] ?? null;
+}
+
+// ==================== UPDATE ====================
+function update() {
+  const { I, U, open } = calculate();
+
+  // Flow animation
+  const flowing = state.switchClosed && state.R !== null && I > 0.0001;
+  document.getElementById('flow-layer').style.opacity = flowing ? '1' : '0';
+
+  // Switch arm: open = diagonal grey / closed = green bar between contacts
+  const arm = document.getElementById('sw-arm');
+  if (state.switchClosed) {
+    arm.setAttribute('x2','120'); arm.setAttribute('y2','15');
+    arm.setAttribute('stroke','#22bb55'); arm.setAttribute('stroke-width','5');
+    arm.removeAttribute('filter');
+  } else {
+    arm.setAttribute('x2','108'); arm.setAttribute('y2','-4');
+    arm.setAttribute('stroke','#aaa'); arm.setAttribute('stroke-width','4');
+    arm.removeAttribute('filter');
+  }
+
+  // Meters
+  ['am','vm'].forEach(id => {
+    const raw = getMeterValue(id, I, U, open);
+    const fmt = formatValue(id, raw);
+    document.getElementById(id+'-reading').textContent = fmt.disp;
+    document.getElementById(id+'-reading').className = 'mm-reading ' + fmt.cls;
+    document.getElementById(id+'-unit').textContent = fmt.unit;
+    document.getElementById(id+'-mode-tag').textContent = state[id].mode;
+    document.getElementById(id+'-range-tag').textContent = state[id].range;
+    // Circuit SVG inline display
+    document.getElementById(id+'-val-svg').textContent = fmt.disp.length > 6 ? fmt.disp.slice(0,6) : fmt.disp;
+    document.getElementById(id+'-unit-svg').textContent = fmt.unit;
+    document.getElementById(id+'-mode-svg').textContent = state[id].mode;
+  });
+}
+
+// ==================== SWITCH ====================
+function toggleSwitch() {
+  state.switchClosed = !state.switchClosed;
+  const btn = document.getElementById('switch-btn');
+  const lbl = document.getElementById('switch-label');
+  if (state.switchClosed) {
+    btn.textContent='Interrupteur FERMÉ'; btn.classList.add('closed');
+    lbl.textContent='Circuit fermé'; lbl.style.color='#27ae60';
+    triggerSpark();
+  } else {
+    btn.textContent='Interrupteur OUVERT'; btn.classList.remove('closed');
+    lbl.textContent='Circuit ouvert'; lbl.style.color='#888';
+    update();
+  }
+}
+
+// ==================== SELECTOR ====================
+// Display order: OFF | DCV 20V, DCV 200V, ACV 750V | DCA 200mA, DCA 10A, ACA 200mA | Ω 2k
+const SEL_ORDER = [0, 'sep', 3, 2, 1, 'sep', 5, 4, 7, 'sep', 6];
+
+function buildSelector(containerId, meterId, defaultIdx) {
+  const container = document.getElementById(containerId);
+  SEL_ORDER.forEach(item => {
+    if (item === 'sep') {
+      const sep = document.createElement('div');
+      sep.className = 'mm-sel-sep';
+      container.appendChild(sep);
+      return;
+    }
+    const sec = SECTORS[item];
+    const btn = document.createElement('div');
+    btn.className = 'mm-sel-btn' + (item === defaultIdx ? ' active' : '');
+    btn.dataset.idx = item;
+    btn.dataset.mi  = meterId;
+    btn.style.background = sec.fill + (item === defaultIdx ? 'cc' : '55');
+    btn.style.color = sec.tc;
+    btn.innerHTML =
+      `<span class="mm-sel-icon">${sec.l1}</span>` +
+      `<span class="mm-sel-range">${sec.l2}</span>` +
+      `<span class="mm-sel-dot"></span>`;
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      const mid = btn.dataset.mi;
+      state[mid].mode  = SECTORS[idx].mode;
+      state[mid].range = SECTORS[idx].range;
+      state[mid].sIdx  = idx;
+      container.querySelectorAll('.mm-sel-btn').forEach(b => {
+        const bIdx = parseInt(b.dataset.idx);
+        b.classList.toggle('active', bIdx === idx);
+        b.style.background = SECTORS[bIdx].fill + (bIdx === idx ? 'cc' : '55');
+      });
+      update();
+    });
+    container.appendChild(btn);
+  });
+}
+
+// ==================== RESISTORS ====================
+function initResistors() {
+  const grid = document.getElementById('res-grid');
+  RESISTOR_VALUES.forEach(val => {
+    const chip = document.createElement('div');
+    chip.className = 'res-chip';
+    chip.textContent = val>=1000 ? (val/1000)+'kΩ' : val+'Ω';
+    chip.dataset.val = val;
+    chip.draggable = true;
+    chip.addEventListener('dragstart', e=>{e.dataTransfer.setData('text/plain',val);chip.classList.add('dragging');showGhost(chip.textContent,e.clientX,e.clientY);});
+    chip.addEventListener('dragend', ()=>{chip.classList.remove('dragging');hideGhost();});
+    chip.addEventListener('dblclick', ()=>placeResistor(val,chip));
+    chip.addEventListener('touchstart', e=>startTouch(e,val,chip),{passive:false});
+    chip.addEventListener('touchmove', moveTouch,{passive:false});
+    chip.addEventListener('touchend', e=>endTouch(e),{passive:false});
+    grid.appendChild(chip);
+  });
+}
+
+const ghost=document.getElementById('drag-ghost');
+function showGhost(t,x,y){ghost.textContent=t;ghost.style.display='block';ghost.style.left=(x+12)+'px';ghost.style.top=(y-15)+'px';}
+function hideGhost(){ghost.style.display='none';}
+document.addEventListener('dragover',e=>{if(ghost.style.display!=='none'){ghost.style.left=(e.clientX+12)+'px';ghost.style.top=(e.clientY-15)+'px';}});
+
+const dropzone=document.getElementById('res-dropzone');
+dropzone.addEventListener('dragover',e=>{e.preventDefault();dropzone.setAttribute('stroke','#27ae60');dropzone.setAttribute('fill','rgba(0,160,68,0.08)');});
+dropzone.addEventListener('dragleave',()=>{dropzone.setAttribute('stroke','#2a4a88');dropzone.setAttribute('fill','rgba(42,74,136,0.05)');});
+dropzone.addEventListener('drop',e=>{e.preventDefault();dropzone.setAttribute('stroke','#2a4a88');dropzone.setAttribute('fill','rgba(42,74,136,0.05)');placeResistor(parseFloat(e.dataTransfer.getData('text/plain')));});
+
+const cSvg=document.getElementById('circuit-svg');
+cSvg.addEventListener('dragover',e=>e.preventDefault());
+cSvg.addEventListener('drop',e=>{
+  e.preventDefault();
+  const r=cSvg.getBoundingClientRect();
+  const rx=(e.clientX-r.left)/r.width*700, ry=(e.clientY-r.top)/r.height*430;
+  if(rx>100&&rx<400&&ry<110) placeResistor(parseFloat(e.dataTransfer.getData('text/plain')));
+});
+
+function placeResistor(val,chip){
+  state.R=val;
+  const lbl=val>=1000?(val/1000)+'kΩ':val+'Ω';
+  document.getElementById('res-val-txt').textContent=lbl;
+  document.getElementById('res-body').setAttribute('display','inline');
+  document.getElementById('res-empty-txt').style.display='none';
+  document.querySelectorAll('.res-chip').forEach(c=>c.classList.remove('selected'));
+  (chip||document.querySelector(`.res-chip[data-val="${val}"]`))?.classList.add('selected');
+  update();
+}
+
+document.getElementById('res-remove-btn').addEventListener('click',e=>{
+  e.stopPropagation();
+  state.R=null;
+  document.getElementById('res-body').setAttribute('display','none');
+  document.getElementById('res-empty-txt').style.display='';
+  document.querySelectorAll('.res-chip').forEach(c=>c.classList.remove('selected'));
+  update();
+});
+
+let touchVal=null,touchChip=null;
+function startTouch(e,val,chip){touchVal=val;touchChip=chip;const t=e.touches[0];showGhost(chip.textContent,t.clientX,t.clientY);e.preventDefault();}
+function moveTouch(e){const t=e.touches[0];ghost.style.left=(t.clientX+12)+'px';ghost.style.top=(t.clientY-15)+'px';e.preventDefault();}
+function endTouch(e){hideGhost();if(touchVal!==null){const t=e.changedTouches[0];const el=document.elementFromPoint(t.clientX,t.clientY);if(el&&(el.closest('#res-slot-g')||el.closest('#circuit-area')))placeResistor(touchVal,touchChip);}touchVal=null;e.preventDefault();}
+
+// ==================== SPARK EFFECT ====================
+function triggerSpark() {
+  const ns  = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('circuit-svg');
+  // Right contact global SVG coords: translate(358,50) + local(120,15)
+  const cx = 478, cy = 65;
+
+  // ── full-SVG white flash overlay ──
+  const overlay = document.createElementNS(ns, 'rect');
+  overlay.setAttribute('width','700'); overlay.setAttribute('height','430');
+  overlay.setAttribute('fill','white'); overlay.setAttribute('rx','10');
+  overlay.classList.add('svg-flash');
+  svg.appendChild(overlay);
+  setTimeout(() => { try { svg.removeChild(overlay); } catch(e){} }, 280);
+
+  // ── particle group ──
+  const g = document.createElementNS(ns, 'g');
+  g.setAttribute('pointer-events','none');
+  svg.appendChild(g);
+
+  // Flash circle
+  const flash = document.createElementNS(ns,'circle');
+  flash.setAttribute('cx',cx); flash.setAttribute('cy',cy);
+  flash.setAttribute('fill','#ffffaa'); g.appendChild(flash);
+
+  // 3 expanding rings
+  const rings = [0, 70, 150].map((delay, i) => {
+    const r = document.createElementNS(ns,'circle');
+    r.setAttribute('cx',cx); r.setAttribute('cy',cy); r.setAttribute('fill','none');
+    r.setAttribute('stroke', i===0?'#ffffff': i===1?'#ffee44':'#ff9900');
+    r.setAttribute('stroke-width', 3-i*0.5);
+    g.appendChild(r);
+    return { el:r, delay };
+  });
+
+  // 14 jagged spark lines
+  const sparks = Array.from({length:14},(_,i) => {
+    const angle = (i/14)*Math.PI*2 + (Math.random()-.5)*.5;
+    const len   = 14 + Math.random()*22;
+    const jx = Math.cos(angle+.3)*len*.45 + (Math.random()-.5)*6;
+    const jy = Math.sin(angle+.3)*len*.45 + (Math.random()-.5)*6;
+    const ex  = Math.cos(angle)*len, ey = Math.sin(angle)*len;
+    const pl = document.createElementNS(ns,'polyline');
+    pl.setAttribute('points',`${cx},${cy} ${cx+jx},${cy+jy} ${cx+ex},${cy+ey}`);
+    pl.setAttribute('fill','none');
+    pl.setAttribute('stroke', Math.random()>.45 ? '#fff700':'#ffffff');
+    pl.setAttribute('stroke-width', .9+Math.random()*2);
+    pl.setAttribute('stroke-linecap','round');
+    g.appendChild(pl);
+    return { el:pl, delay: Math.random()*90 };
+  });
+
+  // ── arm flicker: white → green ──
+  const arm = document.getElementById('sw-arm');
+  const armFlicker = ['#ffffff','#ffffaa','#88ffaa','#22bb55'];
+  armFlicker.forEach((c,i) => setTimeout(() => arm.setAttribute('stroke',c), i*55));
+
+  // ── RAF animation ──
+  const T = performance.now();
+  const DUR = 580;
+  function ease(t){ return 1-(1-t)**3; }
+
+  function frame(now) {
+    const t = Math.min((now-T)/DUR, 1);
+
+    // Flash
+    const ft = Math.min(t*3, 1);
+    flash.setAttribute('r', ease(ft)*40);
+    flash.setAttribute('opacity', Math.max(0, 1-ft*1.6));
+
+    // Rings
+    rings.forEach(({el, delay}) => {
+      const dt = Math.max(0, (now-T-delay)/DUR);
+      if (dt > 0) {
+        el.setAttribute('r',  ease(Math.min(dt,1))*65);
+        el.setAttribute('opacity', Math.max(0, 1-dt*1.1));
+      }
+    });
+
+    // Sparks
+    sparks.forEach(({el, delay}) => {
+      const dt = Math.max(0, (now-T-delay)/(DUR*.55));
+      el.setAttribute('opacity', Math.max(0, 1-ease(Math.min(dt,1))));
+    });
+
+    if (t < 1) { requestAnimationFrame(frame); }
+    else        { try { svg.removeChild(g); } catch(e){} }
+  }
+  requestAnimationFrame(frame);
+
+  // ── wire glow burst ──
+  const fl = document.getElementById('flow-layer');
+  fl.style.opacity='1';
+  fl.style.filter='drop-shadow(0 0 8px #ffee00) brightness(2)';
+  setTimeout(()=>{ fl.style.filter=''; update(); }, 400);
+}
+
+// ==================== RESIZABLE DIVIDER ====================
+(function(){
+  const divider = document.getElementById('divider');
+  const panel   = document.getElementById('right-panel');
+  const ws      = document.getElementById('workspace');
+  let dragging  = false;
+  divider.addEventListener('mousedown', e => {
+    dragging = true;
+    divider.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const rect = ws.getBoundingClientRect();
+    const w = Math.max(180, Math.min(480, rect.right - e.clientX));
+    panel.style.width = w + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+// ==================== INIT ====================
+buildSelector('am-sel','am',0); // OFF au démarrage
+buildSelector('vm-sel','vm',0); // OFF au démarrage
+initResistors();
+update();
+</script>
+</body>
+</html>
