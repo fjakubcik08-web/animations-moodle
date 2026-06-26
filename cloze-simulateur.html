@@ -30,7 +30,7 @@
   /* SCREENS */
   .screen { display:none; }
   .screen.active { display:block; }
-  main { max-width:900px; width:100%; margin:0 auto; padding:28px 16px 60px; flex:1; }
+  main { max-width:1400px; width:100%; margin:0 auto; padding:28px 20px 60px; flex:1; }
 
   /* CARD */
   .card { background:var(--card); border-radius:14px; box-shadow:0 2px 10px rgba(0,0,0,.07); padding:24px 28px; margin-bottom:18px; }
@@ -81,7 +81,9 @@
   .progress-info { font-size:.82rem; color:var(--muted); background:#f1f3f5; padding:5px 12px; border-radius:99px; white-space:nowrap; }
 
   /* CLOZE CONTENT */
-  #cloze-content { font-size:1.04rem; line-height:1.7; background:var(--card); border-radius:14px; padding:24px 28px; box-shadow:0 2px 10px rgba(0,0,0,.07); margin-bottom:20px; overflow-x:auto; }
+  #cloze-content { font-size:1.04rem; line-height:1.7; background:var(--card); border-radius:14px; padding:24px 28px; box-shadow:0 2px 10px rgba(0,0,0,.07); margin-bottom:20px; overflow:auto; resize:horizontal; min-width:320px; width:100%; box-sizing:border-box; }
+  #cloze-content::after { content:'↔'; position:absolute; bottom:6px; right:10px; font-size:.75rem; color:#ccc; pointer-events:none; }
+  #cloze-content { position:relative; }
   #cloze-content p  { margin-bottom:6px; line-height:1.7; }
   #cloze-content ul, #cloze-content ol { margin:4px 0 6px 1.4em; }
   #cloze-content li { line-height:2.2; }  /* un peu d'air pour les inputs inline dans les listes */
@@ -450,7 +452,7 @@ function buildFieldNode(field) {
     sel.dataset.index = field.index;
 
     const def = document.createElement('option');
-    def.value = ''; def.textContent = '— choisir —';
+    def.value = ''; def.textContent = '';
     sel.appendChild(def);
 
     // Shuffle options
@@ -494,7 +496,7 @@ function buildFieldNode(field) {
     sel.dataset.index = field.index;
 
     const def = document.createElement('option');
-    def.value=''; def.textContent='— choisir —';
+    def.value=''; def.textContent='';
     sel.appendChild(def);
 
     // Map Moodle's true/false options (may be stored as Vrai/Faux or True/False)
@@ -690,70 +692,137 @@ function resetTest() { launchQuestion(allQuestions.indexOf(currentQ)); }
 function flashCloze() {
   const el = document.getElementById('cloze-content');
   el.classList.remove('flash');
-  void el.offsetWidth; // force reflow pour relancer l'animation
+  void el.offsetWidth;
   el.classList.add('flash');
   el.addEventListener('animationend', () => el.classList.remove('flash'), { once: true });
 }
 
-function takeScreenshot() {
+async function takeScreenshot() {
   const btn = document.getElementById('btn-screenshot');
   const origText = btn.innerHTML;
 
-  // Pulse immédiat au clic
   btn.classList.remove('btn-pulse');
   void btn.offsetWidth;
   btn.classList.add('btn-pulse');
   btn.addEventListener('animationend', () => btn.classList.remove('btn-pulse'), { once: true });
-
-  btn.innerHTML = '⏳ En cours…';
+  btn.innerHTML = '🖥️ Partager l\'onglet…';
   btn.disabled = true;
 
-  function doCapture() {
-    const target = document.getElementById('cloze-content');
-    html2canvas(target, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      scrollY: -window.scrollY,
-      windowWidth: document.documentElement.scrollWidth
-    }).then(canvas => {
-      canvas.toBlob(blob => {
-        // Copier dans le presse-papier
-        navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob })
-        ]).then(() => {
-          flashCloze();
-          btn.innerHTML = '✅ Copié !';
-          setTimeout(() => { btn.innerHTML = origText; btn.disabled = false; }, 2000);
-        }).catch(() => {
-          // Fallback : téléchargement si clipboard refusé
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = 'cloze.png';
-          a.click();
-          btn.innerHTML = origText;
-          btn.disabled = false;
-        });
-      }, 'image/png');
-    }).catch(err => {
-      alert('Capture impossible : ' + err.message);
-      btn.innerHTML = origText;
-      btn.disabled = false;
-    });
-  }
+  // Fonctions de sauvegarde/restauration de styles
+  const undoList = [];
+  const hide = sel => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    const v = el.style.display;
+    el.style.display = 'none';
+    undoList.push(() => { el.style.display = v; });
+  };
+  const setProp = (el, prop, val) => {
+    if (!el) return;
+    const old = el.style[prop];
+    el.style[prop] = val;
+    undoList.push(() => { el.style[prop] = old; });
+  };
+  const restore = () => { undoList.reverse().forEach(fn => fn()); undoList.length = 0; };
 
-  if (typeof html2canvas !== 'undefined') {
-    doCapture();
-  } else {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-    s.onload = doCapture;
-    s.onerror = () => {
-      // Fallback: open print dialog
+  try {
+    const target = document.getElementById('cloze-content');
+    const dpr    = window.devicePixelRatio || 1;
+    const totalW = target.scrollWidth;
+    const totalH = target.scrollHeight;
+
+    // ① Demander l'autorisation de partage (dialogue navigateur)
+    //    L'utilisateur voit la page normale avant de confirmer.
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: 'browser', cursor: 'never' },
+      audio: false,
+      preferCurrentTab: true,
+      selfBrowserSurface: 'include'
+    });
+
+    btn.innerHTML = '⏳ Défilement…';
+
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.muted = true;
+    await new Promise(r => { video.onloadedmetadata = r; });
+    await video.play();
+
+    // ② Préparer la mise en page pour la capture
+    //    • Dé-sticky le header → il scrolle normalement, ne masque rien
+    //    • Cacher la barre d'action et le topbar → image plus propre
+    const headerEl = document.querySelector('header');
+    setProp(headerEl, 'position', 'relative');
+    setProp(headerEl, 'top', 'auto');
+    hide('.test-topbar');
+    hide('.action-bar');
+    hide('#score-panel');
+
+    // ③ Scroller jusqu'au début du contenu-cloze
+    window.scrollTo({ top: target.offsetTop, behavior: 'instant' });
+    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    // ④ Canvas de sortie (pleine hauteur du contenu)
+    const fullCanvas = document.createElement('canvas');
+    fullCanvas.width  = Math.round(totalW * dpr);
+    fullCanvas.height = Math.round(totalH * dpr);
+    const ctx = fullCanvas.getContext('2d');
+
+    // ⑤ Boucle : capture bande par bande en défilant
+    const viewH = window.innerHeight;
+    let doneH = 0;
+
+    while (doneH < totalH) {
+      const rect = target.getBoundingClientRect();
+
+      const vis_top = Math.max(rect.top, 0);
+      const vis_bot = Math.min(rect.bottom, viewH);
+      const vis_h   = vis_bot - vis_top;
+      if (vis_h <= 0) break;
+
+      const offset_in_target = Math.max(0, -rect.top);
+
+      ctx.drawImage(
+        video,
+        Math.round(rect.left * dpr), Math.round(vis_top * dpr),   // src x, y
+        Math.round(rect.width * dpr), Math.round(vis_h   * dpr),   // src w, h
+        0, Math.round(offset_in_target * dpr),                      // dst x, y
+        Math.round(rect.width * dpr), Math.round(vis_h   * dpr)    // dst w, h
+      );
+
+      doneH = offset_in_target + vis_h;
+      if (doneH >= totalH) break;
+
+      window.scrollBy({ top: vis_h, behavior: 'instant' });
+      await new Promise(r => setTimeout(r, 220));
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+
+    stream.getTracks().forEach(t => t.stop());
+    restore();
+
+    // ⑥ Copier dans le presse-papier
+    const blob = await new Promise(r => fullCanvas.toBlob(r, 'image/png'));
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      flashCloze();
+      btn.innerHTML = '✅ Copié !';
+      setTimeout(() => { btn.innerHTML = origText; btn.disabled = false; }, 2000);
+    } catch {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'cloze.png'; a.click();
       btn.innerHTML = origText; btn.disabled = false;
-      window.print();
-    };
-    document.head.appendChild(s);
+    }
+
+  } catch (err) {
+    restore();
+    btn.innerHTML = origText;
+    btn.disabled = false;
+    if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+      alert('Capture impossible : ' + err.message);
+    }
   }
 }
 
