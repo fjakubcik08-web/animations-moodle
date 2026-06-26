@@ -444,7 +444,7 @@ canvas.addEventListener('mousemove', e => {
   const pct   = ((count / total) * 100).toFixed(1);
 
   tooltip.innerHTML =
-    `<div class="tt-interval">[${fmt(lo)} ; ${fmt(hi)}[</div>` +
+    `<div class="tt-interval">[${fmtAxis(lo, step)} ; ${fmtAxis(hi, step)}[</div>` +
     `<div class="tt-count">Effectif : <strong>${count}</strong></div>` +
     `<div class="tt-freq">Fréquence : ${pct} %</div>`;
 
@@ -516,14 +516,39 @@ function analyse() {
 function showError(msg) { errorMsg.textContent = '⚠ ' + msg; errorMsg.style.display = 'block'; }
 function hideError()    { errorMsg.style.display = 'none'; }
 
-/* ── FORMAT ── */
+/* ── FORMAT STATS : 4 chiffres significatifs, sci si nécessaire ── */
 function fmt(x) {
   if (!isFinite(x)) return '—';
   if (x === 0) return '0';
   const abs = Math.abs(x);
-  if (abs >= 1e6 || abs < 1e-3) return x.toExponential(3);
+  if (abs >= 1e6 || abs < 1e-4) return x.toExponential(3);
   const mag = Math.floor(Math.log10(abs));
   return x.toFixed(Math.max(0, 3 - mag));
+}
+
+/* ── FORMAT AXE/TOOLTIP : adapté à la largeur de classe ── */
+function fmtAxis(x, step) {
+  if (!isFinite(x)) return '—';
+  if (!isFinite(step) || step <= 0) return fmt(x);
+
+  const absX    = Math.abs(x);
+  const absStep = Math.abs(step);
+
+  // Nb de décimales pour distinguer les bornes de classes (min 2)
+  const nDec = Math.max(2, Math.ceil(-Math.log10(absStep)));
+
+  if (x === 0) return (0).toFixed(Math.min(nDec, 10));
+
+  // Notation scientifique si valeur très grande ou très petite
+  if (absX >= 1e6 || absX < 1e-3) {
+    const xExp    = Math.floor(Math.log10(absX));
+    const stepExp = Math.floor(Math.log10(absStep));
+    const sigDec  = Math.max(2, xExp - stepExp + 1);
+    return x.toExponential(Math.min(sigDec, 8));
+  }
+
+  // Notation décimale standard
+  return x.toFixed(Math.min(nDec, 10));
 }
 
 /* ── STATS ── */
@@ -713,12 +738,12 @@ function drawHistogram(sorted, nBars) {
     for (let i = 0; i <= nBars; i += skipStep) {
       const xval = min + i * step;
       const xpx  = PAD_L + i * barW;
-      ctx.fillText(fmt(xval), xpx, PAD_T + plotH + 14);
+      ctx.fillText(fmtAxis(xval, step), xpx, PAD_T + plotH + 14);
       ctx.strokeStyle = '#c0ccd8'; ctx.lineWidth = 0.5;
       ctx.beginPath(); ctx.moveTo(xpx, PAD_T + plotH); ctx.lineTo(xpx, PAD_T + plotH + 4); ctx.stroke();
     }
     ctx.fillStyle = '#7090a8';
-    ctx.fillText(fmt(max), PAD_L + plotW, PAD_T + plotH + 14);
+    ctx.fillText(fmtAxis(max, step), PAD_L + plotW, PAD_T + plotH + 14);
 
     /* Label axe Y */
     ctx.save();
