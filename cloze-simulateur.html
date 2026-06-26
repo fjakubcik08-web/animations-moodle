@@ -711,9 +711,11 @@ async function takeScreenshot() {
   void btn.offsetWidth;
   btn.classList.add('btn-pulse');
   btn.addEventListener('animationend', () => btn.classList.remove('btn-pulse'), { once: true });
-  btn.innerHTML = '🖥️ Partager la fenêtre…';
+  btn.innerHTML = '🖥️ Partager…';
   btn.disabled = true;
 
+  // stream déclaré ICI pour être accessible dans le finally global
+  let stream = null;
   const undoList = [];
   const hide = sel => {
     const el = document.querySelector(sel);
@@ -728,7 +730,8 @@ async function takeScreenshot() {
     el.style[prop] = val;
     undoList.push(() => { el.style[prop] = old; });
   };
-  const restore = () => { undoList.reverse().forEach(fn => fn()); undoList.length = 0; };
+  const restore  = () => { undoList.reverse().forEach(fn => fn()); undoList.length = 0; };
+  const stopAll  = () => { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } restore(); };
 
   try {
     const target = document.getElementById('cloze-content');
@@ -736,34 +739,31 @@ async function takeScreenshot() {
     const totalW = target.scrollWidth;
     const totalH = target.scrollHeight;
 
-    // ① Partage — NE PAS forcer displaySurface:'browser'
-    //    (tab capture = iframes blanquées par Chrome pour raisons de sécurité)
-    //    → Choisir "Fenêtre" dans le dialogue, puis la fenêtre du navigateur
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { cursor: 'never' },
-      audio: false
-    });
+    // ① Partage d'écran (pas de displaySurface forcé → choisir Fenêtre pour voir les iframes)
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'never' }, audio: false });
 
     btn.innerHTML = '⏳ Capture…';
 
     const video = document.createElement('video');
     video.srcObject = stream;
     video.muted = true;
-    await new Promise(r => { video.onloadedmetadata = r; });
+    await new Promise((res, rej) => {
+      video.onloadedmetadata = res;
+      video.onerror = rej;
+      setTimeout(() => rej(new Error('video timeout')), 8000);
+    });
     await video.play();
 
-    // ② Type de surface choisie par l'utilisateur
-    const surface = stream.getVideoTracks()[0].getSettings().displaySurface || 'browser';
+    // ② Surface et facteurs d'échelle
+    const track   = stream.getVideoTracks()[0];
+    const surface = (track?.getSettings().displaySurface) || 'browser';
 
-    // Facteurs d'échelle CSS px → pixels vidéo
     let refW, refH;
-    if      (surface === 'monitor') { refW = screen.width;        refH = screen.height;       }
-    else if (surface === 'window')  { refW = window.outerWidth;   refH = window.outerHeight;  }
-    else                            { refW = window.innerWidth;   refH = window.innerHeight;  }
+    if      (surface === 'monitor') { refW = screen.width;       refH = screen.height;      }
+    else if (surface === 'window')  { refW = window.outerWidth;  refH = window.outerHeight; }
+    else                            { refW = window.innerWidth;  refH = window.innerHeight; }
     const scaleX = video.videoWidth  / refW;
     const scaleY = video.videoHeight / refH;
-
-    // Hauteur de la barre chrome du navigateur (onglets + adresse)
     const chromeH = (surface !== 'browser') ? (window.outerHeight - window.innerHeight) : 0;
 
     // ③ Mise en page : dé-sticky le header, cacher barres UI
@@ -774,60 +774,53 @@ async function takeScreenshot() {
     hide('.action-bar');
     hide('#score-panel');
 
-    // ④ Scroll jusqu'au début du contenu
+    // ④ Scroll au début du contenu
     window.scrollTo({ top: target.offsetTop, behavior: 'instant' });
-    await new Promise(r => setTimeout(r, 280));
+    await new Promise(r => setTimeout(r, 300));
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-    // ⑤ Canvas de sortie pleine hauteur
+    // ⑤ Canvas pleine hauteur
     const fullCanvas = document.createElement('canvas');
     fullCanvas.width  = Math.round(totalW * dpr);
     fullCanvas.height = Math.round(totalH * dpr);
     const ctx = fullCanvas.getContext('2d');
 
-    // ⑥ Boucle : capture bande par bande en défilant
+    // ⑥ Boucle défilement + assemblage
     const viewH = window.innerHeight;
-    let doneH = 0;
-    let lastDoneH = -1;
+    let doneH = 0, lastDoneH = -1;
 
-    try {
-      while (doneH < totalH) {
-        if (doneH === lastDoneH) break; // aucun progrès → sortir (évite boucle infinie)
-        lastDoneH = doneH;
+    while (doneH < totalH) {
+      if (doneH === lastDoneH) break;   // pas de progrès → stop
+      lastDoneH = doneH;
 
-        const rect = target.getBoundingClientRect();
-        const vis_top = Math.max(rect.top, 0);
-        const vis_bot = Math.min(rect.bottom, viewH);
-        const vis_h   = vis_bot - vis_top;
-        if (vis_h <= 0) break;
+      const rect    = target.getBoundingClientRect();
+      const vis_top = Math.max(rect.top, 0);
+      const vis_bot = Math.min(rect.bottom, viewH);
+      const vis_h   = vis_bot - vis_top;
+      if (vis_h <= 0) break;
 
-        const offset_in_target = Math.max(0, -rect.top);
+      const offsetY = Math.max(0, -rect.top);
+      let baseX = rect.left, baseY = vis_top + chromeH;
+      if (surface === 'monitor') { baseX += window.screenX; baseY += window.screenY; }
 
-        let baseX = rect.left;
-        let baseY = vis_top + chromeH;
-        if (surface === 'monitor') { baseX += window.screenX; baseY += window.screenY; }
+      ctx.drawImage(video,
+        Math.round(baseX * scaleX),       Math.round(baseY * scaleY),
+        Math.round(rect.width * scaleX),  Math.round(vis_h * scaleY),
+        0,                                Math.round(offsetY * dpr),
+        Math.round(totalW * dpr),         Math.round(vis_h * dpr)
+      );
 
-        ctx.drawImage(
-          video,
-          Math.round(baseX * scaleX),        Math.round(baseY * scaleY),
-          Math.round(rect.width * scaleX),   Math.round(vis_h * scaleY),
-          0,                                 Math.round(offset_in_target * dpr),
-          Math.round(totalW * dpr),          Math.round(vis_h * dpr)
-        );
+      doneH = offsetY + vis_h;
+      if (doneH >= totalH) break;
 
-        doneH = offset_in_target + vis_h;
-        if (doneH >= totalH) break;
-
-        window.scrollBy({ top: vis_h, behavior: 'instant' });
-        await new Promise(r => setTimeout(r, 220));
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      }
-    } finally {
-      stream.getTracks().forEach(t => t.stop()); // toujours arrêter le partage
-      restore();
+      window.scrollBy({ top: vis_h, behavior: 'instant' });
+      await new Promise(r => setTimeout(r, 220));
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     }
 
-    // ⑥ Copier dans le presse-papier
+    stopAll();   // arrêter le partage dès que la capture est terminée
+
+    // ⑦ Copier dans le presse-papier
     const blob = await new Promise(r => fullCanvas.toBlob(r, 'image/png'));
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
@@ -842,7 +835,7 @@ async function takeScreenshot() {
     }
 
   } catch (err) {
-    restore();
+    stopAll();
     btn.innerHTML = origText;
     btn.disabled = false;
     if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
