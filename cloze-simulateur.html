@@ -438,6 +438,12 @@ function parseOptions(str) {
     .filter(o => o.text !== ''); // drop empty entries (leading ~ in MCS)
 }
 
+// Toutes les variantes Moodle de MULTICHOICE (MC, MCS, MCH, MCV, MCHM, MULTICHOICE_S, etc.)
+function isMC(type) {
+  return type === 'MC' || type === 'MCS' || type === 'MCH' || type === 'MCV' ||
+         type === 'MCHM' || type.startsWith('MULTICHOICE');
+}
+
 // Build the DOM node for one cloze field
 function buildFieldNode(field) {
   const wrap = document.createElement('span');
@@ -446,7 +452,7 @@ function buildFieldNode(field) {
 
   const type = field.answerType;
 
-  if (type==='MULTICHOICE'||type==='MC'||type==='MCS'||type==='MULTICHOICE_S') {
+  if (isMC(type)) {
     const sel = document.createElement('select');
     sel.className = 'cloze-input';
     sel.dataset.index = field.index;
@@ -567,7 +573,7 @@ function submitTest() {
       if (!input) return;
       const val = input.value.trim();
 
-      if (type==='MULTICHOICE'||type==='MC'||type==='MCS'||type==='MULTICHOICE_S') {
+      if (isMC(type)) {
         const selOpt = input.options[input.selectedIndex];
         if (selOpt && selOpt.value) score = parseFloat(selOpt.dataset.score)||0;
 
@@ -705,10 +711,9 @@ async function takeScreenshot() {
   void btn.offsetWidth;
   btn.classList.add('btn-pulse');
   btn.addEventListener('animationend', () => btn.classList.remove('btn-pulse'), { once: true });
-  btn.innerHTML = '🖥️ Partager l\'onglet…';
+  btn.innerHTML = '🖥️ Partager la fenêtre…';
   btn.disabled = true;
 
-  // Fonctions de sauvegarde/restauration de styles
   const undoList = [];
   const hide = sel => {
     const el = document.querySelector(sel);
@@ -731,16 +736,15 @@ async function takeScreenshot() {
     const totalW = target.scrollWidth;
     const totalH = target.scrollHeight;
 
-    // ① Demander l'autorisation de partage (dialogue navigateur)
-    //    L'utilisateur voit la page normale avant de confirmer.
+    // ① Partage — NE PAS forcer displaySurface:'browser'
+    //    (tab capture = iframes blanquées par Chrome pour raisons de sécurité)
+    //    → Choisir "Fenêtre" dans le dialogue, puis la fenêtre du navigateur
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: 'browser', cursor: 'never' },
-      audio: false,
-      preferCurrentTab: true,
-      selfBrowserSurface: 'include'
+      video: { cursor: 'never' },
+      audio: false
     });
 
-    btn.innerHTML = '⏳ Défilement…';
+    btn.innerHTML = '⏳ Capture…';
 
     const video = document.createElement('video');
     video.srcObject = stream;
@@ -748,9 +752,21 @@ async function takeScreenshot() {
     await new Promise(r => { video.onloadedmetadata = r; });
     await video.play();
 
-    // ② Préparer la mise en page pour la capture
-    //    • Dé-sticky le header → il scrolle normalement, ne masque rien
-    //    • Cacher la barre d'action et le topbar → image plus propre
+    // ② Type de surface choisie par l'utilisateur
+    const surface = stream.getVideoTracks()[0].getSettings().displaySurface || 'browser';
+
+    // Facteurs d'échelle CSS px → pixels vidéo
+    let refW, refH;
+    if      (surface === 'monitor') { refW = screen.width;        refH = screen.height;       }
+    else if (surface === 'window')  { refW = window.outerWidth;   refH = window.outerHeight;  }
+    else                            { refW = window.innerWidth;   refH = window.innerHeight;  }
+    const scaleX = video.videoWidth  / refW;
+    const scaleY = video.videoHeight / refH;
+
+    // Hauteur de la barre chrome du navigateur (onglets + adresse)
+    const chromeH = (surface !== 'browser') ? (window.outerHeight - window.innerHeight) : 0;
+
+    // ③ Mise en page : dé-sticky le header, cacher barres UI
     const headerEl = document.querySelector('header');
     setProp(headerEl, 'position', 'relative');
     setProp(headerEl, 'top', 'auto');
@@ -758,18 +774,18 @@ async function takeScreenshot() {
     hide('.action-bar');
     hide('#score-panel');
 
-    // ③ Scroller jusqu'au début du contenu-cloze
+    // ④ Scroll jusqu'au début du contenu
     window.scrollTo({ top: target.offsetTop, behavior: 'instant' });
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 280));
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-    // ④ Canvas de sortie (pleine hauteur du contenu)
+    // ⑤ Canvas de sortie pleine hauteur
     const fullCanvas = document.createElement('canvas');
     fullCanvas.width  = Math.round(totalW * dpr);
     fullCanvas.height = Math.round(totalH * dpr);
     const ctx = fullCanvas.getContext('2d');
 
-    // ⑤ Boucle : capture bande par bande en défilant
+    // ⑥ Boucle : capture bande par bande en défilant
     const viewH = window.innerHeight;
     let doneH = 0;
 
@@ -783,12 +799,17 @@ async function takeScreenshot() {
 
       const offset_in_target = Math.max(0, -rect.top);
 
+      // Position dans la vidéo selon le type de surface
+      let baseX = rect.left;
+      let baseY = vis_top + chromeH;
+      if (surface === 'monitor') { baseX += window.screenX; baseY += window.screenY; }
+
       ctx.drawImage(
         video,
-        Math.round(rect.left * dpr), Math.round(vis_top * dpr),   // src x, y
-        Math.round(rect.width * dpr), Math.round(vis_h   * dpr),   // src w, h
-        0, Math.round(offset_in_target * dpr),                      // dst x, y
-        Math.round(rect.width * dpr), Math.round(vis_h   * dpr)    // dst w, h
+        Math.round(baseX * scaleX),        Math.round(baseY * scaleY),
+        Math.round(rect.width * scaleX),   Math.round(vis_h * scaleY),
+        0,                                 Math.round(offset_in_target * dpr),
+        Math.round(totalW * dpr),          Math.round(vis_h * dpr)
       );
 
       doneH = offset_in_target + vis_h;
