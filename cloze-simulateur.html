@@ -788,40 +788,44 @@ async function takeScreenshot() {
     // ⑥ Boucle : capture bande par bande en défilant
     const viewH = window.innerHeight;
     let doneH = 0;
+    let lastDoneH = -1;
 
-    while (doneH < totalH) {
-      const rect = target.getBoundingClientRect();
+    try {
+      while (doneH < totalH) {
+        if (doneH === lastDoneH) break; // aucun progrès → sortir (évite boucle infinie)
+        lastDoneH = doneH;
 
-      const vis_top = Math.max(rect.top, 0);
-      const vis_bot = Math.min(rect.bottom, viewH);
-      const vis_h   = vis_bot - vis_top;
-      if (vis_h <= 0) break;
+        const rect = target.getBoundingClientRect();
+        const vis_top = Math.max(rect.top, 0);
+        const vis_bot = Math.min(rect.bottom, viewH);
+        const vis_h   = vis_bot - vis_top;
+        if (vis_h <= 0) break;
 
-      const offset_in_target = Math.max(0, -rect.top);
+        const offset_in_target = Math.max(0, -rect.top);
 
-      // Position dans la vidéo selon le type de surface
-      let baseX = rect.left;
-      let baseY = vis_top + chromeH;
-      if (surface === 'monitor') { baseX += window.screenX; baseY += window.screenY; }
+        let baseX = rect.left;
+        let baseY = vis_top + chromeH;
+        if (surface === 'monitor') { baseX += window.screenX; baseY += window.screenY; }
 
-      ctx.drawImage(
-        video,
-        Math.round(baseX * scaleX),        Math.round(baseY * scaleY),
-        Math.round(rect.width * scaleX),   Math.round(vis_h * scaleY),
-        0,                                 Math.round(offset_in_target * dpr),
-        Math.round(totalW * dpr),          Math.round(vis_h * dpr)
-      );
+        ctx.drawImage(
+          video,
+          Math.round(baseX * scaleX),        Math.round(baseY * scaleY),
+          Math.round(rect.width * scaleX),   Math.round(vis_h * scaleY),
+          0,                                 Math.round(offset_in_target * dpr),
+          Math.round(totalW * dpr),          Math.round(vis_h * dpr)
+        );
 
-      doneH = offset_in_target + vis_h;
-      if (doneH >= totalH) break;
+        doneH = offset_in_target + vis_h;
+        if (doneH >= totalH) break;
 
-      window.scrollBy({ top: vis_h, behavior: 'instant' });
-      await new Promise(r => setTimeout(r, 220));
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        window.scrollBy({ top: vis_h, behavior: 'instant' });
+        await new Promise(r => setTimeout(r, 220));
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      }
+    } finally {
+      stream.getTracks().forEach(t => t.stop()); // toujours arrêter le partage
+      restore();
     }
-
-    stream.getTracks().forEach(t => t.stop());
-    restore();
 
     // ⑥ Copier dans le presse-papier
     const blob = await new Promise(r => fullCanvas.toBlob(r, 'image/png'));
