@@ -106,26 +106,48 @@ h1 { font-size: 1rem; color: #1a5a9a; letter-spacing: 0.4px; }
   flex-shrink: 0;
 }
 
-.ctrl-row {
+#classes-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #f0f6ff;
+  border: 1px solid #c8daf0;
+  border-radius: 7px;
+  padding: 6px 8px;
+}
+#classes-top {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
+  justify-content: space-between;
 }
-.ctrl-label { color: #6080a0; min-width: 60px; font-size: 0.76rem; }
+.ctrl-label { color: #6080a0; font-size: 0.74rem; }
+
+#bars-val {
+  width: 46px;
+  font-weight: bold;
+  color: #1a5a9a;
+  font-size: 1rem;
+  text-align: center;
+  border: 1.5px solid #4488cc;
+  border-radius: 5px;
+  padding: 2px 4px;
+  background: #fff;
+  outline: none;
+}
+#bars-val:focus { border-color: #1a5a9a; box-shadow: 0 0 0 2px rgba(68,136,204,0.15); }
 
 #bars-slider {
-  flex: 1;
+  width: 100%;
   cursor: pointer;
   accent-color: #2266bb;
   height: 4px;
+  margin: 0;
 }
-#bars-val {
-  font-weight: bold;
-  color: #1a5a9a;
-  min-width: 22px;
-  text-align: right;
-  font-size: 0.84rem;
+#classes-range-hint {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.58rem;
+  color: #a0b4c8;
 }
 
 #btn-analyse {
@@ -338,10 +360,13 @@ h1 { font-size: 1rem; color: #1a5a9a; letter-spacing: 0.4px; }
       placeholder="Une valeur par ligne&#10;&#10;Ex :&#10;47.3&#10;48.1&#10;46.9&#10;47.8&#10;…"></textarea>
 
     <div id="controls">
-      <div class="ctrl-row">
-        <span class="ctrl-label">Classes :</span>
+      <div id="classes-control">
+        <div id="classes-top">
+          <span class="ctrl-label">Nombre de classes</span>
+          <input type="number" id="bars-val" min="10" max="50" value="20">
+        </div>
         <input type="range" id="bars-slider" min="10" max="50" value="20">
-        <span id="bars-val">20</span>
+        <div id="classes-range-hint"><span>10</span><span>50</span></div>
       </div>
       <button id="btn-analyse">⚡ Analyser</button>
       <button id="btn-reset-data">↺ Réinitialiser</button>
@@ -436,8 +461,15 @@ canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; })
 
 /* ── ÉVÉNEMENTS ── */
 slider.addEventListener('input', () => {
-  barsVal.textContent = slider.value;
+  barsVal.value = slider.value;
   if (currentData) drawHistogram(currentData, +slider.value);
+});
+
+barsVal.addEventListener('input', () => {
+  let v = Math.min(50, Math.max(10, parseInt(barsVal.value) || 10));
+  barsVal.value  = v;
+  slider.value   = v;
+  if (currentData) drawHistogram(currentData, v);
 });
 btnReset.addEventListener('click', reset);
 btnAnalyse.addEventListener('click', analyse);
