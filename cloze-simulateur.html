@@ -81,11 +81,17 @@
   .progress-info { font-size:.82rem; color:var(--muted); background:#f1f3f5; padding:5px 12px; border-radius:99px; white-space:nowrap; }
 
   /* CLOZE CONTENT */
-  #cloze-content { font-size:1.04rem; line-height:2.6; background:var(--card); border-radius:14px; padding:24px 28px; box-shadow:0 2px 10px rgba(0,0,0,.07); margin-bottom:20px; overflow-x:auto; }
-  #cloze-content p  { margin-bottom:8px; }
+  #cloze-content { font-size:1.04rem; line-height:1.7; background:var(--card); border-radius:14px; padding:24px 28px; box-shadow:0 2px 10px rgba(0,0,0,.07); margin-bottom:20px; overflow-x:auto; }
+  #cloze-content p  { margin-bottom:6px; line-height:1.7; }
+  #cloze-content ul, #cloze-content ol { margin:4px 0 6px 1.4em; }
+  #cloze-content li { line-height:2.2; }  /* un peu d'air pour les inputs inline dans les listes */
   #cloze-content img { max-width:100%; border-radius:6px; }
-  #cloze-content table { border-collapse:collapse; }
-  #cloze-content td,#cloze-content th { padding:4px 8px; }
+  /* Tables : rendu compact comme Moodle */
+  #cloze-content table { border-collapse:collapse; width:100%; }
+  #cloze-content td, #cloze-content th { padding:4px 8px; line-height:1.5; vertical-align:middle; }
+  #cloze-content tr { height:auto !important; }
+  /* Inputs/selects DANS une cellule : on donne juste assez d'espace */
+  #cloze-content td .cloze-field, #cloze-content th .cloze-field { display:inline-flex; }
 
   /* CLOZE INPUTS */
   .cloze-field { display:inline-flex; align-items:center; gap:3px; vertical-align:middle; margin:0 2px; }
