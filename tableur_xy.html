@@ -469,7 +469,6 @@ tbody tr.row-sel td { background: #eef3fc; }
             <option value="linear">Linéaire  —  y = a·x + b</option>
             <option value="inverse">Inverse  —  y = k / x</option>
             <option value="polynomial">Polynomiale  —  y = aₙxⁿ + … + b</option>
-            <option value="exp">Exponentielle  —  y = A·exp(−x/τ)</option>
           </select>
         </div>
         <!-- Degré (polynomial uniquement) -->
@@ -481,16 +480,6 @@ tbody tr.row-sel td { background: #eef3fc; }
             <option value="2">2 — quadratique</option>
             <option value="3">3 — cubique</option>
             <option value="4">4</option>
-          </select>
-        </div>
-        <!-- Modèle exponentiel (exp uniquement) -->
-        <div id="td-exp-row" style="display:none;align-items:center;gap:8px;">
-          <span style="color:#888;width:80px;">Modèle</span>
-          <select id="td-exp-sub" onchange="onTrendTypeChange()"
-            style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;
-                   font-size:13px;color:#c0392b;font-weight:bold;background:#fdf0ed;cursor:pointer;">
-            <option value="exp1">A·exp(−x/τ)</option>
-            <option value="exp2">A·exp(−x/τ) + B</option>
           </select>
         </div>
         <!-- Résultats -->
@@ -947,31 +936,6 @@ function applyFxInput() {
 // ── Fill handle (tirer vers le bas) ──────────────────────────────────────
 function initFillHandle() {
   const fh = document.getElementById('fill-handle');
-  fh.addEventListener('dblclick', function(e) {
-    e.preventDefault(); e.stopPropagation();
-    if (!selectedCell) return;
-    const { r, c } = selectedCell;
-    // Trouver la dernière ligne avec des données dans les colonnes adjacentes
-    let lastR = r;
-    for (let col = 0; col < nCols; col++) {
-      if (col === c) continue;
-      for (let row = nRows - 1; row > lastR; row--) {
-        if (data[row][col] !== '') { lastR = row; break; }
-      }
-    }
-    if (lastR <= r) return;
-    const baseFormula = getCellFormula(r, c);
-    for (let tr = r + 1; tr <= lastR; tr++) {
-      if (baseFormula) {
-        setFormula(tr, c, incrementFormula(baseFormula, tr - r));
-      } else {
-        data[tr][c] = data[r][c];
-        const inp = document.querySelector(`#sheet tbody input[data-r="${tr}"][data-c="${c}"]`);
-        if (inp) inp.value = data[r][c];
-      }
-    }
-    positionFillHandle(r, c);
-  });
   fh.addEventListener('mousedown', function(e) {
     e.preventDefault(); e.stopPropagation();
     if (!selectedCell) return;
@@ -1097,12 +1061,15 @@ function copyCSV(btn) {
   for (let r = 0; r < nRows; r++)
     lines.push(data[r].map(v => String(v).replace(',','.')).join(';'));
   const txt = lines.join('\r\n');
-  navigator.clipboard.writeText(txt).then(() => {
+  function flashCSV() {
     const orig = btn.textContent;
-    btn.textContent = '✓ Copié !';
+    btn.textContent = 'Copie !';
     btn.style.background = '#27ae60';
     setTimeout(() => { btn.textContent = orig; btn.style.background = '#7d3c98'; }, 1400);
-  }).catch(() => showMsg('Copie non supportée par ce navigateur.', 'err'));
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(txt).then(flashCSV).catch(() => fallbackCopy(txt, flashCSV));
+  } else { fallbackCopy(txt, flashCSV); }
 }
 
 // ══════════════════════════════════════════
@@ -1142,7 +1109,10 @@ function copySelectionToClipboard() {
     for (let c=c0;c<=c1;c++) row.push(data[r][c] ?? '');
     lines.push(row.join('\t'));
   }
-  navigator.clipboard.writeText(lines.join('\n')).then(() => showMsg('Copié !','ok'));
+  const txt2 = lines.join('\n');
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(txt2).then(() => showMsg('Copie !','ok')).catch(() => fallbackCopy(txt2, () => showMsg('Copie !','ok')));
+  } else { fallbackCopy(txt2, () => showMsg('Copie !','ok')); }
 }
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey||e.metaKey) && e.key==='c' && cellSelection) {
@@ -1383,20 +1353,35 @@ function openCodesDlg() {
 }
 function copyCode(id, btn) {
   const v = document.getElementById(id).textContent;
-  navigator.clipboard.writeText(v).then(() => {
+  if (!v || v === '—') return;
+  function flash() {
     const orig = btn.textContent;
     const origBg = btn.style.background || btn.dataset.origBg || '';
     btn.dataset.origBg = origBg;
-    btn.textContent = '✓ Copié !';
+    btn.textContent = 'Copie !';
     btn.style.background = '#27ae60';
     btn.style.transform = 'scale(1.08)';
-    btn.style.transition = 'all 0.15s';
     setTimeout(() => {
       btn.textContent = orig;
       btn.style.background = origBg;
       btn.style.transform = '';
     }, 1400);
-  });
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(v).then(flash).catch(() => fallbackCopy(v, flash));
+  } else {
+    fallbackCopy(v, flash);
+  }
+}
+function fallbackCopy(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try { document.execCommand('copy'); if (cb) cb(); }
+  catch(e) { alert('Copiez manuellement : ' + text); }
+  document.body.removeChild(ta);
 }
 
 // ══════════════════════════════════════════
@@ -1431,11 +1416,6 @@ function buildTable() {
     ni.addEventListener('input', function() {
       colNames[+this.dataset.c] = this.value;
       updateAxisInfo();
-    });
-    ni.addEventListener('keydown', function(e) {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      ui.focus(); ui.select();
     });
 
     const ui = document.createElement('input');
@@ -1552,18 +1532,10 @@ function buildTable() {
         }
       });
       inp.addEventListener('keydown', function(e) {
-        const r = +this.dataset.r, c = +this.dataset.c;
-
-        // Ctrl+Z / Cmd+Z — undo global (intercepte avant le undo natif du navigateur)
-        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-          e.preventDefault(); e.stopPropagation();
-          undo(); return;
-        }
-
         // "=" depuis la cellule → basculer vers la barre de formule
         if (e.key === '=') {
           e.preventDefault();
-          selectCell(r, c);
+          selectCell(+this.dataset.r, +this.dataset.c);
           const fxInp = document.getElementById('fx-input');
           fxInp.value = '=';
           fxInp.style.color = '#6b4f00';
@@ -1572,41 +1544,17 @@ function buildTable() {
           fxInp.setSelectionRange(1, 1);
           return;
         }
-
-        // Touches directionnelles : navigation entre cellules
-        if (e.key === 'ArrowUp' || e.key === 'ArrowDown' ||
-            e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
-            e.key === 'Tab') {
-          // Pour gauche/droite on ne navigue que si le curseur est au bord
-          if (e.key === 'ArrowLeft') {
-            if (this.selectionStart !== 0 || this.selectionEnd !== 0) return;
-          }
-          if (e.key === 'ArrowRight') {
-            const len = this.value.length;
-            if (this.selectionStart !== len || this.selectionEnd !== len) return;
-          }
-          e.preventDefault();
-          let nr = r, nc = c;
-          if      (e.key === 'ArrowUp')    nr = Math.max(0, r - 1);
-          else if (e.key === 'ArrowDown')  nr = Math.min(nRows - 1, r + 1);
-          else if (e.key === 'ArrowLeft')  nc = Math.max(0, c - 1);
-          else if (e.key === 'ArrowRight') nc = Math.min(nCols - 1, c + 1);
-          else if (e.key === 'Tab') { if (e.shiftKey) nc = Math.max(0, c - 1); else nc = Math.min(nCols - 1, c + 1); }
-          const target = document.querySelector(`#sheet tbody input[data-r="${nr}"][data-c="${nc}"]`);
-          if (target) setTimeout(() => { target.focus(); target.select(); }, 0);
-          return;
-        }
-
-        // Entrée → descendre d'une ligne
         if (e.key !== 'Enter') return;
         e.preventDefault();
-        const nextR = r + 1;
-        const next = document.querySelector(`#sheet tbody input[data-r="${nextR}"][data-c="${c}"]`);
+        const nextR = +this.dataset.r + 1;
+        const nextC = +this.dataset.c;
+        const next = document.querySelector(`#sheet tbody input[data-r="${nextR}"][data-c="${nextC}"]`);
         if (next) {
           setTimeout(() => { next.focus(); next.select(); }, 0);
         } else {
+          const r = nextR, c = nextC;
           addRow(() => {
-            const n = document.querySelector(`#sheet tbody input[data-r="${nextR}"][data-c="${c}"]`);
+            const n = document.querySelector(`#sheet tbody input[data-r="${r}"][data-c="${c}"]`);
             if (n) { n.focus(); n.select(); }
           });
         }
@@ -2251,97 +2199,9 @@ function fmtPolyEq(coeffs, xName, yName) {
   return `${yName||'y'} = ${terms.join('')||'0'}`;
 }
 
-// ── Régressions exponentielles ──
-function computeExp1Reg(pts) {
-  // y = A * exp(-x / t0)  — linearisation : ln(y) = ln(A) - x/t0
-  const valid = pts.filter(([,y]) => y > 1e-15);
-  if (valid.length < 2) return null;
-  const lnPts = valid.map(([x,y]) => [x, Math.log(y)]);
-  const reg = computeLinearReg(lnPts);
-  if (!reg || reg.slope >= 0) return null;
-  const A = Math.exp(reg.intercept);
-  const t0 = -1 / reg.slope;
-  const n = pts.length;
-  const yMean = pts.reduce((s,[,y])=>s+y,0)/n;
-  let ssTot=0, ssRes=0;
-  pts.forEach(([x,y])=>{ ssTot+=(y-yMean)**2; ssRes+=(y-A*Math.exp(-x/t0))**2; });
-  const r2 = ssTot<1e-15 ? 1 : 1-ssRes/ssTot;
-  return { A, t0, r2 };
-}
-
-function computeExp2Reg(pts) {
-  // y = A * exp(-x / t0) + B — scan sur B puis linéarisation
-  if (pts.length < 3) return null;
-
-  const cost = (A, t0, B) => {
-    if (t0 <= 0) return Infinity;
-    return pts.reduce((s,[x,y]) => s + (y - A*Math.exp(-x/t0) - B)**2, 0);
-  };
-
-  const getParams = (B) => {
-    const valid = pts.filter(([,y]) => Math.abs(y - B) > 1e-15);
-    if (valid.length < 2) return null;
-    const lnPts = valid.map(([x,y]) => [x, Math.log(Math.abs(y - B))]);
-    const reg = computeLinearReg(lnPts);
-    if (!reg || reg.slope >= 0) return null;
-    const sign = valid.reduce((s,[,y]) => s + Math.sign(y - B), 0) > 0 ? 1 : -1;
-    return { A: sign * Math.exp(reg.intercept), t0: -1/reg.slope, B };
-  };
-
-  const yVals = pts.map(p=>p[1]);
-  const yMin = Math.min(...yVals), yMax = Math.max(...yVals);
-  const range = Math.abs(yMax - yMin) || 1;
-
-  let bestParams = null, bestCost = Infinity;
-  const NSTEPS = 80;
-  for (let i = 0; i <= NSTEPS; i++) {
-    const B = yMin - 1e-4*range - range * i / NSTEPS;
-    const p = getParams(B);
-    if (!p) continue;
-    const c = cost(p.A, p.t0, B);
-    if (c < bestCost) { bestCost=c; bestParams=p; }
-  }
-  for (let i = 1; i <= NSTEPS; i++) {
-    const B = yMax + 1e-4*range + range * i / NSTEPS;
-    const p = getParams(B);
-    if (!p) continue;
-    const c = cost(p.A, p.t0, B);
-    if (c < bestCost) { bestCost=c; bestParams=p; }
-  }
-  if (!bestParams) return null;
-
-  const n = pts.length;
-  const yMean = pts.reduce((s,[,y])=>s+y,0)/n;
-  let ssTot=0, ssRes=0;
-  pts.forEach(([x,y])=>{ ssTot+=(y-yMean)**2; ssRes+=(y-bestParams.A*Math.exp(-x/bestParams.t0)-bestParams.B)**2; });
-  const r2 = ssTot<1e-15 ? 1 : 1-ssRes/ssTot;
-  return { ...bestParams, r2 };
-}
-
-function fmtExp1EqHTML(A, t0, xName, yName) {
-  const sA  = `<span style="color:#c0392b;font-weight:bold">${fmtCoeff(A)}</span>`;
-  const sT0 = `<span style="color:#d35400;font-weight:bold">${fmtCoeff(t0)}</span>`;
-  return `${yName||'y'} = ${sA}·exp(−${xName||'x'}/${sT0})`;
-}
-function fmtExp1Eq(A, t0, xName, yName) {
-  return `${yName||'y'} = ${fmtCoeff(A)}·exp(−${xName||'x'}/${fmtCoeff(t0)})`;
-}
-function fmtExp2EqHTML(A, t0, B, xName, yName) {
-  const sA  = `<span style="color:#c0392b;font-weight:bold">${fmtCoeff(A)}</span>`;
-  const sT0 = `<span style="color:#d35400;font-weight:bold">${fmtCoeff(t0)}</span>`;
-  const sB  = `<span style="color:#1a7a40;font-weight:bold">${fmtCoeff(Math.abs(B))}</span>`;
-  const sign = B >= 0 ? '+' : '−';
-  return `${yName||'y'} = ${sA}·exp(−${xName||'x'}/${sT0}) ${sign} ${sB}`;
-}
-function fmtExp2Eq(A, t0, B, xName, yName) {
-  const sign = B >= 0 ? '+' : '−';
-  return `${yName||'y'} = ${fmtCoeff(A)}·exp(−${xName||'x'}/${fmtCoeff(t0)}) ${sign} ${fmtCoeff(Math.abs(B))}`;
-}
-
 // Affiche/cache la ligne degré et calcule la régression
 function _setDegreeRowVisibility(type) {
   document.getElementById('td-degree-row').style.display = type === 'polynomial' ? 'flex' : 'none';
-  document.getElementById('td-exp-row').style.display    = type === 'exp'        ? 'flex' : 'none';
 }
 
 function _computeAndShowReg(type, pts, xName, yName) {
@@ -2357,19 +2217,6 @@ function _computeAndShowReg(type, pts, xName, yName) {
     document.getElementById('td-eq').innerHTML   = fmtPolyEqHTML(reg.coeffs, xName, yName);
     document.getElementById('td-r2').textContent = 'R² = ' + reg.r2.toFixed(5);
     return reg;
-  } else if (type === 'exp') {
-    const sub = document.getElementById('td-exp-sub').value;
-    if (sub === 'exp2') {
-      const reg = computeExp2Reg(pts); if (!reg) return null;
-      document.getElementById('td-eq').innerHTML   = fmtExp2EqHTML(reg.A, reg.t0, reg.B, xName, yName);
-      document.getElementById('td-r2').textContent = 'R² = ' + reg.r2.toFixed(5);
-      return { ...reg, _sub: 'exp2' };
-    } else {
-      const reg = computeExp1Reg(pts); if (!reg) return null;
-      document.getElementById('td-eq').innerHTML   = fmtExp1EqHTML(reg.A, reg.t0, xName, yName);
-      document.getElementById('td-r2').textContent = 'R² = ' + reg.r2.toFixed(5);
-      return { ...reg, _sub: 'exp1' };
-    }
   } else {
     const reg = computeLinearReg(pts); if (!reg) return null;
     document.getElementById('td-eq').innerHTML   = fmtLinearEqHTML(reg.slope, reg.intercept, xName, yName);
@@ -2402,7 +2249,6 @@ function openTrendDlg() {
 
   document.getElementById('td-type').value   = tl.type || 'linear';
   document.getElementById('td-degree').value = tl.degree || 2;
-  if (tl.expSub) document.getElementById('td-exp-sub').value = tl.expSub;
   const reg = _computeAndShowReg(tl.type || 'linear', pts, xName, yName);
   if (!reg) return showMsg('Pas assez de points pour la régression.','err');
 
@@ -2421,7 +2267,7 @@ function applyTrendDlg() {
   tl.fwd     = +document.getElementById('td-fwd').value || 0;
   tl.bwd     = +document.getElementById('td-bwd').value || 0;
   tl.removed = false;
-  delete tl.slope; delete tl.intercept; delete tl.k; delete tl.coeffs; delete tl.degree; delete tl.expA; delete tl.expT0; delete tl.expB;
+  delete tl.slope; delete tl.intercept; delete tl.k; delete tl.coeffs; delete tl.degree;
 
   if (type === 'inverse') {
     const reg = computeInverseReg(pts); if (!reg) return;
@@ -2430,16 +2276,6 @@ function applyTrendDlg() {
     tl.degree = +document.getElementById('td-degree').value || 2;
     const reg = computePolyReg(pts, tl.degree); if (!reg) return;
     tl.coeffs = reg.coeffs; tl.r2 = reg.r2;
-  } else if (type === 'exp') {
-    const sub = document.getElementById('td-exp-sub').value;
-    tl.expSub = sub;
-    if (sub === 'exp2') {
-      const reg = computeExp2Reg(pts); if (!reg) return;
-      tl.expA = reg.A; tl.expT0 = reg.t0; tl.expB = reg.B; tl.r2 = reg.r2;
-    } else {
-      const reg = computeExp1Reg(pts); if (!reg) return;
-      tl.expA = reg.A; tl.expT0 = reg.t0; tl.r2 = reg.r2;
-    }
   } else {
     const reg = computeLinearReg(pts); if (!reg) return;
     tl.slope = reg.slope; tl.intercept = reg.intercept; tl.r2 = reg.r2;
@@ -2488,11 +2324,7 @@ function refreshTrendPanel() {
           ? fmtPolyEqHTML(tl.coeffs, xName, yName)
           : tl.type === 'inverse'
             ? fmtInverseEqHTML(tl.k, xName, yName)
-            : tl.type === 'exp'
-              ? (tl.expSub === 'exp2'
-                  ? fmtExp2EqHTML(tl.expA, tl.expT0, tl.expB, xName, yName)
-                  : fmtExp1EqHTML(tl.expA, tl.expT0, xName, yName))
-              : fmtLinearEqHTML(tl.slope, tl.intercept, xName, yName)}
+            : fmtLinearEqHTML(tl.slope, tl.intercept, xName, yName)}
       </span>
       <span style="color:#888;font-size:11px;white-space:nowrap;">R²&nbsp;=&nbsp;${tl.r2.toFixed(4)}</span>`;
     rows.appendChild(row);
@@ -2764,17 +2596,6 @@ function drawTrendlines(ctx, series, sc, yCols) {
         first ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
         first = false;
       }
-    } else if (tl.type === 'exp' && tl.expA !== undefined) {
-      const withB = tl.expSub === 'exp2';
-      const steps = 200; let first = true;
-      for (let i=0; i<=steps; i++) {
-        const x = x0 + (x1-x0)*i/steps;
-        const y = tl.expA * Math.exp(-x / tl.expT0) + (withB ? (tl.expB||0) : 0);
-        const ppx = toPx(x), ppy = toPy(y);
-        if (ppy < M.top - 5 || ppy > M.top + H + 5) { first=true; continue; }
-        first ? ctx.moveTo(ppx,ppy) : ctx.lineTo(ppx,ppy);
-        first = false;
-      }
     } else if (tl.slope !== undefined) {
       ctx.moveTo(toPx(x0), toPy(tl.slope*x0+tl.intercept));
       ctx.lineTo(toPx(x1), toPy(tl.slope*x1+tl.intercept));
@@ -2896,44 +2717,10 @@ function exportJPG() {
   const canvas = document.getElementById('chart-canvas');
   const xCol = getXCol(); const yCols = getYCols();
   const yNames = yCols.map(c => colNames[c]||'y').join('-');
-  const defaultName = 'courbe_' + yNames + '_f_' + (colNames[xCol]||'x');
-  const dlg = document.createElement('div');
-  dlg.style.cssText = 'position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;';
-  dlg.innerHTML = `
-    <div style="background:#fff;border-radius:8px;box-shadow:0 6px 32px rgba(0,0,0,0.28);width:380px;overflow:hidden;font-size:13px;">
-      <div style="background:#185FA5;color:#fff;padding:10px 16px;font-weight:bold;display:flex;justify-content:space-between;align-items:center;">
-        <span>↓ Exporter JPG</span>
-        <span id="_exp_close" style="cursor:pointer;font-size:18px;line-height:1;">×</span>
-      </div>
-      <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
-        <label style="font-size:12px;color:#555;">Nom du fichier&nbsp;:</label>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <input id="_exp_name" type="text" value="${defaultName}"
-            style="flex:1;padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px;outline:none;"
-            spellcheck="false"/>
-          <span style="color:#888;font-size:12px;">.jpg</span>
-        </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button id="_exp_cancel" style="padding:5px 14px;border:1px solid #bbb;border-radius:4px;background:#f5f5f5;cursor:pointer;">Annuler</button>
-          <button id="_exp_ok" style="padding:5px 14px;border:none;border-radius:4px;background:#185FA5;color:#fff;font-weight:bold;cursor:pointer;">Télécharger</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(dlg);
-  const inp = dlg.querySelector('#_exp_name');
-  setTimeout(() => { inp.focus(); inp.select(); }, 30);
-  const doExport = () => {
-    const name = (inp.value.trim() || defaultName).replace(/\.jpg$/i, '');
-    const link = document.createElement('a');
-    link.download = name + '.jpg';
-    link.href = canvas.toDataURL('image/jpeg', 0.92);
-    link.click();
-    document.body.removeChild(dlg);
-  };
-  dlg.querySelector('#_exp_ok').addEventListener('click', doExport);
-  dlg.querySelector('#_exp_cancel').addEventListener('click', () => document.body.removeChild(dlg));
-  dlg.querySelector('#_exp_close').addEventListener('click', () => document.body.removeChild(dlg));
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter') doExport(); if (e.key === 'Escape') document.body.removeChild(dlg); });
+  const link = document.createElement('a');
+  link.download = 'courbe_' + yNames + '_f_' + (colNames[xCol]||'x') + '.jpg';
+  link.href = canvas.toDataURL('image/jpeg', 0.92);
+  link.click();
 }
 
 // ══════════════════════════════════════════
@@ -3165,13 +2952,16 @@ function copySVG(btn) {
 
   svg += '</svg>';
 
-  navigator.clipboard.writeText(svg).then(function() {
+  function flashSVG() {
     const orig = btn.textContent;
-    btn.textContent = '✓ Copie !';
+    btn.textContent = 'Copie !';
     btn.style.background = '#27ae60';
     setTimeout(function(){ btn.textContent = orig; btn.style.background = '#185FA5'; }, 1800);
     showMsg('SVG copie — collez dans un champ texte Moodle.', 'ok');
-  }).catch(function(){ showMsg('Copie non support\xe9e par ce navigateur.', 'err'); });
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(svg).then(flashSVG).catch(function(){ fallbackCopy(svg, flashSVG); });
+  } else { fallbackCopy(svg, flashSVG); }
 }
 
 </script>
