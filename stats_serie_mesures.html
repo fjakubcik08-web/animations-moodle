@@ -9,8 +9,8 @@
 
 body {
   font-family: 'Segoe UI', Arial, sans-serif;
-  background: #0e1520;
-  color: #c8d8f0;
+  background: #f0f4f8;
+  color: #222;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -20,120 +20,135 @@ body {
 
 /* ── HEADER ── */
 #header {
-  background: #1a2236;
-  border-bottom: 2px solid #2a3a5c;
+  background: #fff;
+  border-bottom: 2px solid #d0dce8;
   padding: 8px 16px;
   display: flex;
   align-items: center;
   gap: 16px;
   flex-shrink: 0;
   min-height: 44px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
 }
-h1 { font-size: 1rem; color: #90b8e0; letter-spacing: 0.5px; }
+h1 { font-size: 1rem; color: #1a5a9a; letter-spacing: 0.4px; }
 
 #n-tag {
   margin-left: auto;
   font-size: 0.72rem;
-  color: #44aa66;
-  background: rgba(0,80,40,0.3);
-  border: 1px solid #2a6a44;
+  color: #1a7a40;
+  background: #e6f7ee;
+  border: 1px solid #70c090;
   border-radius: 12px;
   padding: 2px 10px;
   display: none;
 }
 
-/* ── INPUT ZONE ── */
-#input-zone {
+/* ── LAYOUT PRINCIPAL : 3 colonnes ── */
+#main {
+  flex: 1;
   display: flex;
-  gap: 12px;
-  padding: 10px 14px;
-  background: #111824;
-  border-bottom: 2px solid #1e2d45;
-  flex-shrink: 0;
-  align-items: flex-start;
+  min-height: 0;
+  overflow: hidden;
 }
 
-/* Colonne gauche : label + textarea */
-#paste-col {
+/* ── COLONNE GAUCHE : saisie ── */
+#left-panel {
+  width: 210px;
+  flex-shrink: 0;
+  background: #fff;
+  border-right: 2px solid #d0dce8;
   display: flex;
   flex-direction: column;
-  flex: 1;
-  gap: 4px;
+  padding: 12px 12px 10px;
+  gap: 10px;
+  box-shadow: 2px 0 6px rgba(0,0,0,0.04);
 }
+
+.panel-title {
+  font-size: 0.62rem;
+  color: #8090a8;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  flex-shrink: 0;
+}
+
 .paste-label {
   font-size: 0.68rem;
-  color: #3a5a80;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  color: #7090b0;
+  letter-spacing: 0.5px;
 }
+
 #paste-area {
   flex: 1;
-  height: 82px;
-  background: #0a0f1a;
-  border: 1px solid #2a3a5c;
+  min-height: 0;
+  background: #f8fbff;
+  border: 1px solid #b8cce0;
   border-radius: 6px;
-  color: #a0c8e8;
+  color: #1a3a60;
   font-family: 'Courier New', monospace;
-  font-size: 0.8rem;
-  padding: 6px 10px;
+  font-size: 0.78rem;
+  padding: 6px 8px;
   resize: none;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
   user-select: text;
 }
-#paste-area:focus { border-color: #4080c0; box-shadow: 0 0 0 2px rgba(64,128,192,0.15); }
-#paste-area::placeholder { color: #2a3a58; font-size: 0.75rem; }
+#paste-area:focus {
+  border-color: #4488cc;
+  box-shadow: 0 0 0 3px rgba(68,136,204,0.12);
+}
+#paste-area::placeholder { color: #b0c4d8; font-size: 0.72rem; }
 
-/* Colonne droite : contrôles */
 #controls {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-width: 220px;
+  gap: 7px;
+  flex-shrink: 0;
 }
 
 .ctrl-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
+  gap: 6px;
+  font-size: 0.78rem;
 }
-.ctrl-label { color: #5a7a9a; min-width: 68px; font-size: 0.78rem; }
+.ctrl-label { color: #6080a0; min-width: 60px; font-size: 0.76rem; }
 
 #bars-slider {
   flex: 1;
   cursor: pointer;
-  accent-color: #4488cc;
+  accent-color: #2266bb;
   height: 4px;
 }
 #bars-val {
   font-weight: bold;
-  color: #88c0f0;
+  color: #1a5a9a;
   min-width: 22px;
   text-align: right;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
 }
 
 #btn-analyse {
-  background: linear-gradient(160deg, #1e5298, #0e2d5a);
-  color: #70b8ff;
-  border: 1px solid #3a6aaa;
+  background: linear-gradient(160deg, #1e6abb, #0e3d80);
+  color: #fff;
+  border: none;
   border-radius: 7px;
-  padding: 8px 0;
+  padding: 9px 0;
   cursor: pointer;
   font-size: 0.88rem;
   font-weight: bold;
   letter-spacing: 0.5px;
   transition: all 0.15s;
   width: 100%;
+  box-shadow: 0 2px 8px rgba(30,106,187,0.3);
 }
-#btn-analyse:hover { background: linear-gradient(160deg, #2a60a8, #1a3d70); border-color: #5a8aee; color: #a0d0ff; }
+#btn-analyse:hover  { background: linear-gradient(160deg, #2a78c8, #1a4a90); box-shadow: 0 3px 12px rgba(30,106,187,0.4); }
 #btn-analyse:active { transform: scale(0.98); }
 
 #btn-reset-data {
   background: transparent;
-  color: #4a6888;
-  border: 1px solid #2a3a5c;
+  color: #8090a8;
+  border: 1px solid #c8d8e8;
   border-radius: 5px;
   padding: 4px 10px;
   cursor: pointer;
@@ -141,52 +156,49 @@ h1 { font-size: 1rem; color: #90b8e0; letter-spacing: 0.5px; }
   transition: all 0.15s;
   width: 100%;
 }
-#btn-reset-data:hover { color: #ff9999; border-color: #804040; background: rgba(80,0,0,0.15); }
+#btn-reset-data:hover { color: #cc4444; border-color: #e8b0b0; background: #fff5f5; }
 
 #error-msg {
   display: none;
-  color: #ff8080;
-  font-size: 0.72rem;
-  padding: 4px 8px;
-  background: rgba(80,0,0,0.25);
+  color: #cc3333;
+  font-size: 0.7rem;
+  padding: 4px 7px;
+  background: #fff0f0;
   border-radius: 4px;
-  border: 1px solid #6a2828;
+  border: 1px solid #e8b0b0;
 }
 
-/* ── RESULTS ── */
-#results {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-  overflow: hidden;
+#shortcut-hint {
+  font-size: 0.56rem;
+  color: #c0ccd8;
+  text-align: center;
 }
 
-/* ── HISTOGRAM ── */
+/* ── COLONNE CENTRALE : histogramme ── */
 #histogram-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 10px 14px 10px 10px;
+  padding: 10px 10px 10px 12px;
   min-width: 0;
   gap: 6px;
 }
-.panel-title {
-  font-size: 0.62rem;
-  color: #2a4a6a;
-  text-transform: uppercase;
-  letter-spacing: 2.5px;
-  flex-shrink: 0;
-}
+
 #canvas-wrap {
   flex: 1;
   position: relative;
   min-height: 0;
+  background: #fff;
+  border: 1px solid #d0dce8;
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.05);
 }
 #histo-canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  cursor: crosshair;
 }
 #placeholder {
   position: absolute;
@@ -196,111 +208,115 @@ h1 { font-size: 1rem; color: #90b8e0; letter-spacing: 0.5px; }
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #1e3050;
   pointer-events: none;
 }
-.ph-icon { font-size: 3rem; opacity: 0.35; }
-.ph-text { font-size: 0.75rem; letter-spacing: 1px; color: #253a55; }
+.ph-icon { font-size: 3rem; opacity: 0.2; }
+.ph-text  { font-size: 0.75rem; letter-spacing: 0.5px; color: #b0c0d0; }
 
-/* ── STATS PANEL — style calculatrice ── */
+/* ── COLONNE DROITE : stats ── */
 #stats-panel {
-  width: 215px;
+  width: 210px;
   flex-shrink: 0;
-  background: #080c14;
-  border-left: 2px solid #1a2640;
+  background: #f8fbff;
+  border-left: 2px solid #d0dce8;
   display: flex;
   flex-direction: column;
   padding: 10px 10px 8px;
   gap: 8px;
 }
 
-/* Écran calculatrice */
+/* Écran calculatrice style Casio/NumWorks clair */
 #calc-screen {
   flex: 1;
-  background: #050e05;
-  border: 2px solid #163016;
+  background: #e8f0d8;
+  border: 2px solid #b0c890;
   border-radius: 8px;
   padding: 10px 12px 8px;
   overflow-y: auto;
-  box-shadow: inset 0 3px 12px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(0,100,0,0.15);
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.07), inset 0 0 0 1px rgba(160,200,100,0.2);
   scrollbar-width: none;
 }
 #calc-screen::-webkit-scrollbar { display: none; }
 
 .screen-title {
   font-family: 'Courier New', monospace;
-  color: #1e5a1e;
+  color: #4a6a20;
   font-size: 0.58rem;
   letter-spacing: 2.5px;
   text-transform: uppercase;
-  border-bottom: 1px solid #0e300e;
+  border-bottom: 1px solid #c0d8a0;
   padding-bottom: 5px;
   margin-bottom: 6px;
 }
 
-/* Blocs de stats (groupes) */
-.stat-block {
-  margin-bottom: 5px;
-}
+.stat-block { margin-bottom: 5px; }
 .stat-block-title {
   font-family: 'Courier New', monospace;
   font-size: 0.52rem;
-  color: #1e6a1e;
-  letter-spacing: 1.5px;
+  color: #6a8a40;
+  letter-spacing: 1px;
   text-transform: uppercase;
   margin-bottom: 2px;
-  opacity: 0.7;
+  opacity: 0.75;
 }
-
 .stat-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   padding: 3px 0 2px;
-  border-bottom: 1px solid rgba(0,50,0,0.6);
+  border-bottom: 1px solid rgba(160,200,100,0.35);
   opacity: 0;
   transform: translateX(6px);
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
-.stat-row.visible {
-  opacity: 1;
-  transform: translateX(0);
-}
+.stat-row.visible { opacity: 1; transform: translateX(0); }
 .stat-row:last-child { border-bottom: none; }
 
 .stat-name {
   font-family: 'Courier New', monospace;
-  color: #3a9a3a;
+  color: #3a6010;
   font-size: 0.72rem;
 }
 .stat-val {
   font-family: 'Courier New', monospace;
-  color: #00e060;
+  color: #1a4800;
   font-size: 0.82rem;
   font-weight: bold;
-  text-shadow: 0 0 8px rgba(0,180,60,0.6);
-  letter-spacing: 0.5px;
 }
 
-/* Pied : marque */
 #calc-footer {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   flex-shrink: 0;
 }
 #calc-brand {
   text-align: center;
   font-size: 0.5rem;
-  color: #1a2a3a;
+  color: #b0c0d0;
   letter-spacing: 2px;
   text-transform: uppercase;
 }
-#shortcut-hint {
-  text-align: center;
-  font-size: 0.58rem;
-  color: #1e3050;
+
+/* ── TOOLTIP ── */
+#histo-tooltip {
+  position: fixed;
+  pointer-events: none;
+  display: none;
+  background: #fff;
+  border: 1px solid #b0c8e0;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  color: #1a3a60;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+  z-index: 100;
+  line-height: 1.65;
+  white-space: nowrap;
 }
+#histo-tooltip .tt-interval { font-weight: bold; color: #1a5a9a; font-family: 'Courier New', monospace; }
+#histo-tooltip .tt-count    { color: #333; }
+#histo-tooltip .tt-freq     { color: #888; font-size: 0.7rem; }
 </style>
 </head>
 <body>
@@ -311,30 +327,30 @@ h1 { font-size: 1rem; color: #90b8e0; letter-spacing: 0.5px; }
   <span id="n-tag"></span>
 </div>
 
-<!-- ═══ ZONE DE SAISIE ═══ -->
-<div id="input-zone">
-  <div id="paste-col">
-    <span class="paste-label">▸ Données (colle ton tableau ici)</span>
+<!-- ═══ LAYOUT 3 COLONNES ═══ -->
+<div id="main">
+
+  <!-- GAUCHE : saisie des données -->
+  <div id="left-panel">
+    <div class="panel-title">◆ Données</div>
+    <span class="paste-label">Colle le tableau Moodle ici :</span>
     <textarea id="paste-area"
-      placeholder="Colle ici les valeurs issues de Moodle&#10;(une par ligne, ou séparées par tabulations / virgules / points-virgules)&#10;&#10;Ex : 47.3&#10;     48.1&#10;     46.9&#10;     …"></textarea>
-  </div>
+      placeholder="Une valeur par ligne&#10;&#10;Ex :&#10;47.3&#10;48.1&#10;46.9&#10;47.8&#10;…"></textarea>
 
-  <div id="controls">
-    <div class="ctrl-row">
-      <span class="ctrl-label">Bâtons :</span>
-      <input type="range" id="bars-slider" min="4" max="28" value="10">
-      <span id="bars-val">10</span>
+    <div id="controls">
+      <div class="ctrl-row">
+        <span class="ctrl-label">Classes :</span>
+        <input type="range" id="bars-slider" min="10" max="50" value="20">
+        <span id="bars-val">20</span>
+      </div>
+      <button id="btn-analyse">⚡ Analyser</button>
+      <button id="btn-reset-data">↺ Réinitialiser</button>
+      <div id="error-msg"></div>
+      <div id="shortcut-hint">Ctrl+Entrée pour analyser</div>
     </div>
-    <button id="btn-analyse">⚡ Analyser</button>
-    <button id="btn-reset-data">↺ Réinitialiser</button>
-    <div id="error-msg"></div>
   </div>
-</div>
 
-<!-- ═══ RÉSULTATS ═══ -->
-<div id="results">
-
-  <!-- Histogramme -->
+  <!-- CENTRE : histogramme -->
   <div id="histogram-panel">
     <div class="panel-title">◆ Histogramme de répartition</div>
     <div id="canvas-wrap">
@@ -346,61 +362,92 @@ h1 { font-size: 1rem; color: #90b8e0; letter-spacing: 0.5px; }
     </div>
   </div>
 
-  <!-- Panneau stats style calculatrice -->
+  <!-- DROITE : statistiques -->
   <div id="stats-panel">
     <div id="calc-screen">
       <div class="screen-title">Statistiques</div>
       <div id="stats-content"></div>
     </div>
     <div id="calc-footer">
-      <div id="shortcut-hint">Ctrl+Entrée pour analyser</div>
       <div id="calc-brand">FJ Analytics · Seconde</div>
     </div>
   </div>
 
 </div>
 
+<div id="histo-tooltip"></div>
+
 <script>
-/* ═══════════════════════════════════════════════
-   RÉFÉRENCES DOM
-═══════════════════════════════════════════════ */
-const slider      = document.getElementById('bars-slider');
-const barsVal     = document.getElementById('bars-val');
-const btnAnalyse  = document.getElementById('btn-analyse');
-const btnReset    = document.getElementById('btn-reset-data');
-const textarea    = document.getElementById('paste-area');
-const errorMsg    = document.getElementById('error-msg');
-const nTag        = document.getElementById('n-tag');
-const placeholder = document.getElementById('placeholder');
-const canvas      = document.getElementById('histo-canvas');
-const ctx         = canvas.getContext('2d');
+const slider       = document.getElementById('bars-slider');
+const barsVal      = document.getElementById('bars-val');
+const btnAnalyse   = document.getElementById('btn-analyse');
+const btnReset     = document.getElementById('btn-reset-data');
+const textarea     = document.getElementById('paste-area');
+const errorMsg     = document.getElementById('error-msg');
+const nTag         = document.getElementById('n-tag');
+const placeholder  = document.getElementById('placeholder');
+const canvas       = document.getElementById('histo-canvas');
+const ctx          = canvas.getContext('2d');
 const statsContent = document.getElementById('stats-content');
+const tooltip      = document.getElementById('histo-tooltip');
 
-let currentData = null;   // tableau trié
+let currentData = null;
 let animFrame   = null;
+let currentBins = null;   // { bins, min, step, nBars } pour le tooltip
 
-/* ═══════════════════════════════════════════════
-   ÉVÉNEMENTS
-═══════════════════════════════════════════════ */
+/* Marges partagées entre drawHistogram et le tooltip */
+const PAD_L = 46, PAD_R = 14, PAD_T = 20, PAD_B = 48;
+
+/* ── TOOLTIP ── */
+canvas.addEventListener('mousemove', e => {
+  if (!currentBins) return;
+  const rect   = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const px     = (e.clientX - rect.left) * scaleX;
+
+  const { bins, min, step, nBars } = currentBins;
+  const plotW = canvas.width - PAD_L - PAD_R;
+  const barW  = plotW / nBars;
+  const idx   = Math.floor((px - PAD_L) / barW);
+
+  if (idx < 0 || idx >= nBars) { tooltip.style.display = 'none'; return; }
+
+  const lo    = min + idx * step;
+  const hi    = min + (idx + 1) * step;
+  const count = bins[idx];
+  const total = bins.reduce((s, v) => s + v, 0);
+  const pct   = ((count / total) * 100).toFixed(1);
+
+  tooltip.innerHTML =
+    `<div class="tt-interval">[${fmt(lo)} ; ${fmt(hi)}[</div>` +
+    `<div class="tt-count">Effectif : <strong>${count}</strong></div>` +
+    `<div class="tt-freq">Fréquence : ${pct} %</div>`;
+
+  const TW = 185, TH = 72;
+  let tx = e.clientX + 14;
+  let ty = e.clientY - 10;
+  if (tx + TW > window.innerWidth)  tx = e.clientX - TW - 10;
+  if (ty + TH > window.innerHeight) ty = e.clientY - TH - 10;
+  tooltip.style.left    = tx + 'px';
+  tooltip.style.top     = ty + 'px';
+  tooltip.style.display = 'block';
+});
+canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+
+/* ── ÉVÉNEMENTS ── */
 slider.addEventListener('input', () => {
   barsVal.textContent = slider.value;
   if (currentData) drawHistogram(currentData, +slider.value);
 });
-
 btnReset.addEventListener('click', reset);
-
 btnAnalyse.addEventListener('click', analyse);
+textarea.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') analyse(); });
 
-textarea.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key === 'Enter') analyse();
-});
-
-/* ═══════════════════════════════════════════════
-   RESET
-═══════════════════════════════════════════════ */
+/* ── RESET ── */
 function reset() {
   textarea.value = '';
   currentData = null;
+  currentBins = null;
   nTag.style.display = 'none';
   statsContent.innerHTML = '';
   placeholder.style.display = 'flex';
@@ -409,77 +456,51 @@ function reset() {
   textarea.focus();
 }
 
-/* ═══════════════════════════════════════════════
-   PARSING
-═══════════════════════════════════════════════ */
+/* ── PARSING ── */
 function parseData(raw) {
-  // Gère virgule décimale française (47,3 → 47.3)
-  // Stratégie : si une ligne ne contient qu'un seul nombre avec virgule,
-  // c'est un séparateur décimal ; sinon c'est un séparateur de valeurs.
-  // → on remplace la virgule par un point uniquement si elle est entre deux groupes de chiffres
   const normalized = raw
-    .replace(/(\d),(\d)/g, '$1.$2')  // 47,3 → 47.3  (décimale française)
-    .replace(/[;,\t|]/g, ' ');       // séparateurs multiples → espace
-
+    .replace(/(\d),(\d)/g, '$1.$2')   // virgule décimale française
+    .replace(/[;,\t|]/g, ' ');
   const nums = normalized.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi);
   if (!nums) return null;
   return nums.map(Number).filter(n => isFinite(n));
 }
 
-/* ═══════════════════════════════════════════════
-   ANALYSER
-═══════════════════════════════════════════════ */
+/* ── ANALYSER ── */
 function analyse() {
   hideError();
   const raw = textarea.value.trim();
   if (!raw) { showError('Aucune donnée collée.'); return; }
-
   const data = parseData(raw);
-  if (!data || data.length < 2) {
-    showError('Données invalides ou insuffisantes (minimum 2 valeurs).');
-    return;
-  }
-
+  if (!data || data.length < 2) { showError('Données invalides (min. 2 valeurs).'); return; }
   currentData = data.slice().sort((a, b) => a - b);
-
   nTag.textContent = `n = ${data.length} mesures`;
   nTag.style.display = 'inline';
   placeholder.style.display = 'none';
-
   displayStats(currentData);
   drawHistogram(currentData, +slider.value);
 }
 
-function showError(msg) {
-  errorMsg.textContent = '⚠ ' + msg;
-  errorMsg.style.display = 'block';
-}
-function hideError() { errorMsg.style.display = 'none'; }
+function showError(msg) { errorMsg.textContent = '⚠ ' + msg; errorMsg.style.display = 'block'; }
+function hideError()    { errorMsg.style.display = 'none'; }
 
-/* ═══════════════════════════════════════════════
-   STATISTIQUES
-═══════════════════════════════════════════════ */
-
-/* Quantile par interpolation linéaire (méthode NumWorks) */
-function quantile(sorted, p) {
-  if (sorted.length === 1) return sorted[0];
-  const pos = p * (sorted.length - 1);
-  const lo  = Math.floor(pos);
-  const hi  = Math.ceil(pos);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
-}
-
-/* Formatage intelligent : 4 chiffres significatifs */
+/* ── FORMAT ── */
 function fmt(x) {
   if (!isFinite(x)) return '—';
   if (x === 0) return '0';
   const abs = Math.abs(x);
   if (abs >= 1e6 || abs < 1e-3) return x.toExponential(3);
-  // Nombre de décimales pour avoir ~4 chiffres significatifs
   const mag = Math.floor(Math.log10(abs));
-  const dec = Math.max(0, 3 - mag);
-  return x.toFixed(dec);
+  return x.toFixed(Math.max(0, 3 - mag));
+}
+
+/* ── STATS ── */
+function quantile(sorted, p) {
+  if (sorted.length === 1) return sorted[0];
+  const pos = p * (sorted.length - 1);
+  const lo  = Math.floor(pos), hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
 function computeStats(sorted) {
@@ -487,87 +508,67 @@ function computeStats(sorted) {
   const sumX = sorted.reduce((s, v) => s + v, 0);
   const mean = sumX / n;
   const ssq  = sorted.reduce((s, v) => s + (v - mean) ** 2, 0);
-  const sigN   = Math.sqrt(ssq / n);
-  const sigN1  = n > 1 ? Math.sqrt(ssq / (n - 1)) : 0;
-  const min  = sorted[0];
-  const max  = sorted[n - 1];
-  const q1   = quantile(sorted, 0.25);
-  const med  = quantile(sorted, 0.50);
-  const q3   = quantile(sorted, 0.75);
-  return { n, sumX, mean, sigN, sigN1, min, max, q1, med, q3,
-           etendue: max - min, iqr: q3 - q1 };
+  return {
+    n, sumX, mean,
+    sigN:    Math.sqrt(ssq / n),
+    sigN1:   n > 1 ? Math.sqrt(ssq / (n - 1)) : 0,
+    min:     sorted[0],
+    max:     sorted[n - 1],
+    q1:      quantile(sorted, 0.25),
+    med:     quantile(sorted, 0.50),
+    q3:      quantile(sorted, 0.75),
+    etendue: sorted[n - 1] - sorted[0],
+  };
 }
 
 function displayStats(sorted) {
   const s = computeStats(sorted);
-
   const groups = [
-    {
-      title: '— Effectif & position —',
-      rows: [
+    { title: '— Effectif & position —', rows: [
         { name: 'n',       val: s.n.toString() },
-        { name: 'x̄',      val: fmt(s.mean)   },
-        { name: 'Σx',      val: fmt(s.sumX)   },
-      ]
-    },
-    {
-      title: '— Dispersion —',
-      rows: [
-        { name: 'σn',      val: fmt(s.sigN)   },
-        { name: 'σn-1',    val: fmt(s.sigN1)  },
+        { name: 'x̄',      val: fmt(s.mean)    },
+        { name: 'Σx',      val: fmt(s.sumX)    },
+    ]},
+    { title: '— Dispersion —', rows: [
+        { name: 'σn',      val: fmt(s.sigN)    },
+        { name: 'σn-1',    val: fmt(s.sigN1)   },
         { name: 'étendue', val: fmt(s.etendue) },
-      ]
-    },
-    {
-      title: '— Quartiles —',
-      rows: [
+    ]},
+    { title: '— Quartiles —', rows: [
         { name: 'min',  val: fmt(s.min) },
         { name: 'Q1',   val: fmt(s.q1)  },
         { name: 'méd',  val: fmt(s.med) },
         { name: 'Q3',   val: fmt(s.q3)  },
         { name: 'max',  val: fmt(s.max) },
-      ]
-    },
+    ]},
   ];
 
   statsContent.innerHTML = '';
   let delay = 0;
-
   groups.forEach(group => {
     const block = document.createElement('div');
     block.className = 'stat-block';
-
     const title = document.createElement('div');
     title.className = 'stat-block-title';
     title.textContent = group.title;
     block.appendChild(title);
-
     group.rows.forEach(r => {
       const row = document.createElement('div');
       row.className = 'stat-row';
-      row.innerHTML =
-        `<span class="stat-name">${r.name}</span>` +
-        `<span class="stat-val">${r.val}</span>`;
+      row.innerHTML = `<span class="stat-name">${r.name}</span><span class="stat-val">${r.val}</span>`;
       block.appendChild(row);
-      // Animation décalée
-      const d = delay;
-      setTimeout(() => row.classList.add('visible'), d);
+      setTimeout(() => row.classList.add('visible'), delay);
       delay += 55;
     });
-
     statsContent.appendChild(block);
   });
 }
 
-/* ═══════════════════════════════════════════════
-   HISTOGRAMME
-═══════════════════════════════════════════════ */
+/* ── HISTOGRAMME ── */
 function clearCanvas() {
-  const W = canvas.offsetWidth || 100;
-  const H = canvas.offsetHeight || 100;
-  canvas.width  = W;
-  canvas.height = H;
-  ctx.clearRect(0, 0, W, H);
+  canvas.width  = canvas.offsetWidth  || 100;
+  canvas.height = canvas.offsetHeight || 100;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
 function drawHistogram(sorted, nBars) {
@@ -575,105 +576,97 @@ function drawHistogram(sorted, nBars) {
   const max   = sorted[sorted.length - 1];
   const range = max - min;
 
-  /* Cas dégénéré : toutes les valeurs identiques */
+  sizeCanvas();
+  const W = canvas.width, H = canvas.height;
+
   if (range === 0) {
-    sizeCanvas();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#2a4a6a';
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#6090b0';
     ctx.font = '13px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('Toutes les valeurs sont identiques : ' + fmt(min),
-      canvas.width / 2, canvas.height / 2);
+    ctx.fillText('Toutes les valeurs sont identiques : ' + fmt(min), W / 2, H / 2);
     return;
   }
 
-  const step  = range / nBars;
-  const bins  = new Array(nBars).fill(0);
+  const step = range / nBars;
+  const bins = new Array(nBars).fill(0);
   sorted.forEach(v => {
     let idx = Math.floor((v - min) / step);
-    if (idx >= nBars) idx = nBars - 1;  // inclure le max dans le dernier bac
+    if (idx >= nBars) idx = nBars - 1;
     bins[idx]++;
   });
-
+  currentBins = { bins, min, step, nBars };
   const maxFreq = Math.max(...bins);
 
-  sizeCanvas();
-  const W = canvas.width;
-  const H = canvas.height;
-
-  // Marges
-  const PAD_L = 44, PAD_R = 14, PAD_T = 20, PAD_B = 46;
-  const plotW  = W - PAD_L - PAD_R;
-  const plotH  = H - PAD_T - PAD_B;
-  const barW   = plotW / nBars;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+  const barW  = plotW / nBars;
 
   if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
-
-  const t0  = performance.now();
-  const DUR = 500;   // ms
-
+  const t0 = performance.now();
+  const DUR = 480;
   function easeOut(t) { return 1 - (1 - t) ** 3; }
 
   function frame(now) {
-    const t = Math.min((now - t0) / DUR, 1);
+    const t        = Math.min((now - t0) / DUR, 1);
     const progress = easeOut(t);
 
     ctx.clearRect(0, 0, W, H);
 
-    /* Fond quadrillé */
+    /* Fond blanc zone tracé */
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(PAD_L, PAD_T, plotW, plotH);
+
+    /* Quadrillage horizontal */
     const nGridY = 5;
     for (let i = 0; i <= nGridY; i++) {
       const gy = PAD_T + plotH - plotH * i / nGridY;
-      ctx.strokeStyle = i === 0 ? 'rgba(42,74,110,0.9)' : 'rgba(26,48,76,0.5)';
-      ctx.lineWidth = i === 0 ? 1.2 : 0.5;
+      ctx.strokeStyle = i === 0 ? '#b0c8e0' : '#e8eef6';
+      ctx.lineWidth   = i === 0 ? 1.2 : 0.7;
       ctx.beginPath(); ctx.moveTo(PAD_L, gy); ctx.lineTo(PAD_L + plotW, gy); ctx.stroke();
-
-      // Label Y
       const labelY = Math.round(maxFreq * i / nGridY);
-      ctx.fillStyle = '#3a5c7a';
+      ctx.fillStyle = '#8090a8';
       ctx.font = '9px Arial';
       ctx.textAlign = 'right';
       ctx.fillText(labelY, PAD_L - 6, gy + 3);
     }
 
     /* Axes */
-    ctx.strokeStyle = '#2a4a6a';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#8090a8';
+    ctx.lineWidth   = 1.5;
     ctx.beginPath();
     ctx.moveTo(PAD_L, PAD_T); ctx.lineTo(PAD_L, PAD_T + plotH);
     ctx.lineTo(PAD_L + plotW, PAD_T + plotH);
     ctx.stroke();
 
-    /* Bâtons */
+    /* Barres */
     bins.forEach((count, i) => {
       const h  = (count / maxFreq) * plotH * progress;
       const bx = PAD_L + i * barW;
       const by = PAD_T + plotH - h;
-      const bw = Math.max(barW - 2, 1);
-
+      const bw = Math.max(barW - 1.5, 1);
       if (h < 0.5) return;
 
-      /* Dégradé bleu */
       const grad = ctx.createLinearGradient(bx, by, bx, PAD_T + plotH);
-      grad.addColorStop(0,   '#5aabff');
-      grad.addColorStop(0.5, '#2266cc');
-      grad.addColorStop(1,   '#0e2255');
+      grad.addColorStop(0,   '#5aaae8');
+      grad.addColorStop(0.6, '#2266bb');
+      grad.addColorStop(1,   '#0e3a88');
       ctx.fillStyle = grad;
-      ctx.fillRect(bx + 1, by, bw, h);
+      ctx.fillRect(bx + 0.75, by, bw, h);
 
-      /* Ligne supérieure lumineuse */
-      ctx.fillStyle = 'rgba(180,220,255,0.55)';
-      ctx.fillRect(bx + 1, by, bw, 2);
+      /* Reflet */
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillRect(bx + 0.75, by, bw, Math.min(h, 4));
 
-      /* Bordure latérale discrète */
-      ctx.strokeStyle = 'rgba(80,160,255,0.25)';
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(bx + 1, by, bw, h);
+      /* Bordure */
+      ctx.strokeStyle = 'rgba(34,102,187,0.2)';
+      ctx.lineWidth   = 0.5;
+      ctx.strokeRect(bx + 0.75, by, bw, h);
 
-      /* Effectif au-dessus du bâton (visible seulement à la fin) */
-      if (t > 0.88 && count > 0 && h > 12) {
-        const fs = Math.max(7, Math.min(10, barW * 0.45));
-        ctx.fillStyle = '#6aadff';
+      /* Effectif au-dessus (fin d'animation, barre assez haute) */
+      if (t > 0.88 && count > 0 && h > 14) {
+        const fs = Math.max(6.5, Math.min(10, barW * 0.5));
+        ctx.fillStyle = '#1a4a88';
         ctx.font = `${fs}px Arial`;
         ctx.textAlign = 'center';
         ctx.fillText(count, bx + barW / 2, by - 3);
@@ -681,65 +674,48 @@ function drawHistogram(sorted, nBars) {
     });
 
     /* Labels axe X */
-    ctx.fillStyle = '#3a5c7a';
+    ctx.fillStyle = '#7090a8';
     ctx.font = '9px Arial';
     ctx.textAlign = 'center';
-
-    // On affiche un label tous les N bâtons pour ne pas surcharger
     const skipStep = Math.max(1, Math.ceil(nBars / 7));
     for (let i = 0; i <= nBars; i += skipStep) {
       const xval = min + i * step;
       const xpx  = PAD_L + i * barW;
       ctx.fillText(fmt(xval), xpx, PAD_T + plotH + 14);
-      ctx.strokeStyle = '#2a4060';
-      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = '#c0ccd8'; ctx.lineWidth = 0.5;
       ctx.beginPath(); ctx.moveTo(xpx, PAD_T + plotH); ctx.lineTo(xpx, PAD_T + plotH + 4); ctx.stroke();
     }
-    // Toujours afficher le max en dernier
-    const lastX = PAD_L + plotW;
-    ctx.fillStyle = '#3a5c7a';
-    ctx.fillText(fmt(max), lastX, PAD_T + plotH + 14);
+    ctx.fillStyle = '#7090a8';
+    ctx.fillText(fmt(max), PAD_L + plotW, PAD_T + plotH + 14);
 
-    /* Label axe Y (rotaté) */
+    /* Label axe Y */
     ctx.save();
     ctx.translate(12, PAD_T + plotH / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillStyle = '#2a4060';
-    ctx.font = '9px Arial';
-    ctx.textAlign = 'center';
+    ctx.fillStyle = '#9090a8'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
     ctx.fillText('Effectif', 0, 0);
     ctx.restore();
 
-    /* Titre de l'axe X (valeurs) */
-    ctx.fillStyle = '#2a4060';
-    ctx.font = '9px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('Valeurs mesurées', PAD_L + plotW / 2, PAD_T + plotH + 32);
+    /* Label axe X bas */
+    ctx.fillStyle = '#9090a8'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
+    ctx.fillText('Valeurs mesurées', PAD_L + plotW / 2, PAD_T + plotH + 34);
 
     if (t < 1) animFrame = requestAnimationFrame(frame);
     else animFrame = null;
   }
-
   animFrame = requestAnimationFrame(frame);
 }
 
 function sizeCanvas() {
-  const wrap = canvas.parentElement;
+  const wrap    = canvas.parentElement;
   canvas.width  = wrap.offsetWidth;
   canvas.height = wrap.offsetHeight;
 }
 
-/* ═══════════════════════════════════════════════
-   REDIMENSIONNEMENT
-═══════════════════════════════════════════════ */
-const ro = new ResizeObserver(() => {
+new ResizeObserver(() => {
   if (currentData) drawHistogram(currentData, +slider.value);
-});
-ro.observe(document.getElementById('canvas-wrap'));
+}).observe(document.getElementById('canvas-wrap'));
 
-/* ═══════════════════════════════════════════════
-   INIT
-═══════════════════════════════════════════════ */
 textarea.focus();
 </script>
 </body>
