@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulateur Cloze — Moodle</title>
+<style>
+  :root {
+    --primary: #c44d34;
+    --primary-dk: #a03828;
+    --primary-lt: #fdf0ed;
+    --ok: #2e7d32; --ok-bg: #e8f5e9;
+    --err: #c62828; --err-bg: #ffebee;
+    --warn: #e65100; --warn-bg: #fff3e0;
+    --border: #dce1e7;
+    --bg: #f0f2f5;
+    --card: #ffffff;
+    --text: #2c2c2c;
+    --muted: #6b7280;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* HEADER */
+  header { background: linear-gradient(135deg,#c44d34,#d9603e); color:#fff; padding:12px 24px; display:flex; align-items:center; gap:12px; box-shadow:0 3px 10px rgba(0,0,0,.18); position:sticky; top:0; z-index:100; }
+  header .logo { font-size:24px; }
+  header h1 { font-size:1.1rem; font-weight:700; }
+  header p  { font-size:.77rem; opacity:.8; }
+
+  /* SCREENS */
+  .screen { display:none; }
+  .screen.active { display:block; }
+  main { max-width:900px; width:100%; margin:0 auto; padding:28px 16px 60px; flex:1; }
+
+  /* CARD */
+  .card { background:var(--card); border-radius:14px; box-shadow:0 2px 10px rgba(0,0,0,.07); padding:24px 28px; margin-bottom:18px; }
+  .card-title { font-size:.9rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:.6px; margin-bottom:16px; }
+
+  /* DROP ZONE */
+  .drop-zone { border:2.5px dashed var(--border); border-radius:12px; padding:44px 28px; text-align:center; cursor:pointer; transition:all .25s; background:#fafbfc; }
+  .drop-zone:hover,.drop-zone.over { border-color:var(--primary); background:var(--primary-lt); }
+  .drop-icon { font-size:44px; margin-bottom:10px; }
+  .drop-zone h2 { font-size:1rem; margin-bottom:6px; }
+  .drop-zone p  { color:var(--muted); font-size:.88rem; margin-bottom:18px; }
+
+  /* BUTTONS */
+  .btn { display:inline-flex; align-items:center; gap:7px; padding:9px 20px; border-radius:8px; border:none; cursor:pointer; font-size:.9rem; font-weight:600; transition:all .2s; }
+  .btn-primary { background:var(--primary); color:#fff; }
+  .btn-primary:hover { background:var(--primary-dk); transform:translateY(-1px); box-shadow:0 4px 12px rgba(196,77,52,.35); }
+  .btn-outline { background:#fff; color:var(--primary); border:2px solid var(--primary); }
+  .btn-outline:hover { background:var(--primary-lt); }
+  .btn-ghost { background:#f1f3f5; color:var(--text); }
+  .btn-ghost:hover { background:#e4e7ea; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; transform:none !important; box-shadow:none !important; }
+
+  /* ERROR / INFO BAR */
+  .msg-bar { display:none; border-radius:0 8px 8px 0; padding:11px 14px; margin-bottom:14px; font-size:.88rem; font-weight:600; }
+  .msg-bar.show { display:block; }
+  .msg-bar.error { background:var(--err-bg); border-left:4px solid var(--err); color:var(--err); }
+  .msg-bar.info  { background:#e3f2fd; border-left:4px solid #1976d2; color:#1565c0; }
+
+  /* QUESTION LIST */
+  .list-topbar { display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
+  .list-topbar h2 { font-size:1.1rem; font-weight:700; }
+  .badge { display:inline-block; background:var(--primary); color:#fff; border-radius:99px; font-size:.75rem; font-weight:700; padding:2px 10px; }
+  .search-box { flex:1; min-width:180px; padding:8px 14px; border:2px solid var(--border); border-radius:8px; font-size:.9rem; outline:none; }
+  .search-box:focus { border-color:var(--primary); }
+
+  .q-card { background:var(--card); border-radius:12px; padding:16px 20px; margin-bottom:8px; cursor:pointer; border:2px solid transparent; transition:all .2s; display:flex; align-items:center; gap:14px; box-shadow:0 2px 6px rgba(0,0,0,.05); }
+  .q-card:hover { border-color:var(--primary); transform:translateY(-2px); box-shadow:0 6px 18px rgba(196,77,52,.13); }
+  .q-card.hidden { display:none; }
+  .q-num { min-width:34px; height:34px; border-radius:50%; background:var(--primary); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.9rem; flex-shrink:0; }
+  .q-name { font-weight:600; font-size:.92rem; }
+  .q-meta { font-size:.78rem; color:var(--muted); margin-top:2px; }
+  .q-arrow { margin-left:auto; color:var(--primary); font-size:1.2rem; }
+  #no-results { display:none; text-align:center; color:var(--muted); padding:24px; }
+
+  /* TEST */
+  .test-topbar { display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+  .test-topbar h2 { font-size:1.05rem; font-weight:700; flex:1; min-width:200px; }
+  .progress-info { font-size:.82rem; color:var(--muted); background:#f1f3f5; padding:5px 12px; border-radius:99px; white-space:nowrap; }
+
+  /* CLOZE CONTENT */
+  #cloze-content { font-size:1.04rem; line-height:2.6; background:var(--card); border-radius:14px; padding:24px 28px; box-shadow:0 2px 10px rgba(0,0,0,.07); margin-bottom:20px; overflow-x:auto; }
+  #cloze-content p  { margin-bottom:8px; }
+  #cloze-content img { max-width:100%; border-radius:6px; }
+  #cloze-content table { border-collapse:collapse; }
+  #cloze-content td,#cloze-content th { padding:4px 8px; }
+
+  /* CLOZE INPUTS */
+  .cloze-field { display:inline-flex; align-items:center; gap:3px; vertical-align:middle; margin:0 2px; }
+  .cloze-input { display:inline-block; border:2px solid #bdc3cc; border-radius:7px; padding:5px 9px; font-size:.95em; font-family:inherit; background:#f9fafb; transition:border-color .2s,background .2s; vertical-align:middle; min-width:80px; }
+  .cloze-input:focus { outline:none; border-color:var(--primary); background:#fff; }
+  .cloze-input.is-correct { border-color:var(--ok);  background:var(--ok-bg); }
+  .cloze-input.is-partial { border-color:#f59e0b;    background:#fffbeb; }
+  .cloze-input.is-wrong   { border-color:var(--err); background:var(--err-bg); }
+  .cloze-input:disabled   { cursor:default; }
+
+  .cloze-tag { display:inline-block; font-size:.7em; font-weight:700; padding:2px 6px; border-radius:4px; letter-spacing:.3px; vertical-align:middle; }
+  .cloze-tag.correct { background:var(--ok-bg);  color:var(--ok); }
+  .cloze-tag.partial { background:#fffbeb;        color:#b45309; }
+  .cloze-tag.wrong   { background:var(--err-bg); color:var(--err); }
+
+  .correct-hint { display:none; font-size:.76em; color:var(--err); margin-left:4px; font-style:italic; }
+  .correct-hint.show { display:inline; }
+
+  /* MULTIRESPONSE */
+  .multiresponse-wrap { display:inline-flex; flex-direction:column; gap:4px; vertical-align:middle; background:#f9fafb; border:2px solid #bdc3cc; border-radius:8px; padding:7px 11px; margin:0 2px; }
+  .multiresponse-wrap label { display:flex; align-items:center; gap:7px; font-size:.92em; cursor:pointer; }
+  .multiresponse-wrap input[type=checkbox] { width:15px; height:15px; accent-color:var(--primary); cursor:pointer; }
+
+  /* ACTION BAR */
+  .action-bar { display:flex; gap:10px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
+
+  /* SCORE PANEL */
+  #score-panel { display:none; background:var(--card); border-radius:14px; padding:24px 28px; box-shadow:0 2px 10px rgba(0,0,0,.07); margin-bottom:20px; text-align:center; }
+  #score-panel.show { display:block; }
+  .score-ring { width:100px; height:100px; border-radius:50%; margin:14px auto; display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:700; color:#fff; font-size:1.8rem; line-height:1; box-shadow:0 4px 16px rgba(0,0,0,.15); }
+  .score-ring small { font-size:.5rem; font-weight:500; margin-top:3px; letter-spacing:.5px; }
+  .score-label { font-size:.95rem; color:var(--muted); margin-top:4px; }
+  .score-detail { display:flex; justify-content:center; gap:24px; margin-top:14px; flex-wrap:wrap; }
+  .score-stat { display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .score-stat .num { font-size:1.4rem; font-weight:700; }
+  .score-stat .lbl { font-size:.73rem; color:var(--muted); }
+  .score-stat.ok   .num { color:var(--ok); }
+  .score-stat.warn .num { color:#d97706; }
+  .score-stat.err  .num { color:var(--err); }
+
+  footer { text-align:center; padding:14px; font-size:.76rem; color:#aaa; border-top:1px solid #e9ecef; }
+  ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-thumb { background:#ccc; border-radius:3px; }
+
+  /* FLASH capture */
+  @keyframes flashCapture {
+    0%   { box-shadow: 0 0 0 0 rgba(46,125,50,.0), inset 0 0 0 4px rgba(46,125,50,.0); opacity:1; }
+    20%  { box-shadow: 0 0 0 8px rgba(46,125,50,.4), inset 0 0 0 4px rgba(46,125,50,.25); opacity:.85; }
+    100% { box-shadow: 0 0 0 0 rgba(46,125,50,.0), inset 0 0 0 0 rgba(46,125,50,.0); opacity:1; }
+  }
+  #cloze-content.flash { animation: flashCapture .7s ease-out forwards; }
+
+  /* Bouton capture : effet pulse au clic */
+  @keyframes btnPulse {
+    0%   { transform:scale(1); }
+    40%  { transform:scale(.92); }
+    70%  { transform:scale(1.06); }
+    100% { transform:scale(1); }
+  }
+  .btn-pulse { animation: btnPulse .35s ease; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">📝</div>
+  <div>
+    <h1>Simulateur de test Cloze</h1>
+    <p>Compatible avec l'export XML Moodle</p>
+  </div>
+</header>
+
+<main>
+
+<!-- ══════ SCREEN 1 : IMPORT ══════ -->
+<div id="screen-upload" class="screen active">
+  <div class="card">
+    <div class="card-title">📂 Collection de tests Cloze — XML Moodle</div>
+
+    <div class="drop-zone" id="drop-zone"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <div class="drop-icon">🗂️</div>
+      <h2>Glissez votre fichier XML ici</h2>
+      <p>Export Moodle — collection de questions cloze</p>
+      <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('file-input').click()">Parcourir…</button>
+    </div>
+
+    <div id="msg-bar" class="msg-bar"></div>
+  </div>
+
+  <div class="card" style="font-size:.86rem;color:var(--muted);padding:16px 22px;">
+    <strong style="color:var(--text);">Types de champs supportés :</strong>
+    SHORTANSWER, MULTICHOICE, MCS, NUMERICAL (avec tolérance), MULTIRESPONSE, TRUE/FALSE.
+  </div>
+</div>
+
+<!-- ══════ SCREEN 2 : LISTE ══════ -->
+<div id="screen-list" class="screen">
+  <div class="list-topbar">
+    <button class="btn btn-ghost" onclick="goBack('screen-upload')" style="padding:8px 14px;">← Retour</button>
+    <h2>Questions disponibles</h2>
+    <span class="badge" id="q-count">0</span>
+    <input type="search" class="search-box" id="search-box" placeholder="🔍 Filtrer par nom…" oninput="filterList(this.value)">
+  </div>
+  <div id="q-list"></div>
+  <div id="no-results">Aucune question ne correspond à la recherche.</div>
+</div>
+
+<!-- ══════ SCREEN 3 : TEST ══════ -->
+<div id="screen-test" class="screen">
+  <div class="test-topbar">
+    <button class="btn btn-ghost" id="back-from-test" onclick="backFromTest()" style="padding:8px 14px;">← Retour</button>
+    <h2 id="test-title">Question</h2>
+    <span class="progress-info" id="field-count"></span>
+  </div>
+
+  <div id="score-panel">
+    <h3 style="font-size:1.15rem;font-weight:700;">Résultats</h3>
+    <div class="score-ring" id="score-ring"><span id="score-pct">—</span><small>/ 100</small></div>
+    <div class="score-label" id="score-label-txt"></div>
+    <div class="score-detail">
+      <div class="score-stat ok">  <span class="num" id="cnt-ok">0</span>  <span class="lbl">✅ Correct</span></div>
+      <div class="score-stat warn"><span class="num" id="cnt-part">0</span><span class="lbl">🟡 Partiel</span></div>
+      <div class="score-stat err"> <span class="num" id="cnt-err">0</span> <span class="lbl">❌ Incorrect</span></div>
+    </div>
+  </div>
+
+  <div id="cloze-content"></div>
+
+  <div class="action-bar">
+    <button class="btn btn-ghost"   id="btn-reset"      onclick="resetTest()"      style="display:none">🔄 Recommencer</button>
+    <button class="btn btn-ghost"   id="btn-screenshot" onclick="takeScreenshot()">📸 Capture</button>
+    <button class="btn btn-outline" id="btn-reveal"     onclick="revealAll()">👁 Voir les bonnes réponses</button>
+    <button class="btn btn-primary" id="btn-submit"     onclick="submitTest()">✔ Vérifier</button>
+  </div>
+</div>
+
+</main>
+<footer>Simulateur Cloze — tout fonctionne localement dans votre navigateur, aucune donnée transmise.</footer>
+
+<input type="file" id="file-input" accept=".xml,.txt" hidden onchange="loadFromFile(event)">
+
+<script>
+// ═══════════════════════ STATE ═══════════════════════
+let allQuestions = [];
+let currentQ     = null;
+let clozeFields  = [];
+let graded       = false;
+
+// ═══════════════════════ SCREENS ═══════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function goBack(to) { showScreen(to); }
+function backFromTest() {
+  showScreen(allQuestions.length > 1 ? 'screen-list' : 'screen-upload');
+}
+
+// ═══════════════════════ FILE INPUT ═══════════════════════
+function onDragOver(e)  { e.preventDefault(); e.currentTarget.classList.add('over'); }
+function onDragLeave(e) { e.currentTarget.classList.remove('over'); }
+function onDrop(e) {
+  e.preventDefault(); e.currentTarget.classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if (file) readFile(file);
+}
+function loadFromFile(e) {
+  const file = e.target.files[0];
+  if (file) readFile(file);
+  e.target.value = '';
+}
+function readFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => processContent(ev.target.result);
+  reader.readAsText(file, 'UTF-8');
+}
+
+// ═══════════════════════ PROCESS CONTENT ═══════════════════════
+function processContent(raw) {
+  clearMsg();
+  // Remove BOM and leading/trailing whitespace — critical for files starting with \r\n before <?xml
+  raw = raw.replace(/^﻿/, '').trim();
+
+  try {
+    const questions = parseXML(raw);
+
+    if (!questions.length) {
+      showMsg('Aucune question de type "cloze" trouvée.', 'error');
+      return;
+    }
+
+    allQuestions = questions;
+    if (questions.length === 1) {
+      launchQuestion(0);
+    } else {
+      buildList();
+      showScreen('screen-list');
+    }
+  } catch(e) {
+    showMsg('Erreur : ' + e.message, 'error');
+    console.error(e);
+  }
+}
+
+// ═══════════════════════ XML PARSING ═══════════════════════
+function parseXML(xmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'application/xml');
+
+  // Check for parse error
+  const errEl = doc.getElementsByTagName('parsererror')[0];
+  if (errEl) {
+    const msg = errEl.textContent.split('\n')[0].slice(0, 150);
+    throw new Error('XML invalide — ' + msg);
+  }
+
+  // Get all question elements (use getElementsByTagName for XML compat)
+  const allQ = doc.getElementsByTagName('question');
+  const clozeQ = Array.from(allQ).filter(q => q.getAttribute('type') === 'cloze');
+
+  if (!clozeQ.length) throw new Error('Aucune question de type "cloze" dans ce XML.');
+
+  return clozeQ.map(q => {
+    const nameEl  = q.getElementsByTagName('name')[0]
+                      ?.getElementsByTagName('text')[0];
+    const qtEl    = q.getElementsByTagName('questiontext')[0]
+                      ?.getElementsByTagName('text')[0];
+    const rawText = qtEl ? qtEl.textContent : '';
+    return {
+      name: nameEl ? nameEl.textContent.trim() : 'Question sans titre',
+      rawText,
+      fieldCount: countFields(rawText)
+    };
+  });
+}
+
+function countFields(text) {
+  return (text.match(/\{[\d]+:[\w\/]+:[^{}]+\}/g) || []).length;
+}
+
+// ═══════════════════════ QUESTION LIST ═══════════════════════
+function buildList() {
+  const ul = document.getElementById('q-list');
+  document.getElementById('q-count').textContent = allQuestions.length;
+  ul.innerHTML = '';
+  allQuestions.forEach((q, i) => {
+    const card = document.createElement('div');
+    card.className = 'q-card';
+    card.dataset.name = q.name.toLowerCase();
+    card.innerHTML =
+      `<div class="q-num">${i+1}</div>
+       <div>
+         <div class="q-name">${esc(q.name)}</div>
+         <div class="q-meta">${q.fieldCount} champ${q.fieldCount!==1?'s':''} à compléter</div>
+       </div>
+       <div class="q-arrow">›</div>`;
+    card.onclick = () => launchQuestion(i);
+    ul.appendChild(card);
+  });
+  document.getElementById('search-box').value = '';
+  document.getElementById('no-results').style.display = 'none';
+}
+
+function filterList(val) {
+  const v = val.toLowerCase();
+  let visible = 0;
+  document.querySelectorAll('#q-list .q-card').forEach(c => {
+    const match = !v || c.dataset.name.includes(v);
+    c.classList.toggle('hidden', !match);
+    if (match) visible++;
+  });
+  document.getElementById('no-results').style.display = visible === 0 ? 'block' : 'none';
+}
+
+// ═══════════════════════ LAUNCH QUESTION ═══════════════════════
+function launchQuestion(idx) {
+  currentQ = allQuestions[idx];
+  graded   = false;
+  document.getElementById('test-title').textContent = currentQ.name;
+  document.getElementById('score-panel').classList.remove('show');
+  document.getElementById('btn-submit').style.display = '';
+  document.getElementById('btn-reset').style.display  = 'none';
+  renderCloze(currentQ.rawText);
+  showScreen('screen-test');
+}
+
+// ═══════════════════════ CLOZE RENDERING ═══════════════════════
+function renderCloze(rawText) {
+  clozeFields = [];
+  let counter  = 0;
+
+  // Replace {weight:TYPE:options} with placeholder spans
+  const processed = rawText.replace(
+    /\{(\d+):([\w\/]+):([^{}]+)\}/g,
+    (match, weight, type, opts) => {
+      const idx = counter++;
+      clozeFields.push({
+        index: idx,
+        weight: parseInt(weight) || 1,
+        answerType: type.toUpperCase(),
+        options: parseOptions(opts)
+      });
+      return `<span id="ph-${idx}"></span>`;
+    }
+  );
+
+  document.getElementById('field-count').textContent =
+    `${clozeFields.length} champ${clozeFields.length!==1?'s':''}`;
+
+  const content = document.getElementById('cloze-content');
+  content.innerHTML = processed;
+
+  // Replace each placeholder with the actual input widget
+  clozeFields.forEach(field => {
+    const ph = document.getElementById(`ph-${field.index}`);
+    if (!ph) return;
+    ph.replaceWith(buildFieldNode(field));
+  });
+}
+
+// Parse answer options string → [{score, text, feedback}]
+function parseOptions(str) {
+  return str.split('~')
+    .map(raw => {
+      raw = raw.trim();
+      let score = 0, text = raw, feedback = '';
+
+      const pct = raw.match(/^%(-?\d+(?:\.\d+)?)%(.*)$/s);
+      if (pct) {
+        score = parseFloat(pct[1]);
+        text  = pct[2].trim();
+      } else if (raw.startsWith('=')) {
+        score = 100;
+        text  = raw.slice(1).trim();
+      }
+
+      const hi = text.indexOf('#');
+      if (hi !== -1) { feedback = text.slice(hi+1).trim(); text = text.slice(0,hi).trim(); }
+
+      return { score, text, feedback };
+    })
+    .filter(o => o.text !== ''); // drop empty entries (leading ~ in MCS)
+}
+
+// Build the DOM node for one cloze field
+function buildFieldNode(field) {
+  const wrap = document.createElement('span');
+  wrap.className = 'cloze-field';
+  wrap.dataset.index = field.index;
+
+  const type = field.answerType;
+
+  if (type==='MULTICHOICE'||type==='MC'||type==='MCS'||type==='MULTICHOICE_S') {
+    const sel = document.createElement('select');
+    sel.className = 'cloze-input';
+    sel.dataset.index = field.index;
+
+    const def = document.createElement('option');
+    def.value = ''; def.textContent = '— choisir —';
+    sel.appendChild(def);
+
+    // Shuffle options
+    [...field.options].sort(() => Math.random()-.5).forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt.text;
+      o.textContent = opt.text;
+      o.dataset.score = opt.score;
+      o.dataset.fb    = opt.feedback;
+      sel.appendChild(o);
+    });
+    wrap.appendChild(sel);
+
+  } else if (type==='MULTIRESPONSE') {
+    const box = document.createElement('span');
+    box.className = 'multiresponse-wrap';
+    box.dataset.index = field.index;
+
+    [...field.options].sort(() => Math.random()-.5).forEach(opt => {
+      const lbl = document.createElement('label');
+      const cb  = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = opt.text;
+      cb.dataset.score = opt.score; cb.dataset.fb = opt.feedback;
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(' ' + opt.text));
+      box.appendChild(lbl);
+    });
+    wrap.appendChild(box);
+
+  } else if (type==='NUMERICAL'||type==='NM') {
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.step = 'any';
+    inp.className = 'cloze-input';
+    inp.dataset.index = field.index;
+    inp.style.width = '120px'; inp.placeholder = '0';
+    wrap.appendChild(inp);
+
+  } else if (type==='TRUE/FALSE'||type==='TF') {
+    const sel = document.createElement('select');
+    sel.className = 'cloze-input';
+    sel.dataset.index = field.index;
+
+    const def = document.createElement('option');
+    def.value=''; def.textContent='— choisir —';
+    sel.appendChild(def);
+
+    // Map Moodle's true/false options (may be stored as Vrai/Faux or True/False)
+    [['Vrai','true','True','1'],['Faux','false','False','0']].forEach(([label,...aliases]) => {
+      const o = document.createElement('option');
+      o.value = label;
+      o.textContent = label;
+      const match = field.options.find(op =>
+        [label,...aliases].some(a => op.text.toLowerCase()===a.toLowerCase()));
+      o.dataset.score = match ? match.score : 0;
+      o.dataset.fb    = match ? match.feedback : '';
+      sel.appendChild(o);
+    });
+    wrap.appendChild(sel);
+
+  } else {
+    // SHORTANSWER, SA, MW, SHORTANSWER_C, fallback
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'cloze-input';
+    inp.dataset.index = field.index;
+    inp.dataset.caseSensitive = (type==='SHORTANSWER_C') ? '1' : '0';
+    const best = field.options.filter(o=>o.score>0)[0];
+    const len  = best ? Math.max(best.text.length*11, 80) : 80;
+    inp.style.width = Math.min(len, 320)+'px';
+    inp.placeholder = '…';
+    wrap.appendChild(inp);
+  }
+
+  // Feedback tag (shown after grading)
+  const tag  = document.createElement('span');
+  tag.id = `tag-${field.index}`;
+  tag.className = 'cloze-tag';
+  tag.style.display = 'none';
+
+  const hint = document.createElement('span');
+  hint.id = `hint-${field.index}`;
+  hint.className = 'correct-hint';
+
+  wrap.appendChild(tag);
+  wrap.appendChild(hint);
+  return wrap;
+}
+
+// ═══════════════════════ GRADING ═══════════════════════
+function submitTest() {
+  if (graded) return;
+  let totalW=0, earnedW=0, nOk=0, nPart=0, nErr=0;
+
+  clozeFields.forEach(field => {
+    const type = field.answerType;
+    let score = 0;
+    const best = field.options.filter(o=>o.score>0).sort((a,b)=>b.score-a.score)[0];
+    const correctText = best ? best.text : '';
+
+    if (type==='MULTIRESPONSE') {
+      const box = document.querySelector(`.multiresponse-wrap[data-index="${field.index}"]`);
+      if (!box) return;
+      const cbs = box.querySelectorAll('input[type=checkbox]');
+      const posTotal = field.options.reduce((s,o)=>s+(o.score>0?o.score:0),0)||100;
+      let earned = 0;
+      cbs.forEach(cb => { if(cb.checked) earned += parseFloat(cb.dataset.score)||0; });
+      score = Math.max(0, Math.round(earned/posTotal*100));
+      cbs.forEach(cb => cb.disabled=true);
+
+    } else {
+      const input = document.querySelector(`.cloze-input[data-index="${field.index}"]`);
+      if (!input) return;
+      const val = input.value.trim();
+
+      if (type==='MULTICHOICE'||type==='MC'||type==='MCS'||type==='MULTICHOICE_S') {
+        const selOpt = input.options[input.selectedIndex];
+        if (selOpt && selOpt.value) score = parseFloat(selOpt.dataset.score)||0;
+
+      } else if (type==='NUMERICAL'||type==='NM') {
+        const uv = parseFloat(val);
+        if (!isNaN(uv)) {
+          for (const opt of field.options) {
+            // format: "value:tolerance" or just "value"
+            const parts = opt.text.split(':');
+            const target = parseFloat(parts[0]);
+            const tol    = parts[1]!==undefined ? parseFloat(parts[1]) : 0;
+            if (!isNaN(target) && Math.abs(uv-target) <= Math.abs(tol)) {
+              score = opt.score; break;
+            }
+          }
+        }
+
+      } else if (type==='TRUE/FALSE'||type==='TF') {
+        const selOpt = input.options[input.selectedIndex];
+        if (selOpt && selOpt.value) score = parseFloat(selOpt.dataset.score)||0;
+
+      } else {
+        // SHORTANSWER variants
+        const cs = input.dataset.caseSensitive === '1';
+        const userVal = cs ? val : val.toLowerCase();
+        for (const opt of field.options) {
+          if ((cs ? opt.text : opt.text.toLowerCase()) === userVal) {
+            score = opt.score; break;
+          }
+        }
+      }
+
+      input.disabled = true;
+      input.classList.remove('is-correct','is-partial','is-wrong');
+      if      (score >= 100)  input.classList.add('is-correct');
+      else if (score >  0)    input.classList.add('is-partial');
+      else if (val !== '')    input.classList.add('is-wrong');
+    }
+
+    // Tag + hint
+    const tag  = document.getElementById(`tag-${field.index}`);
+    const hint = document.getElementById(`hint-${field.index}`);
+    if (!tag) return;
+    tag.style.display = '';
+
+    if (score >= 100) {
+      tag.className = 'cloze-tag correct'; tag.textContent = '✓'; nOk++;
+    } else if (score > 0) {
+      tag.className = 'cloze-tag partial'; tag.textContent = `~${Math.round(score)}%`; nPart++;
+      if (hint) { hint.className='correct-hint show'; hint.textContent=`→ ${correctText}`; }
+    } else {
+      tag.className = 'cloze-tag wrong'; tag.textContent = '✗'; nErr++;
+      if (hint) { hint.className='correct-hint show'; hint.textContent=`→ ${correctText}`; }
+    }
+
+    earnedW += score * field.weight;
+    totalW  += 100   * field.weight;
+  });
+
+  const pct = totalW > 0 ? Math.round(earnedW/totalW) : 0;
+  showScore(pct, nOk, nPart, nErr);
+  graded = true;
+  document.getElementById('btn-submit').style.display = 'none';
+  document.getElementById('btn-reset').style.display  = '';
+}
+
+function showScore(pct, nOk, nPart, nErr) {
+  const ring = document.getElementById('score-ring');
+  ring.style.background = pct>=80 ? '#2e7d32' : pct>=50 ? '#d97706' : '#c62828';
+  document.getElementById('score-pct').textContent   = pct;
+  document.getElementById('cnt-ok').textContent      = nOk;
+  document.getElementById('cnt-part').textContent    = nPart;
+  document.getElementById('cnt-err').textContent     = nErr;
+  const labels = [[80,'🎉 Excellent !'],[60,'👍 Bien !'],[40,'🤔 À retravailler.'],[0,'❌ Insuffisant.']];
+  document.getElementById('score-label-txt').textContent = labels.find(([t])=>pct>=t)[1];
+  const panel = document.getElementById('score-panel');
+  panel.classList.add('show');
+  panel.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ═══════════════════════ REVEAL / RESET ═══════════════════════
+function revealAll() {
+  clozeFields.forEach(field => {
+    const best = field.options.filter(o=>o.score>0).sort((a,b)=>b.score-a.score)[0];
+    if (!best) return;
+    const type = field.answerType;
+
+    if (type === 'MULTIRESPONSE') {
+      const box = document.querySelector(`.multiresponse-wrap[data-index="${field.index}"]`);
+      if (box) box.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        cb.checked = parseFloat(cb.dataset.score||'0') > 0;
+      });
+      return;
+    }
+
+    const input = document.querySelector(`.cloze-input[data-index="${field.index}"]`);
+    if (!input) return;
+
+    if (type === 'NUMERICAL' || type === 'NM') {
+      // best.text format: "valeur:tolérance" → on prend uniquement la valeur
+      input.value = best.text.split(':')[0];
+
+    } else if (type === 'TRUE/FALSE' || type === 'TF') {
+      // Les options du select ont pour valeur "Vrai" / "Faux"
+      const trueAliases = ['vrai','true','1'];
+      input.value = trueAliases.includes(best.text.toLowerCase()) ? 'Vrai' : 'Faux';
+
+    } else if (input.tagName === 'SELECT') {
+      // MULTICHOICE / MCS : trouver l'option dont la valeur correspond
+      Array.from(input.options).forEach(o => { if (o.value === best.text) input.value = o.value; });
+
+    } else {
+      // SHORTANSWER et variantes
+      input.value = best.text;
+    }
+  });
+}
+
+function resetTest() { launchQuestion(allQuestions.indexOf(currentQ)); }
+
+// ═══════════════════════ SCREENSHOT → PRESSE-PAPIER ═══════════════════════
+function flashCloze() {
+  const el = document.getElementById('cloze-content');
+  el.classList.remove('flash');
+  void el.offsetWidth; // force reflow pour relancer l'animation
+  el.classList.add('flash');
+  el.addEventListener('animationend', () => el.classList.remove('flash'), { once: true });
+}
+
+function takeScreenshot() {
+  const btn = document.getElementById('btn-screenshot');
+  const origText = btn.innerHTML;
+
+  // Pulse immédiat au clic
+  btn.classList.remove('btn-pulse');
+  void btn.offsetWidth;
+  btn.classList.add('btn-pulse');
+  btn.addEventListener('animationend', () => btn.classList.remove('btn-pulse'), { once: true });
+
+  btn.innerHTML = '⏳ En cours…';
+  btn.disabled = true;
+
+  function doCapture() {
+    const target = document.getElementById('cloze-content');
+    html2canvas(target, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      scrollY: -window.scrollY,
+      windowWidth: document.documentElement.scrollWidth
+    }).then(canvas => {
+      canvas.toBlob(blob => {
+        // Copier dans le presse-papier
+        navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]).then(() => {
+          flashCloze();
+          btn.innerHTML = '✅ Copié !';
+          setTimeout(() => { btn.innerHTML = origText; btn.disabled = false; }, 2000);
+        }).catch(() => {
+          // Fallback : téléchargement si clipboard refusé
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'cloze.png';
+          a.click();
+          btn.innerHTML = origText;
+          btn.disabled = false;
+        });
+      }, 'image/png');
+    }).catch(err => {
+      alert('Capture impossible : ' + err.message);
+      btn.innerHTML = origText;
+      btn.disabled = false;
+    });
+  }
+
+  if (typeof html2canvas !== 'undefined') {
+    doCapture();
+  } else {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.onload = doCapture;
+    s.onerror = () => {
+      // Fallback: open print dialog
+      btn.innerHTML = origText; btn.disabled = false;
+      window.print();
+    };
+    document.head.appendChild(s);
+  }
+}
+
+// ═══════════════════════ UTILS ═══════════════════════
+function esc(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function showMsg(msg, type='error') {
+  const bar = document.getElementById('msg-bar');
+  bar.textContent = (type==='error'?'⚠ ':'ℹ ') + msg;
+  bar.className = 'msg-bar show ' + type;
+}
+function clearMsg() {
+  document.getElementById('msg-bar').classList.remove('show');
+}
+</script>
+</body>
+</html>
