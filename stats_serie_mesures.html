@@ -516,14 +516,14 @@ function analyse() {
 function showError(msg) { errorMsg.textContent = '⚠ ' + msg; errorMsg.style.display = 'block'; }
 function hideError()    { errorMsg.style.display = 'none'; }
 
-/* ── FORMAT STATS : 4 chiffres significatifs, sci si nécessaire ── */
+/* ── FORMAT STATS : 4 chiffres significatifs, notation scientifique si |x| ≥ 1e5 ou < 0.01 ── */
 function fmt(x) {
   if (!isFinite(x)) return '—';
   if (x === 0) return '0';
   const abs = Math.abs(x);
-  if (abs >= 1e6 || abs < 1e-4) return x.toExponential(3);
+  if (abs >= 1e5 || abs < 0.01) return x.toExponential(3);  // ex: 3.000e-3 ou 1.234e+5
   const mag = Math.floor(Math.log10(abs));
-  return x.toFixed(Math.max(0, 3 - mag));
+  return x.toFixed(Math.max(0, 3 - mag));                    // 4 chiffres significatifs
 }
 
 /* ── FORMAT AXE/TOOLTIP : adapté à la largeur de classe ── */
