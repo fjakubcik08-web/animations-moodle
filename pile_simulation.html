@@ -290,7 +290,8 @@ function getAnimParams(defaults) {
     const raw = new URLSearchParams(location.search).get('param');
     if (!raw) return defaults;
     const b64   = raw.replace(/-/g,'+').replace(/_/g,'/');
-    const bytes = Uint8Array.from(atob(b64 + '=='), c => c.charCodeAt(0));
+    const pad   = '='.repeat((4 - b64.length % 4) % 4);
+    const bytes = Uint8Array.from(atob(b64 + pad), c => c.charCodeAt(0));
     const dec   = bytes.map((b,i) => b ^ KEY[i % KEY.length]);
     return { ...defaults, ...JSON.parse(new TextDecoder().decode(dec)) };
   } catch(e) { return defaults; }
