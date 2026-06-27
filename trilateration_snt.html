@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trilatération — SNT</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      background: #f4f4f0;
+    }
+
+    /* ── Panneau latéral ── */
+    #panel {
+      width: 300px;
+      flex-shrink: 0;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #e5e5e5;
+      overflow: hidden;
+    }
+
+    #panel-header {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    #panel-header h1 {
+      font-size: 17px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+    }
+
+    #panel-header p {
+      font-size: 12px;
+      color: #888;
+      line-height: 1.5;
+    }
+
+    #panel-body {
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #555;
+      margin-bottom: 5px;
+    }
+
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #222;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus { border-color: #4a90e2; }
+
+    /* Autocomplete */
+    #city-wrap { position: relative; }
+
+    #suggestions {
+      position: absolute;
+      top: calc(100% + 3px);
+      left: 0; right: 0;
+      background: #fff;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+      z-index: 9999;
+      overflow: hidden;
+      display: none;
+    }
+
+    #suggestions.open { display: block; }
+
+    .sug-item {
+      padding: 9px 12px;
+      font-size: 13px;
+      color: #222;
+      cursor: pointer;
+      border-bottom: 1px solid #f3f3f3;
+    }
+
+    .sug-item:last-child { border-bottom: none; }
+    .sug-item:hover, .sug-item.focused { background: #eff6ff; color: #2563eb; }
+
+    /* Couleurs */
+    .color-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2.5px solid transparent;
+      transition: transform 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+
+    .dot.active {
+      border-color: #222;
+      transform: scale(1.15);
+    }
+
+    /* Bouton principal */
+    #btn-add {
+      width: 100%;
+      padding: 11px;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      letter-spacing: 0.01em;
+    }
+
+    #btn-add:hover  { background: #1d4ed8; }
+    #btn-add:active { background: #1e40af; transform: scale(0.99); }
+
+    /* Statut */
+    #status {
+      font-size: 12px;
+      min-height: 16px;
+      text-align: center;
+      color: #aaa;
+      padding: 0 4px;
+    }
+    #status.err { color: #dc2626; }
+    #status.ok  { color: #16a34a; }
+
+    /* Séparateur */
+    .sep {
+      border: none;
+      border-top: 1px solid #f0f0f0;
+    }
+
+    /* Liste des cercles */
+    #circles-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #circles-header span {
+      font-size: 12px;
+      font-weight: 500;
+      color: #555;
+    }
+
+    #btn-clear {
+      width: 100%;
+      padding: 9px;
+      background: #fff;
+      color: #dc2626;
+      border: 1.5px solid #fca5a5;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    #btn-clear:hover  { background: #fef2f2; border-color: #dc2626; }
+    #btn-clear:active { background: #fee2e2; }
+
+    #circles-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 30px;
+    }
+
+    .empty-hint {
+      font-size: 12px;
+      color: #bbb;
+      text-align: center;
+      padding: 10px 0;
+    }
+
+    .circle-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #f8f9fa;
+      border: 1px solid #ececec;
+      border-radius: 8px;
+      padding: 9px 11px;
+    }
+
+    .c-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .c-info { flex: 1; overflow: hidden; }
+
+    .c-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: #222;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .c-km {
+      font-size: 11px;
+      color: #999;
+    }
+
+    .c-del {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #ccc;
+      font-size: 15px;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 4px;
+      transition: color 0.1s, background 0.1s;
+    }
+    .c-del:hover { color: #dc2626; background: #fee2e2; }
+
+    /* Note pédagogique */
+    .tip {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 11.5px;
+      color: #1e40af;
+      line-height: 1.55;
+    }
+
+    .tip strong { font-weight: 600; }
+
+    /* Carte */
+    #map { flex: 1; position: relative; }
+
+    /* Bouton téléchargement */
+    #btn-dl {
+      position: absolute;
+      bottom: 30px;
+      right: 10px;
+      z-index: 1000;
+      background: #fff;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 8px 13px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+      transition: background 0.15s, border-color 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #btn-dl:hover  { background: #f0f7ff; border-color: #2563eb; color: #2563eb; }
+    #btn-dl:active { transform: scale(0.97); }
+    #btn-dl.loading { opacity: 0.6; pointer-events: none; }
+
+    /* Leaflet tooltip ville */
+    .city-tooltip {
+      background: rgba(255,255,255,0.92);
+      border: none;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.18);
+      border-radius: 5px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+  </style>
+</head>
+<body>
+
+<div id="panel">
+  <div id="panel-header">
+    <h1>Trilatération — SNT</h1>
+    <p>Trace des cercles autour de villes françaises pour simuler la trilatération GPS.</p>
+  </div>
+
+  <div id="panel-body">
+
+    <div id="city-wrap">
+      <label for="city-input">Nom de la ville</label>
+      <input type="text" id="city-input" placeholder="Paris, Lyon, Brest…" autocomplete="off" />
+      <div id="suggestions"></div>
+    </div>
+
+    <div>
+      <label for="radius-input">Rayon (km)</label>
+      <input type="number" id="radius-input" placeholder="150" min="1" max="3000" />
+    </div>
+
+    <div>
+      <label>Couleur du cercle</label>
+      <div class="color-row" id="color-picker">
+        <div class="dot active" data-color="#dc2626" style="background:#dc2626" title="Rouge"></div>
+        <div class="dot"       data-color="#2563eb" style="background:#2563eb" title="Bleu"></div>
+        <div class="dot"       data-color="#16a34a" style="background:#16a34a" title="Vert"></div>
+        <div class="dot"       data-color="#d97706" style="background:#d97706" title="Ambre"></div>
+        <div class="dot"       data-color="#7c3aed" style="background:#7c3aed" title="Violet"></div>
+        <div class="dot"       data-color="#0891b2" style="background:#0891b2" title="Cyan"></div>
+      </div>
+    </div>
+
+    <button id="btn-add" onclick="addCircle()">Tracer le cercle</button>
+
+    <div id="status"></div>
+
+    <hr class="sep" />
+
+    <div id="circles-header">
+      <span>Cercles tracés</span>
+    </div>
+
+    <div id="circles-list">
+      <p class="empty-hint">Aucun cercle pour l'instant.</p>
+    </div>
+
+    <button id="btn-clear" onclick="clearAll()">Tout supprimer</button>
+
+  </div>
+</div>
+
+<div id="map">
+  <button id="btn-dl" onclick="downloadMap()" title="Télécharger la carte en PNG">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Télécharger
+  </button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+  /* ── Carte ── */
+  const canvasRenderer = L.canvas({ padding: 0.5 });
+  const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([46.5, 2.3], 6);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    crossOrigin: true,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(map);
+
+  /* ── État ── */
+  let circles = [];
+  let selectedColor = '#dc2626';
+  let selectedCoords = null;   // {lat, lon, label} quand une suggestion est choisie
+  let sugFocusIdx = -1;
+
+  /* ── Color picker ── */
+  document.querySelectorAll('.dot').forEach(dot => {
+    dot.addEventListener('click', () => {
+      document.querySelectorAll('.dot').forEach(d => d.classList.remove('active'));
+      dot.classList.add('active');
+      selectedColor = dot.dataset.color;
+    });
+  });
+
+  /* ── Autocomplete ── */
+  const cityInput = document.getElementById('city-input');
+  const sugBox    = document.getElementById('suggestions');
+  let debounceTimer;
+
+  cityInput.addEventListener('input', () => {
+    selectedCoords = null;
+    clearTimeout(debounceTimer);
+    const q = cityInput.value.trim();
+    if (q.length < 2) { closeSug(); return; }
+    debounceTimer = setTimeout(() => fetchSuggestions(q), 250);
+  });
+
+  cityInput.addEventListener('keydown', e => {
+    const items = sugBox.querySelectorAll('.sug-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      sugFocusIdx = Math.min(sugFocusIdx + 1, items.length - 1);
+      highlightSug(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      sugFocusIdx = Math.max(sugFocusIdx - 1, -1);
+      highlightSug(items);
+    } else if (e.key === 'Enter') {
+      if (sugFocusIdx >= 0 && items[sugFocusIdx]) {
+        items[sugFocusIdx].click();
+      } else {
+        closeSug();
+        addCircle();
+      }
+    } else if (e.key === 'Escape') {
+      closeSug();
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#city-wrap')) closeSug();
+  });
+
+  async function fetchSuggestions(q) {
+    try {
+      const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&type=municipality&limit=7&autocomplete=1`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      renderSug(data.features || []);
+    } catch { closeSug(); }
+  }
+
+  function renderSug(features) {
+    if (!features.length) { closeSug(); return; }
+    sugFocusIdx = -1;
+    sugBox.innerHTML = features.map((f, i) => {
+      const name = f.properties.city || f.properties.label;
+      const dept = f.properties.context ? f.properties.context.split(',')[0] : '';
+      const [lon, lat] = f.geometry.coordinates;
+      return `<div class="sug-item" data-lat="${lat}" data-lon="${lon}" data-label="${name}" data-dept="${dept}">${name}<span style="color:#aaa;font-size:11px;margin-left:6px">${dept}</span></div>`;
+    }).join('');
+    sugBox.querySelectorAll('.sug-item').forEach(item => {
+      item.addEventListener('mousedown', e => {
+        e.preventDefault();
+        selectSug(item);
+      });
+    });
+    sugBox.classList.add('open');
+  }
+
+  function selectSug(item) {
+    cityInput.value  = item.dataset.label;
+    selectedCoords   = { lat: parseFloat(item.dataset.lat), lon: parseFloat(item.dataset.lon), label: item.dataset.label };
+    closeSug();
+    document.getElementById('radius-input').focus();
+  }
+
+  function highlightSug(items) {
+    items.forEach((el, i) => el.classList.toggle('focused', i === sugFocusIdx));
+  }
+
+  function closeSug() {
+    sugBox.classList.remove('open');
+    sugBox.innerHTML = '';
+    sugFocusIdx = -1;
+  }
+
+  /* ── Touche Entrée sur rayon ── */
+  document.getElementById('radius-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addCircle();
+  });
+
+  /* ── Ajouter un cercle ── */
+  async function addCircle() {
+    const cityVal  = cityInput.value.trim();
+    const radiusKm = parseFloat(document.getElementById('radius-input').value);
+
+    if (!cityVal)                    return setStatus('Entrez un nom de ville.', 'err');
+    if (!radiusKm || radiusKm <= 0) return setStatus('Entrez un rayon valide (km).', 'err');
+
+    let latlng, label;
+
+    if (selectedCoords) {
+      latlng = [selectedCoords.lat, selectedCoords.lon];
+      label  = selectedCoords.label;
+    } else {
+      setStatus('Recherche de « ' + cityVal + ' »…');
+      try {
+        const url  = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(cityVal)}&type=municipality&limit=1`;
+        const res  = await fetch(url);
+        const data = await res.json();
+        if (!data.features?.length) return setStatus('Ville introuvable.', 'err');
+        const f = data.features[0];
+        latlng  = [f.geometry.coordinates[1], f.geometry.coordinates[0]];
+        label   = f.properties.city || f.properties.label;
+      } catch { return setStatus('Erreur réseau.', 'err'); }
+    }
+
+    /* Cercle */
+    const circle = L.circle(latlng, {
+      radius:      radiusKm * 1000,
+      color:       selectedColor,
+      fillColor:   selectedColor,
+      fillOpacity: 0.08,
+      weight:      2.5,
+      renderer:    canvasRenderer
+    }).addTo(map);
+
+    /* Point central */
+    const pin = L.circleMarker(latlng, {
+      radius:      5,
+      color:       '#fff',
+      weight:      2,
+      fillColor:   selectedColor,
+      fillOpacity: 1,
+      renderer:    canvasRenderer
+    }).addTo(map)
+      .bindTooltip(label, {
+        permanent:  true,
+        direction:  'top',
+        offset:     [0, -8],
+        className:  'city-tooltip'
+      });
+
+    const id = Date.now();
+    circles.push({ id, circle, pin, city: label, radiusKm, color: selectedColor });
+    selectedCoords = null;
+
+    renderList();
+    map.fitBounds(circle.getBounds(), { padding: [30, 30] });
+    setStatus('Cercle ajouté !', 'ok');
+
+    cityInput.value = '';
+    document.getElementById('radius-input').value = '';
+    cityInput.focus();
+  }
+
+  /* ── Supprimer un cercle ── */
+  function removeCircle(id) {
+    const i = circles.findIndex(c => c.id === id);
+    if (i < 0) return;
+    circles[i].circle.remove();
+    circles[i].pin.remove();
+    circles.splice(i, 1);
+    renderList();
+  }
+
+  /* ── Tout effacer ── */
+  function clearAll() {
+    circles.forEach(c => { c.circle.remove(); c.pin.remove(); });
+    circles = [];
+    renderList();
+  }
+
+  /* ── Rendu de la liste ── */
+  function renderList() {
+    const el = document.getElementById('circles-list');
+    if (!circles.length) {
+      el.innerHTML = '<p class="empty-hint">Aucun cercle pour l\'instant.</p>';
+      return;
+    }
+    el.innerHTML = circles.map(c => `
+      <div class="circle-item">
+        <div class="c-dot" style="background:${c.color}"></div>
+        <div class="c-info">
+          <div class="c-name">${c.city}</div>
+          <div class="c-km">${c.radiusKm} km</div>
+        </div>
+        <button class="c-del" onclick="removeCircle(${c.id})" title="Supprimer">✕</button>
+      </div>
+    `).join('');
+  }
+
+  /* ── Téléchargement carte ── */
+  async function downloadMap() {
+    const btn = document.getElementById('btn-dl');
+    btn.classList.add('loading');
+
+    try {
+      /* Attendre que toutes les tuiles soient chargées */
+      await new Promise(resolve => {
+        if (map._tileLayers && Object.values(map._tileLayers).every(t => t._loading === 0)) {
+          resolve();
+        } else {
+          map.once('load', resolve);
+          setTimeout(resolve, 2000); // fallback 2s
+        }
+      });
+
+      const mapEl = document.getElementById('map');
+      const canvas = await html2canvas(mapEl, {
+        useCORS:     true,
+        allowTaint:  false,
+        logging:     false,
+        scale:       window.devicePixelRatio || 1,
+        ignoreElements: el => el.id === 'btn-dl'
+      });
+
+      const link = document.createElement('a');
+      link.download = 'carte_trilateration.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (e) {
+      alert('Erreur capture. Attendez que la carte soit bien chargée et réessayez.');
+    } finally {
+      btn.classList.remove('loading');
+    }
+  }
+
+  /* ── Statut ── */
+  function setStatus(msg, type = '') {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = type;
+    if (type === 'ok') setTimeout(() => { el.textContent = ''; el.className = ''; }, 2500);
+  }
+</script>
+
+</body>
+</html>
