@@ -759,6 +759,7 @@ function runQuery() {
     const { cols, rows } = engine.query(sql);
     lastRows = rows; lastCols = cols;
     renderTable(cols, rows);
+    switchTab('results');
     showError(null);
     pushHistory(sql);
   } catch(e) { showError(e.message); }
@@ -782,7 +783,7 @@ function renderTable(cols, rows) {
   for (const c of cols) html += `<col style="width:${defaultW}px">`;
   html += '</colgroup><thead><tr>';
   for (const c of cols)
-    html += `<th>${esc(c)}<div class="col-resize"></div></th>`;
+    html += `<th title="${esc(c)}">${esc(c)}<div class="col-resize"></div></th>`;
   html += '</tr></thead><tbody>';
   for (const row of rows) {
     html += '<tr>';
