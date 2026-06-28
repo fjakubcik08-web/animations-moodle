@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>SQL CSV Client</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #F1F3F4;
+    --surface:   #FFFFFF;
+    --primary:   #1A73E8;
+    --primary-d: #1557B0;
+    --green:     #34A853;
+    --red:       #D93025;
+    --text:      #202124;
+    --text2:     #5F6368;
+    --border:    #DADCE0;
+    --hover:     #F8F9FA;
+    --code-bg:   #1E2A3A;
+    --code-text: #CDD9E5;
+    --shadow:    0 1px 3px rgba(60,64,67,.15), 0 2px 6px rgba(60,64,67,.10);
+    --shadow-lg: 0 4px 12px rgba(60,64,67,.20);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Google Sans', system-ui, -apple-system, sans-serif;
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: 320px;
+    min-width: 320px;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    z-index: 10;
+    overflow: hidden;
+  }
+
+  #sidebar-header {
+    background: var(--primary);
+    color: #fff;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  #sidebar-header .logo { font-size: 1.3rem; }
+  #sidebar-header h1 { font-size: 0.95rem; font-weight: 500; letter-spacing: .02em; }
+  #table-tag {
+    background: rgba(255,255,255,.2);
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 0.72rem;
+    margin-top: 2px;
+    display: none;
+  }
+
+  #sidebar-body {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .side-section {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .side-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--text2);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  /* CSV drop */
+  #csv-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 14px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .18s;
+    font-size: 0.8rem;
+    color: var(--text2);
+    background: var(--hover);
+  }
+  #csv-zone.dragover { border-color: var(--primary); background: #E8F0FE; color: var(--primary); }
+  #csv-zone.loaded { border-color: var(--green); border-style: solid; background: #E6F4EA; color: #137333; }
+  #csv-zone .drop-icon { font-size: 1.6rem; margin-bottom: 4px; }
+  #csv-zone small { display: block; margin-top: 4px; font-size: 0.72rem; color: #9AA0A6; }
+  #csv-toggle-paste {
+    background: none; border: none; color: var(--primary);
+    font-size: 0.72rem; cursor: pointer; margin-top: 6px;
+  }
+  #csv-paste-area {
+    display: none; width: 100%; margin-top: 8px;
+    background: var(--code-bg); border: none; border-radius: 6px;
+    color: var(--code-text); font-family: monospace; font-size: 0.75rem;
+    padding: 8px; resize: none; height: 90px; outline: none;
+  }
+
+  /* SQL editor */
+  #sql-input {
+    width: 100%;
+    background: var(--code-bg);
+    border: none;
+    border-radius: 8px;
+    color: var(--code-text);
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.85rem;
+    padding: 10px 12px;
+    resize: none;
+    min-height: 90px;
+    outline: none;
+    line-height: 1.5;
+  }
+  #sql-input::placeholder { color: #5F7A99; }
+
+  #run-btn {
+    width: 100%;
+    margin-top: 8px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background .15s;
+    letter-spacing: .02em;
+  }
+  #run-btn:hover { background: var(--primary-d); }
+  #run-btn kbd { font-size: 0.68rem; opacity: .7; font-family: monospace; }
+
+  /* Quick buttons */
+  #quick-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+  .qbtn {
+    background: var(--hover);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-family: monospace;
+    transition: all .12s;
+    white-space: nowrap;
+  }
+  .qbtn:hover { background: #E8F0FE; border-color: var(--primary); color: var(--primary); }
+
+  /* Column picker */
+  #cols-wrap { position: relative; }
+  #col-picker {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 200;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+    min-width: 180px;
+    max-height: 200px;
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+  }
+  .cpick-item {
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .1s;
+  }
+  .cpick-item:hover { background: #E8F0FE; }
+  .cpick-name { font-family: monospace; font-size: 0.8rem; color: var(--primary); font-weight: 600; }
+  .cpick-samples { font-size: 0.71rem; color: var(--text2); margin-top: 1px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+
+  /* History */
+  #history-box { display: none; }
+  .hist-item {
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--text2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background .1s;
+    border: 1px solid transparent;
+  }
+  .hist-item:hover { background: #E8F0FE; border-color: #C5D8FC; color: var(--primary); }
+  .hist-label { font-size: 0.68rem; color: #9AA0A6; margin-bottom: 4px; }
+
+  /* ── MAIN ── */
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 16px;
+    gap: 12px;
+  }
+
+  #results-card {
+    flex: 1;
+    background: var(--surface);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Tabs */
+  #tabs-bar {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+    flex-shrink: 0;
+    gap: 0;
+  }
+  #tabs-bar .spacer { flex: 1; }
+  #copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--hover);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text2);
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  #copy-btn:hover { background: #E8F0FE; border-color: var(--primary); color: var(--primary); }
+  #copy-btn.copied { background: #E6F4EA; border-color: var(--green); color: #137333; }
+  @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.15)} 100%{transform:scale(1)} }
+  #copy-btn.copied { animation: pop .25s ease; }
+  .tab-btn {
+    padding: 10px 18px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text2);
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -1px;
+    transition: color .15s, border-color .15s;
+  }
+  .tab-btn:hover { color: var(--primary); }
+  .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+  #results-count {
+    background: var(--primary);
+    color: #fff;
+    border-radius: 20px;
+    padding: 1px 10px;
+    font-size: 0.72rem;
+    display: none;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  /* Colonnes panel */
+  #cols-panel {
+    display: none;
+    flex-direction: column;
+    overflow-y: auto;
+    flex: 1;
+  }
+  #cols-panel.active { display: flex; }
+  .col-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .1s;
+  }
+  .col-row:hover { background: #E8F0FE; }
+  .col-row-name { font-family: monospace; font-size: 0.83rem; font-weight: 600; color: var(--primary); min-width: 120px; }
+  .col-row-samples { font-size: 0.76rem; color: var(--text2); font-family: monospace; }
+
+  #results-wrap {
+    flex: 1;
+    overflow: auto;
+  }
+
+  .placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 10px;
+    color: #9AA0A6;
+  }
+  .placeholder .ph-icon { font-size: 2.5rem; }
+  .placeholder p { font-size: 0.85rem; }
+
+  /* Error bar */
+  .error-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    padding: 30px;
+  }
+  .error-display .err-icon { font-size: 2.2rem; }
+  .error-display .err-title { font-size: 0.95rem; font-weight: 600; color: var(--red); }
+  .error-display .err-msg {
+    background: #FCE8E6;
+    border: 1px solid #F5C6C2;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-family: monospace;
+    font-size: 0.82rem;
+    color: #C62828;
+    max-width: 500px;
+    text-align: center;
+    line-height: 1.5;
+  }
+  /* badge rouge sur l'onglet résultats en cas d'erreur */
+  .tab-btn .err-badge {
+    display: inline-block;
+    background: var(--red);
+    color: #fff;
+    border-radius: 20px;
+    padding: 0 6px;
+    font-size: 0.65rem;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  /* Table */
+  table {
+    width: auto;
+    border-collapse: collapse;
+    font-size: 0.83rem;
+    table-layout: fixed;
+  }
+  thead th {
+    background: var(--hover);
+    color: var(--text2);
+    padding: 9px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    position: sticky;
+    top: 0;
+    white-space: nowrap;
+    user-select: none;
+    border-bottom: 2px solid var(--border);
+    overflow: hidden;
+    z-index: 5;
+  }
+  thead th:hover { background: #E8EAED; }
+  .col-resize {
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 6;
+  }
+  .col-resize:hover, .col-resize.dragging { background: var(--primary); }
+  tbody tr { transition: background .08s; }
+  tbody tr:nth-child(even) { background: #F8F9FA; }
+  tbody tr:hover { background: #E8F0FE; }
+  td {
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+  }
+  td.num { text-align: right; color: #1557B0; font-family: monospace; }
+  td.null { color: #BDBDBD; font-style: italic; font-size: 0.78rem; }
+</style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ── -->
+<div id="sidebar" style="width:320px;min-width:180px;max-width:600px">
+  <div id="sidebar-header">
+    <span class="logo">⬡</span>
+    <div>
+      <h1>SQL CSV Client</h1>
+      <div id="table-tag"></div>
+    </div>
+  </div>
+
+  <div id="sidebar-body">
+
+    <!-- CSV -->
+    <div class="side-section">
+      <div class="side-label">Source</div>
+      <div id="csv-zone">
+        <div class="drop-icon">📂</div>
+        <div>Glisser un fichier CSV</div>
+        <small>ou Ctrl+V pour coller</small>
+        <div><button id="csv-toggle-paste" onclick="togglePaste()">▼ Zone de collage</button></div>
+        <textarea id="csv-paste-area" placeholder="Coller le CSV ici…" spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <!-- SQL -->
+    <div class="side-section">
+      <div class="side-label">Requête <kbd style="float:right;font-size:.65rem;background:#eee;padding:1px 5px;border-radius:3px;color:#555">Ctrl+↵</kbd></div>
+      <textarea id="sql-input" placeholder="SELECT * FROM data LIMIT 50" spellcheck="false"></textarea>
+      <button id="run-btn" onclick="runQuery()">▶ Exécuter</button>
+    </div>
+
+    <!-- Quick -->
+    <div class="side-section">
+      <div class="side-label">Raccourcis</div>
+      <div id="quick-wrap">
+        <button class="qbtn" onclick="setQ('SELECT * FROM {t} LIMIT 50')">SELECT *</button>
+        <button class="qbtn" onclick="setQ('SELECT COUNT(*) AS total FROM {t}')">COUNT</button>
+        <div id="cols-wrap" style="display:none;position:relative">
+          <button class="qbtn" onclick="toggleColPicker(event)">Colonnes ▾</button>
+          <div id="col-picker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:180px;max-height:200px;overflow-y:auto;box-shadow:var(--shadow-lg)"></div>
+        </div>
+      </div>
+    </div>
+
+
+  </div>
+</div>
+
+<!-- ── RESIZE HANDLE ── -->
+<div id="sidebar-resize" style="width:5px;cursor:col-resize;background:transparent;flex-shrink:0;transition:background .15s;z-index:20" onmouseenter="this.style.background='#DADCE0'" onmouseleave="this.style.background='transparent'"></div>
+
+<!-- ── MAIN ── -->
+<div id="main">
+  <div id="results-card">
+    <div id="tabs-bar">
+      <button class="tab-btn active" onclick="switchTab('results')">Résultats <span id="results-count"></span></button>
+      <button class="tab-btn" onclick="switchTab('cols')">Colonnes</button>
+      <button class="tab-btn" onclick="switchTab('history')">Historique</button>
+      <div class="spacer"></div>
+      <button id="copy-btn" onclick="copyTableHTML()">📋 Copier la table</button>
+    </div>
+    <div id="results-wrap">
+      <div class="placeholder">
+        <div class="ph-icon">🗂️</div>
+        <p>Déposez un CSV et lancez une requête</p>
+      </div>
+    </div>
+    <div id="cols-panel"></div>
+    <div id="history-panel" style="display:none;flex-direction:column;overflow-y:auto;flex:1"></div>
+  </div>
+</div>
+
+<script>
+// ─── CSV Parser ───────────────────────────────────────────────────────────────
+function parseCSVLine(line, sep) {
+  const result = [];
+  let current = '', inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i+1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === sep && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function detectSep(line) {
+  return (line.match(/;/g)||[]).length > (line.match(/,/g)||[]).length ? ';' : ',';
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) throw new Error('CSV vide ou sans données');
+  const sep = detectSep(lines[0]);
+  const headers = parseCSVLine(lines[0], sep).map(h => h.replace(/^["']|["']$/g,''));
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = parseCSVLine(lines[i], sep);
+    const row = {};
+    headers.forEach((h, j) => {
+      let v = (vals[j] !== undefined ? vals[j] : '').replace(/^["']|["']$/g,'');
+      const n = Number(v.replace(',','.'));
+      row[h] = (!isNaN(n) && v.trim() !== '') ? n : v;
+    });
+    rows.push(row);
+  }
+  return { headers, rows };
+}
+
+// ─── SQL Engine ───────────────────────────────────────────────────────────────
+class SQLEngine {
+  constructor() { this.tables = {}; }
+  load(name, headers, rows) { this.tables[name] = { headers, rows }; }
+
+  query(sql) { return this.execute(this.parse(sql.trim())); }
+
+  parse(sql) {
+    let s = sql;
+    let limit = null;
+    s = s.replace(/\bLIMIT\s+(\d+)\s*$/i, (_, n) => { limit = +n; return ''; }).trim();
+    let orderBy = null;
+    s = s.replace(/\bORDER\s+BY\s+(.+)$/i, (_, o) => { orderBy = o.trim(); return ''; }).trim();
+    let groupBy = null;
+    s = s.replace(/\bGROUP\s+BY\s+(.+)$/i, (_, g) => { groupBy = g.split(',').map(c=>c.trim()); return ''; }).trim();
+    let having = null;
+    s = s.replace(/\bHAVING\s+(.+)$/i, (_, h) => { having = h.trim(); return ''; }).trim();
+    let where = null;
+    s = s.replace(/\bWHERE\s+(.+)$/i, (_, w) => { where = w.trim(); return ''; }).trim();
+    const fromM = s.match(/\bFROM\s+(\w+)\s*$/i);
+    if (!fromM) throw new Error('Clause FROM manquante');
+    const tableName = fromM[1].toLowerCase();
+    s = s.slice(0, fromM.index).trim();
+    if (!/^SELECT\s+/i.test(s)) throw new Error('La requête doit commencer par SELECT');
+    let selectStr = s.replace(/^SELECT\s+/i,'').trim();
+    const distinct = /^DISTINCT\s+/i.test(selectStr);
+    if (distinct) selectStr = selectStr.replace(/^DISTINCT\s+/i,'');
+    return { selectStr, distinct, tableName, where, groupBy, having, orderBy, limit };
+  }
+
+  execute({ selectStr, distinct, tableName, where, groupBy, having, orderBy, limit }) {
+    const table = this.tables[tableName];
+    if (!table) {
+      const avail = Object.keys(this.tables).join(', ');
+      throw new Error(`Table "${tableName}" introuvable. Disponibles : ${avail||'aucune'}`);
+    }
+    let rows = [...table.rows];
+    if (where) rows = rows.filter(r => this.evalExpr(where, r));
+    const selectCols = this.parseSelect(selectStr, table.headers);
+    const hasAggr = selectCols.some(c => c.aggr);
+    if (groupBy) rows = this.doGroupBy(rows, groupBy, selectCols);
+    else if (hasAggr) rows = [this.aggrAll(rows, selectCols)];
+    else rows = rows.map(r => this.project(r, selectCols));
+    if (having) rows = rows.filter(r => this.evalExpr(having, r));
+    if (distinct) {
+      const seen = new Set();
+      rows = rows.filter(r => { const k=JSON.stringify(r); const ok=!seen.has(k); seen.add(k); return ok; });
+    }
+    if (orderBy) {
+      const parts = orderBy.split(',').map(p => {
+        const m = p.trim().match(/^(.+?)\s*(ASC|DESC)?$/i);
+        return { col: m[1].trim(), desc: !!(m[2]&&m[2].toUpperCase()==='DESC') };
+      });
+      rows.sort((a,b) => {
+        for (const {col,desc} of parts) {
+          const av=a[col], bv=b[col];
+          let cmp=0;
+          if (av==null&&bv!=null) cmp=1; else if (av!=null&&bv==null) cmp=-1;
+          else if (typeof av==='number'&&typeof bv==='number') cmp=av-bv;
+          else cmp=String(av)<String(bv)?-1:String(av)>String(bv)?1:0;
+          if (cmp!==0) return desc?-cmp:cmp;
+        }
+        return 0;
+      });
+    }
+    if (limit!==null) rows=rows.slice(0,limit);
+    const cols = rows.length>0 ? Object.keys(rows[0]) : selectCols.map(c=>c.alias||c.col||'*');
+    return { cols, rows };
+  }
+
+  parseSelect(s, headers) {
+    if (s==='*') return [{type:'star'}];
+    const parts=[]; let depth=0,cur='';
+    for (const ch of s) {
+      if (ch==='(') depth++; if (ch===')') depth--;
+      if (ch===','&&depth===0){parts.push(cur.trim());cur='';}else cur+=ch;
+    }
+    parts.push(cur.trim());
+    return parts.map(p => {
+      const asM=p.match(/^(.+?)\s+AS\s+(\w+)$/i);
+      const expr=asM?asM[1].trim():p; const alias=asM?asM[2]:null;
+      const agM=expr.match(/^(COUNT|SUM|AVG|MIN|MAX)\s*\(\s*(.+?)\s*\)$/i);
+      if (agM) return {type:'aggr',aggr:agM[1].toUpperCase(),col:agM[2],alias:alias||`${agM[1].toUpperCase()}(${agM[2]})`};
+      return {type:'col',col:expr,alias};
+    });
+  }
+
+  project(row, cols) {
+    if (cols[0]?.type==='star') return {...row};
+    const r={};
+    for (const c of cols) r[c.alias||c.col]=row[c.col];
+    return r;
+  }
+
+  aggrAll(rows, cols) {
+    const r={};
+    for (const c of cols) {
+      if (c.type==='aggr') r[c.alias]=this.calcAggr(c.aggr,c.col,rows);
+      else if (c.type==='col') r[c.alias||c.col]=rows[0]?.[c.col]??null;
+    }
+    return r;
+  }
+
+  doGroupBy(rows, groupBy, selectCols) {
+    const map=new Map();
+    for (const row of rows) {
+      const key=groupBy.map(g=>String(row[g]??'')).join('\0');
+      if (!map.has(key)) map.set(key,[]);
+      map.get(key).push(row);
+    }
+    const result=[];
+    for (const grpRows of map.values()) {
+      const out={};
+      for (const c of selectCols) {
+        if (c.type==='star') { for (const g of groupBy) out[g]=grpRows[0][g]; }
+        else if (c.type==='aggr') out[c.alias]=this.calcAggr(c.aggr,c.col,grpRows);
+        else out[c.alias||c.col]=grpRows[0][c.col];
+      }
+      result.push(out);
+    }
+    return result;
+  }
+
+  calcAggr(fn, col, rows) {
+    if (fn==='COUNT') return col==='*'?rows.length:rows.filter(r=>r[col]!=null&&r[col]!=='').length;
+    const nums=rows.map(r=>Number(r[col])).filter(n=>!isNaN(n));
+    if (fn==='SUM') return nums.reduce((a,b)=>a+b,0);
+    if (fn==='AVG') return nums.length?+(nums.reduce((a,b)=>a+b,0)/nums.length).toFixed(6):null;
+    if (fn==='MIN') return nums.length?Math.min(...nums):null;
+    if (fn==='MAX') return nums.length?Math.max(...nums):null;
+    return null;
+  }
+
+  evalExpr(expr, row) { return this._or(expr.trim(), row); }
+
+  _splitTop(expr, kw) {
+    const parts=[],up=expr.toUpperCase();
+    let i=0,start=0,depth=0;
+    while(i<expr.length){
+      if(expr[i]==='('){depth++;i++;continue;}
+      if(expr[i]===')'){depth--;i++;continue;}
+      if(depth===0){
+        const pre=i===0||/[\s)]/.test(expr[i-1]);
+        const post=/[\s(]/.test(expr[i+kw.length]||' ');
+        if(pre&&post&&up.slice(i,i+kw.length)===kw){
+          parts.push(expr.slice(start,i).trim());i+=kw.length;start=i;continue;
+        }
+      }
+      i++;
+    }
+    parts.push(expr.slice(start).trim());
+    return parts.filter(p=>p);
+  }
+
+  _or(e,r){const p=this._splitTop(e,'OR');return p.length>1?p.some(x=>this._and(x,r)):this._and(e,r);}
+  _and(e,r){const p=this._splitTop(e,'AND');return p.length>1?p.every(x=>this._not(x,r)):this._not(e,r);}
+  _not(e,r){return /^NOT\s+/i.test(e)?!this._atom(e.slice(4).trim(),r):this._atom(e,r);}
+
+  _atom(expr, row) {
+    if(expr.startsWith('(')&&expr.endsWith(')')){
+      let d=0;
+      for(let i=0;i<expr.length-1;i++){if(expr[i]==='(')d++;if(expr[i]===')')d--;if(d===0&&i<expr.length-1){d=-99;break;}}
+      if(d!==-99) return this._or(expr.slice(1,-1),row);
+    }
+    const nullM=expr.match(/^(.+?)\s+IS\s+(NOT\s+)?NULL$/i);
+    if(nullM){const v=row[nullM[1].trim()];const isN=v==null||v==='';return nullM[2]?!isN:isN;}
+    const betM=expr.match(/^(.+?)\s+(NOT\s+)?BETWEEN\s+(.+?)\s+AND\s+(.+)$/i);
+    if(betM){const v=this._val(betM[1].trim(),row);const lo=this._val(betM[3].trim(),row);const hi=this._val(betM[4].trim(),row);const ok=v>=lo&&v<=hi;return betM[2]?!ok:ok;}
+    const inM=expr.match(/^(.+?)\s+(NOT\s+)?IN\s*\((.+)\)$/i);
+    if(inM){const v=this._val(inM[1].trim(),row);const vals=inM[3].split(',').map(x=>this._val(x.trim(),row));const ok=vals.some(x=>x==v);return inM[2]?!ok:ok;}
+    const likeM=expr.match(/^(.+?)\s+(NOT\s+)?LIKE\s+'([^']*)'/i);
+    if(likeM){const v=String(row[likeM[1].trim()]??'');const pat='^'+likeM[3].replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/%/g,'.*').replace(/_/g,'.')+'$';const ok=new RegExp(pat,'i').test(v);return likeM[2]?!ok:ok;}
+    const cmpM=expr.match(/^(.+?)\s*(!=|<>|<=|>=|=|<|>)\s*(.+)$/);
+    if(cmpM){
+      const l=this._val(cmpM[1].trim(),row),r=this._val(cmpM[3].trim(),row),op=cmpM[2];
+      if(op==='=')return l==r; if(op==='!='||op==='<>')return l!=r;
+      if(op==='<')return l<r; if(op==='>')return l>r;
+      if(op==='<=')return l<=r; if(op==='>=')return l>=r;
+    }
+    throw new Error(`Expression non reconnue : ${expr}`);
+  }
+
+  _val(t,row){
+    if((t.startsWith("'")&&t.endsWith("'"))||(t.startsWith('"')&&t.endsWith('"')))return t.slice(1,-1);
+    if(t.toUpperCase()==='NULL')return null;
+    if(!isNaN(t)&&t!=='')return Number(t);
+    if(Object.prototype.hasOwnProperty.call(row,t))return row[t];
+    return t;
+  }
+}
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+const engine = new SQLEngine();
+let currentTable = null, currentHeaders = [];
+let lastRows = [], lastCols = [];
+let queryHistory = [];
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function loadCSVText(text, name) {
+  try {
+    const { headers, rows } = parseCSV(text);
+    const tname = (name||'data').replace(/\.csv$/i,'').replace(/\W+/g,'_').toLowerCase() || 'data';
+    currentTable = tname;
+    currentHeaders = headers;
+    engine.load(tname, headers, rows);
+
+    document.getElementById('table-tag').textContent = `${tname} · ${rows.length} lignes`;
+    document.getElementById('table-tag').style.display = '';
+    const zone = document.getElementById('csv-zone');
+    zone.classList.add('loaded');
+    zone.querySelector('.drop-icon').textContent = '✓';
+    zone.childNodes[1].textContent = `${name||'données'} — ${rows.length} lignes, ${headers.length} colonnes`;
+    document.getElementById('cols-wrap').style.display = '';
+    showError(null);
+
+    const q = `SELECT * FROM ${tname} LIMIT 50`;
+    document.getElementById('sql-input').value = q;
+    const { cols, rows: r } = engine.query(q);
+    lastRows = r; lastCols = cols;
+    renderTable(cols, r);
+  } catch(e) { showError('CSV : ' + e.message); }
+}
+
+function runQuery() {
+  const sql = document.getElementById('sql-input').value.trim();
+  if (!sql) return;
+  try {
+    const { cols, rows } = engine.query(sql);
+    lastRows = rows; lastCols = cols;
+    renderTable(cols, rows);
+    showError(null);
+    pushHistory(sql);
+  } catch(e) { showError(e.message); }
+}
+
+function renderTable(cols, rows) {
+  const wrap = document.getElementById('results-wrap');
+  const count = document.getElementById('results-count');
+
+  if (!rows.length) {
+    count.style.display = 'none';
+    wrap.innerHTML = '<div class="placeholder"><div class="ph-icon">🔍</div><p>0 résultat</p></div>';
+    return;
+  }
+
+  count.textContent = `${rows.length} ligne${rows.length>1?'s':''}`;
+  count.style.display = '';
+
+  const defaultW = 120;
+  let html = '<table style="width:' + (cols.length * defaultW) + 'px"><colgroup>';
+  for (const c of cols) html += `<col style="width:${defaultW}px">`;
+  html += '</colgroup><thead><tr>';
+  for (const c of cols)
+    html += `<th>${esc(c)}<div class="col-resize"></div></th>`;
+  html += '</tr></thead><tbody>';
+  for (const row of rows) {
+    html += '<tr>';
+    for (const c of cols) {
+      const v = row[c];
+      if (v==null||v==='') html += `<td class="null">—</td>`;
+      else if (typeof v==='number') html += `<td class="num">${v}</td>`;
+      else html += `<td title="${esc(String(v))}">${esc(String(v))}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function pushHistory(sql) {
+  queryHistory = queryHistory.filter(q=>q!==sql);
+  queryHistory.unshift(sql);
+  if (queryHistory.length>5) queryHistory.length=5;
+}
+
+function renderHistoryPanel() {
+  const p = document.getElementById('history-panel');
+  if (!queryHistory.length) {
+    p.innerHTML='<div style="padding:20px;color:#9AA0A6;font-size:.85rem">Aucune requête dans l\'historique</div>';
+    return;
+  }
+  p.innerHTML = queryHistory.map((q,i) =>
+    `<div class="col-row" ondblclick="recallQuery(${i})" title="Double-clic pour rappeler">
+      <span style="font-family:monospace;font-size:0.8rem;color:var(--text)">${esc(q)}</span>
+    </div>`
+  ).join('');
+}
+
+function copyTableHTML() {
+  const table = document.querySelector('#results-wrap table');
+  const btn = document.getElementById('copy-btn');
+  if (!table) return;
+
+  // Build clean HTML table (inline styles pour Moodle TinyMCE)
+  const style = 'border-collapse:collapse;font-family:sans-serif;font-size:13px';
+  const thStyle = 'background:#1A73E8;color:#fff;padding:6px 12px;text-align:left;border:1px solid #aaa;font-weight:600';
+  const tdStyle = 'padding:5px 12px;border:1px solid #ccc';
+  const tdNumStyle = 'padding:5px 12px;border:1px solid #ccc;text-align:right';
+
+  let html = `<table style="${style}"><thead><tr>`;
+  for (const c of lastCols)
+    html += `<th style="${thStyle}">${esc(c)}</th>`;
+  html += '</tr></thead><tbody>';
+  lastRows.forEach((row, ri) => {
+    const bg = ri%2===0 ? '#fff' : '#F8F9FA';
+    html += `<tr style="background:${bg}">`;
+    for (const c of lastCols) {
+      const v = row[c];
+      if (v==null||v==='') html += `<td style="${tdStyle};color:#aaa">—</td>`;
+      else if (typeof v==='number') html += `<td style="${tdNumStyle}">${v}</td>`;
+      else html += `<td style="${tdStyle}">${esc(String(v))}</td>`;
+    }
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+
+  // Copy as HTML to clipboard
+  const blob = new Blob([html], {type:'text/html'});
+  const item = new ClipboardItem({'text/html': blob, 'text/plain': new Blob([html],{type:'text/plain'})});
+  navigator.clipboard.write([item]).then(() => {
+    btn.textContent = '✓ Copié !';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 Copier la table'; btn.classList.remove('copied'); }, 1800);
+  }).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = html; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    btn.textContent = '✓ Copié !'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 Copier la table'; btn.classList.remove('copied'); }, 1800);
+  });
+}
+
+function recallQuery(i) {
+  document.getElementById('sql-input').value = queryHistory[i];
+  switchTab('results');
+  document.getElementById('sql-input').focus();
+}
+
+function showError(msg) {
+  const wrap = document.getElementById('results-wrap');
+  const tabBtn = document.querySelector('.tab-btn');
+  // Remove existing badge
+  const oldBadge = tabBtn.querySelector('.err-badge');
+  if (oldBadge) oldBadge.remove();
+
+  if (msg) {
+    switchTab('results');
+    wrap.innerHTML = `<div class="error-display">
+      <div class="err-icon">⚠️</div>
+      <div class="err-title">Erreur dans la requête</div>
+      <div class="err-msg">${esc(msg)}</div>
+    </div>`;
+    // Badge sur l'onglet
+    const badge = document.createElement('span');
+    badge.className = 'err-badge'; badge.textContent = '!';
+    tabBtn.appendChild(badge);
+    document.getElementById('results-count').style.display = 'none';
+  }
+}
+
+function setQ(tpl) {
+  const q = tpl.replace('{t}', currentTable||'data');
+  document.getElementById('sql-input').value = q;
+  document.getElementById('sql-input').focus();
+}
+
+function insertCol(col) {
+  const ta = document.getElementById('sql-input');
+  const s=ta.selectionStart, e=ta.selectionEnd, v=ta.value;
+  ta.value = v.slice(0,s)+col+v.slice(e);
+  ta.selectionStart = ta.selectionEnd = s+col.length;
+  ta.focus();
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  const tabs = ['results','cols','history'];
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', tabs[i]===tab));
+  document.getElementById('results-wrap').style.display   = tab==='results' ? '' : 'none';
+  document.getElementById('cols-panel').style.display     = tab==='cols'    ? 'flex' : 'none';
+  document.getElementById('history-panel').style.display  = tab==='history' ? 'flex' : 'none';
+  if (tab==='cols') renderColsPanel();
+  if (tab==='history') renderHistoryPanel();
+}
+
+function renderColsPanel() {
+  const cp = document.getElementById('cols-panel');
+  const table = engine.tables[currentTable];
+  if (!currentHeaders.length) { cp.innerHTML='<div style="padding:20px;color:#9AA0A6">Aucune table chargée</div>'; return; }
+  cp.innerHTML = currentHeaders.map(h => {
+    const samples = table ? [...new Set(table.rows.slice(0,20).map(r=>r[h]).filter(v=>v!=null&&v!==''))].slice(0,4).map(v=>esc(String(v))) : [];
+    return `<div class="col-row" onclick="insertCol('${h.replace(/'/g,"\\'")}');switchTab('results')">
+      <span class="col-row-name">${esc(h)}</span>
+      <span class="col-row-samples">${samples.join(' &nbsp;·&nbsp; ')}</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleColPicker(ev) {
+  ev.stopPropagation();
+  const p = document.getElementById('col-picker');
+  if (p.style.display==='block'){p.style.display='none';return;}
+  const table = engine.tables[currentTable];
+  p.innerHTML = currentHeaders.map(h => {
+    const samples = table ? table.rows.slice(0,3).map(r => r[h]).filter(v => v!=null && v!=='').map(v=>esc(String(v))) : [];
+    const samplesHtml = samples.length ? `<div class="cpick-samples">${samples.join(' · ')}</div>` : '';
+    return `<div class="cpick-item" onclick="insertCol('${h.replace(/'/g,"\\'")}');closeColPicker()">
+      <div class="cpick-name">${esc(h)}</div>${samplesHtml}
+    </div>`;
+  }).join('');
+  p.style.display='block';
+}
+function closeColPicker(){document.getElementById('col-picker').style.display='none';}
+document.addEventListener('click', closeColPicker);
+
+function togglePaste(){
+  const a=document.getElementById('csv-paste-area'),b=document.getElementById('csv-toggle-paste');
+  if(a.style.display==='block'){a.style.display='none';b.textContent='▼ Zone de collage';}
+  else{a.style.display='block';b.textContent='▲ Masquer';a.focus();}
+}
+
+// ─── Column Resize ────────────────────────────────────────────────────────────
+document.addEventListener('mousedown', e => {
+  if (!e.target.classList.contains('col-resize')) return;
+  e.preventDefault();
+  const handle = e.target;
+  const th = handle.parentElement;
+  const table = th.closest('table');
+  // Use colgroup cols for reliable resizing
+  const thIndex = Array.from(th.parentElement.children).indexOf(th);
+  const col = table.querySelectorAll('col')[thIndex];
+  handle.classList.add('dragging');
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  const startX = e.clientX;
+  const startW = th.getBoundingClientRect().width;
+  const startTableW = table.getBoundingClientRect().width;
+  const onMove = e => {
+    const delta = e.clientX - startX;
+    const newW = Math.max(30, startW + delta);
+    if (col) col.style.width = newW + 'px';
+    else th.style.width = newW + 'px';
+    table.style.width = Math.max(100, startTableW + delta) + 'px';
+  };
+  const onUp = () => {
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+});
+
+// ─── Sidebar Resize ───────────────────────────────────────────────────────────
+document.getElementById('sidebar-resize').addEventListener('mousedown', e => {
+  e.preventDefault();
+  const sidebar = document.getElementById('sidebar');
+  const handle = document.getElementById('sidebar-resize');
+  const startX = e.clientX, startW = sidebar.offsetWidth;
+  handle.style.background = '#1A73E8';
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  const onMove = e => {
+    const w = Math.min(600, Math.max(180, startW + e.clientX - startX));
+    sidebar.style.width = w + 'px';
+  };
+  const onUp = () => {
+    handle.style.background = 'transparent';
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+});
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+const csvZone = document.getElementById('csv-zone');
+csvZone.addEventListener('dragover', e=>{e.preventDefault();csvZone.classList.add('dragover');});
+csvZone.addEventListener('dragleave', ()=>csvZone.classList.remove('dragover'));
+csvZone.addEventListener('drop', e=>{
+  e.preventDefault(); csvZone.classList.remove('dragover');
+  const file=e.dataTransfer.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=ev=>loadCSVText(ev.target.result,file.name);
+  r.readAsText(file,'UTF-8');
+});
+
+document.addEventListener('paste', e=>{
+  const active=document.activeElement;
+  if(active===document.getElementById('sql-input')||active===document.getElementById('csv-paste-area'))return;
+  const t=e.clipboardData.getData('text');
+  if(t) loadCSVText(t,'données');
+});
+
+document.getElementById('csv-paste-area').addEventListener('input',function(){
+  if(this.value.trim()) loadCSVText(this.value,'données');
+});
+
+document.getElementById('sql-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();runQuery();}
+});
+</script>
+</body>
+</html>
