@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Lavoisier — Calcination du mercure (1774)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #0a0a18;
+    color: #e0e0f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 10px 18px;
+    min-height: 100vh;
+  }
+  header { text-align: center; margin-bottom: 10px; }
+  header h1 { font-size: 1.06rem; font-weight: 700; color: #fff; }
+
+  #main { display: flex; gap: 14px; align-items: flex-start; }
+
+  canvas {
+    display: block; border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(80,140,255,.15), 0 8px 28px rgba(0,0,0,.65);
+  }
+
+  #panel { width: 148px; display: flex; flex-direction: column; gap: 8px; }
+
+  .card {
+    background: #11112a; border: 1px solid #222248;
+    border-radius: 9px; padding: 9px 11px;
+  }
+  .card label {
+    display: block; font-size: .58rem; text-transform: uppercase;
+    letter-spacing: .9px; color: #424290; margin-bottom: 4px;
+  }
+  .card .val  { font-size: 1.3rem; font-weight: 700; color: #fff; line-height: 1.1; }
+  .card .unit { font-size: .62rem; color: #5252a0; margin-left: 2px; }
+  .card .sub  { font-size: .62rem; color: #5050a0; margin-top: 2px; }
+  .card .note { font-size: .65rem; color: #6868a8; line-height: 1.6; margin-top: 3px; }
+
+  .btn {
+    width: 100%; padding: 9px 6px; border: none; border-radius: 8px;
+    font-size: .78rem; font-weight: 700; cursor: pointer;
+    transition: opacity .15s, transform .1s; letter-spacing: .15px;
+  }
+  .btn:hover  { opacity: .85; transform: translateY(-1px); }
+  .btn:active { transform: none; }
+  .btn:disabled { opacity: .28; cursor: default; transform: none; }
+  #btn-heat  { background: linear-gradient(135deg,#c82400,#ff8400); color: #fff; }
+  #btn-step2 { background: linear-gradient(135deg,#185a28,#28a048); color: #fff; display:none; }
+  #btn-reset { background: linear-gradient(135deg,#262256,#424292); color: #bbb; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Expérience de Lavoisier — Calcination du Mercure (1774)</h1>
+</header>
+
+<div id="main">
+  <canvas id="c" width="600" height="470"></canvas>
+
+  <div id="panel">
+    <!-- Étape 1 -->
+    <div class="card" id="p-vol-init">
+      <label>Volume initial</label>
+      <div><span class="val" id="vol-init">—</span><span class="unit">p. c.</span></div>
+      <div class="sub">pouces cubiques</div>
+    </div>
+    <div class="card" id="p-vol-rest">
+      <label>Volume restant</label>
+      <div><span class="val" id="vol-rest">—</span><span class="unit">p. c.</span></div>
+    </div>
+    <div class="card" id="p-day">
+      <label>Durée</label>
+      <div><span class="val" id="day-num">1</span><span class="unit">/ 12 j.</span></div>
+    </div>
+    <button class="btn" id="btn-heat">🔥 Chauffer</button>
+    <button class="btn" id="btn-step2">🐭 Étape 2</button>
+    <!-- Étape 2 -->
+    <div class="card" id="p-step2" style="display:none">
+      <label>Étape 2</label>
+      <div class="note">Lavoisier introduit un animal dans la cloche…</div>
+    </div>
+    <!-- Toujours -->
+    <button class="btn" id="btn-reset">↺ Réinitialiser</button>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   PARAMÈTRES DEPUIS L'URL
+   Format : ?d=BASE64( XOR(42, JSON) )
+   JSON : {"vol0": 53.5, "volf": 42.7}
+
+   Python pour générer l'URL :
+     import base64, json
+     KEY = 42
+     def enc(v0, vf):
+         s = json.dumps({"vol0":round(float(v0),1),"volf":round(float(vf),3)},separators=(',',':'))
+         return base64.b64encode(bytes([ord(c)^KEY for c in s])).decode()
+     url = f"lavoisier_conservation_masse.html?d={enc(vol_air0_pouce, vol_airf_pouce)}"
+   ══════════════════════════════════════════════════════ */
+function readURL() {
+  try {
+    const raw = new URL(location.href).searchParams.get('d');
+    if (!raw) return {};
+    const s = atob(raw).split('').map(c => String.fromCharCode(c.charCodeAt(0) ^ 42)).join('');
+    return JSON.parse(s);
+  } catch { return {}; }
+}
+const up = readURL();
+
+/* ── Valeurs de simulation ── */
+const P = {
+  VOL_INIT:  up.vol0 ?? 53.5,   // pouces cubiques, volume initial d'air
+  VOL_FINAL: up.volf ?? 42.7,   // pouces cubiques, volume final d'air
+  SPEED:     0.0009,             // vitesse réaction (progress/frame)
+  HGO_H_MAX: 52,                 // hauteur max parcelles rouges dans matras (px)
+  /* Baisse du niveau du métal dans le matras : doit être visible */
+  HG_DROP:   22,                 // px — valeur augmentée pour rendre la baisse visible
+};
+P.VOL_CONSOMME = +(P.VOL_INIT - P.VOL_FINAL).toFixed(3);
+
+/* ══════════════════════════════════════════════════════
+   CANVAS
+   ══════════════════════════════════════════════════════ */
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+
+/* ══════════════════════════════════════════════════════
+   GÉOMÉTRIE (décalée de 10px vers le bas pour la bande ciel)
+   ══════════════════════════════════════════════════════ */
+const SKY_H = 58; // hauteur de la bande ciel en haut du canvas
+
+const M = { cx:148, cy:268, rx:90, ry:87, top:185, bot:350, left:62, right:234 };
+const FN = { x:55, y:353, w:188, h:62 };
+const CL = { ix:424, iw:100, it:130, ib:368, glass:6 };
+CL.ox = CL.ix - CL.glass; CL.ow = CL.iw + CL.glass*2; CL.ot = CL.it - CL.glass;
+const CV = { x:395, y:368, w:168, h:32 };
+
+const CL_H    = CL.ib - CL.it;
+const PX_PC   = CL_H / P.VOL_INIT;
+
+/* Mercure dans la cloche (monte quand O2 consommé) */
+const mercClocheY = prog => CL.ib - prog * P.VOL_CONSOMME * PX_PC;
+
+/* Métal dans le matras (baisse visible quand Hg → HgO) */
+const metalSurf  = prog => M.bot - 46 + prog * P.HG_DROP;   // niveau Hg descend
+const parcH      = prog => prog * P.HGO_H_MAX;
+const parcTopY   = prog => metalSurf(prog) - parcH(prog);
+
+/* Texture parcelles rouges */
+const PARC = Array.from({ length: 430 }, () => ({
+  rx: Math.random(), ry: Math.random(),
+  r: 0.8 + Math.random() * 2.2,
+  h: Math.random() * 22, l: 40 + Math.random() * 28,
+}));
+
+/* ══════════════════════════════════════════════════════
+   ÉTAT
+   ══════════════════════════════════════════════════════ */
+let step = 1;
+let prog = 0, heating = false, flameI = 0, tick = 0;
+
+/* Étape 2 — animal */
+let animalT  = 0;
+let animalX  = CL.ix + CL.iw / 2;
+let animalY  = CL.it + 30;
+let animalVX = 0.9;
+let animalVY = 0.4;
+let animalFacing = 1; // 1=droite, -1=gauche
+
+const A_ACTIVE = 420;  // frames en mouvement actif  (~7 s)
+const A_SLOW   = 600;  // frames avant arrêt complet (~10 s)
+const A_DEAD   = 750;  // frames pour mort complète  (~12 s)
+
+function animalPhase() {
+  if (animalT < A_ACTIVE) return 'active';
+  if (animalT < A_DEAD)   return 'slowing';
+  return 'dead';
+}
+
+/* ══════════════════════════════════════════════════════
+   BANDE CIEL + SOLEIL / LUNE
+   Le cycle de 12 jours se lit sur prog 0→1
+   ══════════════════════════════════════════════════════ */
+function drawSky(p) {
+  const totalDays = 12;
+  const cycleT    = (p * totalDays) % 1;  // 0=minuit, 0.25=lever, 0.5=midi, 0.75=coucher
+  const isDay     = cycleT > 0.22 && cycleT < 0.78;
+  const dayNum    = Math.min(Math.floor(p * totalDays) + 1, totalDays);
+
+  /* Gradient de ciel */
+  const sg = ctx.createLinearGradient(0, 0, 0, SKY_H);
+  if (cycleT < 0.18) {                       // Nuit
+    sg.addColorStop(0,'#010110'); sg.addColorStop(1,'#03031a');
+  } else if (cycleT < 0.28) {               // Aube
+    const t = (cycleT-0.18)/0.10;
+    sg.addColorStop(0, `rgb(${~~(t*70)},${~~(t*35)},${~~(15+t*60)})`);
+    sg.addColorStop(1, `rgb(${~~(t*110)},${~~(t*55)},${~~(t*20)})`);
+  } else if (cycleT < 0.72) {               // Jour
+    sg.addColorStop(0,'#1a3868'); sg.addColorStop(1,'#26568a');
+  } else if (cycleT < 0.82) {               // Crépuscule
+    const t = (cycleT-0.72)/0.10;
+    sg.addColorStop(0,`rgb(${~~(26+t*90)},${~~(56-t*38)},${~~(104-t*88)})`);
+    sg.addColorStop(1,`rgb(${~~(38+t*90)},${~~(86-t*68)},${~~(138-t*128)})`);
+  } else {                                   // Nuit
+    sg.addColorStop(0,'#010110'); sg.addColorStop(1,'#03031a');
+  }
+  ctx.fillStyle = sg;
+  ctx.fillRect(0, 0, W, SKY_H);
+
+  /* Étoiles (nuit) */
+  if (!isDay) {
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    [[80,14],[170,8],[310,20],[420,12],[510,18],[60,32],[280,11],[390,26],[540,8]].forEach(([x,y]) => {
+      ctx.beginPath(); ctx.arc(x,y,0.9,0,Math.PI*2); ctx.fill();
+    });
+  }
+
+  /* Soleil */
+  if (isDay) {
+    const df   = (cycleT - 0.25) / 0.50;
+    const sunX = 30 + Math.max(0, Math.min(1, df)) * 540;
+    const sunY = 44 - Math.sin(Math.max(0, Math.min(1, df)) * Math.PI) * 34;
+    const gl   = ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,24);
+    gl.addColorStop(0,'rgba(255,245,100,.95)'); gl.addColorStop(.45,'rgba(255,200,50,.55)');
+    gl.addColorStop(1,'rgba(255,150,0,0)');
+    ctx.fillStyle = gl;
+    ctx.beginPath(); ctx.arc(sunX,sunY,24,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ffee50';
+    ctx.beginPath(); ctx.arc(sunX,sunY,9,0,Math.PI*2); ctx.fill();
+  }
+
+  /* Lune */
+  if (!isDay) {
+    let mf;
+    if (cycleT >= 0.75) mf = (cycleT-0.75)/0.50;
+    else                mf = (cycleT+0.25)/0.50;
+    mf = Math.max(0, Math.min(1, mf));
+    const moonX = 30 + mf * 540;
+    const moonY = 42 - Math.sin(mf * Math.PI) * 32;
+    ctx.fillStyle = '#d8dcc0';
+    ctx.beginPath(); ctx.arc(moonX,moonY,8,0,Math.PI*2); ctx.fill();
+    /* Croissant (cache une partie) */
+    const bgCol = cycleT < 0.15 || cycleT > 0.9 ? '#010110' : '#03031a';
+    ctx.fillStyle = bgCol;
+    ctx.beginPath(); ctx.arc(moonX+5,moonY-2,6.5,0,Math.PI*2); ctx.fill();
+  }
+
+  /* Compteur de jours */
+  ctx.save();
+  ctx.font = 'bold 10px Segoe UI';
+  ctx.fillStyle = isDay ? 'rgba(200,220,255,.85)' : 'rgba(160,180,230,.70)';
+  ctx.textAlign = 'right';
+  ctx.fillText(`Jour ${dayNum} / ${totalDays}`, W-8, 18);
+  ctx.restore();
+
+  /* Séparateur bas bande */
+  ctx.fillStyle = 'rgba(10,10,30,.7)';
+  ctx.fillRect(0, SKY_H-6, W, 6);
+}
+
+/* ══════════════════════════════════════════════════════
+   FOND (sous la bande ciel)
+   ══════════════════════════════════════════════════════ */
+function drawBg() {
+  ctx.fillStyle = '#0b0b1c';
+  ctx.fillRect(0, SKY_H, W, H - SKY_H);
+  ctx.save();
+  ctx.strokeStyle='rgba(36,36,68,.10)'; ctx.lineWidth=.5;
+  for (let x=0; x<W; x+=28) { ctx.beginPath(); ctx.moveTo(x,SKY_H); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y=SKY_H; y<H; y+=28) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════
+   FOURNEAU
+   ══════════════════════════════════════════════════════ */
+function drawFurnace() {
+  const {x,y,w,h}=FN;
+  ctx.save();
+  const bg=ctx.createLinearGradient(x,y,x,y+h);
+  bg.addColorStop(0,'#2a1a0a'); bg.addColorStop(1,'#1a0e05');
+  ctx.fillStyle=bg; ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle='rgba(80,50,20,.55)'; ctx.lineWidth=1;
+  const bh=14;
+  for (let r=0;r*bh<h;r++) {
+    const yy=y+r*bh;
+    ctx.beginPath(); ctx.moveTo(x,yy); ctx.lineTo(x+w,yy); ctx.stroke();
+    const off=r%2===0?0:w/3;
+    for (let cx2=x+off;cx2<x+w;cx2+=w/3){ctx.beginPath();ctx.moveTo(cx2,yy);ctx.lineTo(cx2,yy+bh);ctx.stroke();}
+  }
+  const ax=x+w/2,ay=y+h,ar=22;
+  ctx.beginPath(); ctx.arc(ax,ay,ar,Math.PI,0);
+  ctx.lineTo(ax+ar,ay); ctx.lineTo(ax-ar,ay); ctx.closePath();
+  ctx.fillStyle='#060404'; ctx.fill();
+  if (flameI>.01) {
+    const gw=ctx.createRadialGradient(ax,ay,0,ax,ay,ar);
+    gw.addColorStop(0,`rgba(255,140,0,${flameI*.65})`); gw.addColorStop(1,'rgba(255,60,0,0)');
+    ctx.fillStyle=gw; ctx.beginPath(); ctx.arc(ax,ay,ar,Math.PI,0); ctx.fill();
+  }
+  ctx.strokeStyle='rgba(90,65,35,.7)'; ctx.lineWidth=2; ctx.strokeRect(x,y,w,h);
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════
+   FLAMME
+   ══════════════════════════════════════════════════════ */
+function drawFlame() {
+  if (flameI<.01) return;
+  const fx=M.cx,fy=M.bot+12,tt=tick/200;
+  ctx.save();
+  for (let i=-1;i<=1;i++) {
+    const wb=Math.sin(tt*1.7+i*1.3)*7,fh=24+Math.sin(tt*2+i)*6;
+    const fcx=fx+i*12+wb;
+    const fg=ctx.createRadialGradient(fcx,fy-fh*.3,1,fcx,fy,fh);
+    fg.addColorStop(0,'#fff8c0'); fg.addColorStop(.28,'#ffaa00');
+    fg.addColorStop(.65,'#ff4400'); fg.addColorStop(1,'rgba(255,50,0,0)');
+    ctx.globalAlpha=flameI;
+    ctx.beginPath();
+    ctx.moveTo(fcx-8,fy);
+    ctx.bezierCurveTo(fcx-6,fy-fh*.5,fcx+wb*.4,fy-fh,fcx,fy-fh);
+    ctx.bezierCurveTo(fcx-wb*.4,fy-fh,fcx+6,fy-fh*.5,fcx+8,fy);
+    ctx.closePath(); ctx.fillStyle=fg; ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════
+   MATRAS
+   ══════════════════════════════════════════════════════ */
+function drawMatras(p) {
+  const {cx,cy,rx,ry,top,bot,left,right}=M;
+  const my=metalSurf(p), hh=parcH(p), hy=parcTopY(p);
+  ctx.save();
+
+  ctx.beginPath(); ctx.ellipse(cx,cy,rx-2,ry-2,0,0,Math.PI*2); ctx.clip();
+
+  /* Air */
+  ctx.fillStyle='rgba(10,18,62,.52)';
+  ctx.fillRect(left,top,right-left,hy-top);
+
+  /* Parcelles rouges */
+  if (p>.008 && hh>.5) {
+    const g=ctx.createLinearGradient(cx,hy,cx,my);
+    g.addColorStop(0,`rgba(148,25,5,${Math.min(p*2,.88)})`);
+    g.addColorStop(.4,`rgba(185,45,12,${Math.min(p*2,.93)})`);
+    g.addColorStop(1,`rgba(208,58,20,${Math.min(p*2,.86)})`);
+    ctx.fillStyle=g; ctx.fillRect(left,hy,right-left,hh);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(left,hy,right-left,hh); ctx.clip();
+    const fw=right-left;
+    PARC.forEach(d=>{
+      ctx.beginPath(); ctx.arc(left+d.rx*fw,hy+d.ry*hh,d.r,0,Math.PI*2);
+      ctx.fillStyle=`hsla(${d.h},88%,${d.l}%,${Math.min(p*2.8,.88)})`; ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  /* Métal liquide */
+  const hgg=ctx.createLinearGradient(left,my,right,bot);
+  hgg.addColorStop(0,'#b4c2d8'); hgg.addColorStop(.3,'#dae4f4');
+  hgg.addColorStop(.65,'#8890a8'); hgg.addColorStop(1,'#585e70');
+  ctx.fillStyle=hgg; ctx.fillRect(left,my,right-left,bot-my);
+  ctx.beginPath(); ctx.moveTo(left,my); ctx.lineTo(right,my);
+  ctx.strokeStyle='rgba(215,232,255,.75)'; ctx.lineWidth=1.5; ctx.stroke();
+
+  ctx.restore();
+
+  /* Contour verre */
+  ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
+  const gv=ctx.createLinearGradient(cx-rx,cy-ry,cx+rx,cy+ry);
+  gv.addColorStop(0,'rgba(180,212,255,.88)'); gv.addColorStop(.38,'rgba(90,132,220,.40)');
+  gv.addColorStop(1,'rgba(34,52,140,.72)');
+  ctx.strokeStyle=gv; ctx.lineWidth=3; ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx-28,cy-42,rx*.44,ry*.25,-.33,Math.PI*1.06,Math.PI*1.55);
+  ctx.strokeStyle='rgba(200,228,255,.34)'; ctx.lineWidth=7; ctx.lineCap='round'; ctx.stroke();
+}
+
+/* ══════════════════════════════════════════════════════
+   COL DE CYGNE
+   ══════════════════════════════════════════════════════ */
+function drawNeck() {
+  ctx.save(); ctx.lineCap='round';
+  const sx=M.cx+16,sy=M.top+3,ex=CL.ix+CL.iw/2,ey=CL.ib+4;
+  ctx.beginPath(); ctx.moveTo(sx,sy);
+  ctx.bezierCurveTo(sx+55,sy-72,ex-10,sy-72,ex-8,ey);
+  ctx.strokeStyle='rgba(145,192,255,.72)'; ctx.lineWidth=3; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx+10,sy+3);
+  ctx.bezierCurveTo(sx+63,sy-60,ex+2,sy-62,ex+4,ey);
+  ctx.strokeStyle='rgba(44,82,190,.46)'; ctx.lineWidth=3; ctx.stroke();
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════
+   CUVE + CLOCHE
+   ══════════════════════════════════════════════════════ */
+function drawClocheAndTrough(p) {
+  const mY=mercClocheY(p);
+  ctx.save();
+
+  /* Cuve */
+  const cvg=ctx.createLinearGradient(CV.x,CV.y,CV.x+CV.w,CV.y+CV.h);
+  cvg.addColorStop(0,'#a8b8cc'); cvg.addColorStop(.3,'#d4e0f0');
+  cvg.addColorStop(.7,'#8090a8'); cvg.addColorStop(1,'#505868');
+  ctx.fillStyle=cvg; ctx.fillRect(CV.x,CV.y,CV.w,CV.h);
+  ctx.beginPath(); ctx.moveTo(CV.x,CV.y); ctx.lineTo(CV.x+CV.w,CV.y);
+  ctx.strokeStyle='rgba(210,230,255,.65)'; ctx.lineWidth=1.2; ctx.stroke();
+  ctx.strokeStyle='rgba(135,175,245,.62)'; ctx.lineWidth=2;
+  ctx.strokeRect(CV.x,CV.y,CV.w,CV.h);
+
+  /* Air dans la cloche */
+  ctx.fillStyle='rgba(10,18,62,.50)';
+  ctx.fillRect(CL.ix,CL.it,CL.iw,mY-CL.it);
+
+  /* Mercure monté */
+  const clhg=ctx.createLinearGradient(CL.ix,mY,CL.ix+CL.iw,CL.ib);
+  clhg.addColorStop(0,'#bac8dc'); clhg.addColorStop(.3,'#dae6f4');
+  clhg.addColorStop(.7,'#8898b0'); clhg.addColorStop(1,'#58606e');
+  ctx.fillStyle=clhg; ctx.fillRect(CL.ix,mY,CL.iw,CL.ib-mY);
+  if (p>.01) {
+    ctx.beginPath(); ctx.moveTo(CL.ix,mY); ctx.lineTo(CL.ix+CL.iw,mY);
+    ctx.strokeStyle='rgba(210,230,255,.72)'; ctx.lineWidth=1.5; ctx.stroke();
+  }
+
+  /* Contour verre cloche */
+  const ox=CL.ox,ow=CL.ow,ot=CL.ot,ob=CL.ib,cr=28;
+  ctx.beginPath();
+  ctx.moveTo(ox,ob); ctx.lineTo(ox,ot+cr);
+  ctx.quadraticCurveTo(ox,ot,ox+cr,ot); ctx.lineTo(ox+ow-cr,ot);
+  ctx.quadraticCurveTo(ox+ow,ot,ox+ow,ot+cr); ctx.lineTo(ox+ow,ob);
+  ctx.moveTo(CL.ix,ob); ctx.lineTo(CL.ix,CL.it+18);
+  ctx.moveTo(CL.ix+CL.iw,ob); ctx.lineTo(CL.ix+CL.iw,CL.it+18);
+  const gvg=ctx.createLinearGradient(ox,ot,ox+ow,ob);
+  gvg.addColorStop(0,'rgba(175,210,255,.88)'); gvg.addColorStop(.38,'rgba(85,125,215,.42)');
+  gvg.addColorStop(1,'rgba(32,50,135,.70)');
+  ctx.strokeStyle=gvg; ctx.lineWidth=3; ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(ox+ow*.28,ot+18,ow*.14,cr*.4,-.2,Math.PI*.9,Math.PI*1.5);
+  ctx.strokeStyle='rgba(200,225,255,.30)'; ctx.lineWidth=5; ctx.lineCap='round'; ctx.stroke();
+
+  /* Graduation */
+  ctx.font='8px Segoe UI'; ctx.fillStyle='rgba(130,148,205,.70)'; ctx.textAlign='left';
+  [0,10,20,30,40].concat(P.VOL_INIT).forEach(pc => {
+    const yy=CL.ib-pc*PX_PC;
+    if (yy<CL.it+2||yy>CL.ib) return;
+    ctx.beginPath(); ctx.moveTo(CL.ix+CL.iw+2,yy); ctx.lineTo(CL.ix+CL.iw+8,yy);
+    ctx.strokeStyle='rgba(100,120,195,.38)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='rgba(130,148,205,.70)';
+    ctx.fillText(pc===P.VOL_INIT?P.VOL_INIT.toFixed(1):pc, CL.ix+CL.iw+10,yy+3);
+  });
+  ctx.fillStyle='rgba(90,105,175,.55)'; ctx.fillText('p.c.',CL.ix+CL.iw+9,CL.it-4);
+
+  /* Curseur niveau */
+  const vNow=Math.max(P.VOL_FINAL,P.VOL_INIT-p*P.VOL_CONSOMME);
+  const curY=CL.ib-vNow*PX_PC;
+  if (curY>CL.it+4&&curY<CL.ib) {
+    ctx.beginPath(); ctx.moveTo(CL.ix+CL.iw+2,curY); ctx.lineTo(CL.ix+CL.iw+20,curY);
+    ctx.strokeStyle='#00ccff'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.fillStyle='#00ccff'; ctx.font='bold 9px Segoe UI';
+    ctx.fillText(vNow.toFixed(1),CL.ix+CL.iw+22,curY+3);
+  }
+
+  /* "Air" centré dans la zone gazeuse de la cloche */
+  const airMidY=CL.it+(mY-CL.it)/2;
+  if (airMidY>CL.it+10) {
+    ctx.font='11px Segoe UI'; ctx.fillStyle='rgba(110,145,220,.72)'; ctx.textAlign='center';
+    ctx.fillText('Air',CL.ix+CL.iw/2,airMidY);
+  }
+
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════
+   SOURIS (Étape 2)
+   ══════════════════════════════════════════════════════ */
+function drawMouse() {
+  if (step!==2) return;
+  const phase=animalPhase();
+  /* Wobble UNIQUEMENT quand vivante */
+  const wobble = phase==='dead' ? 0 : Math.sin(tick*.35)*.18;
+
+  ctx.save();
+  ctx.translate(animalX, animalY);
+  if (phase==='dead') ctx.rotate(Math.PI/2);
+  ctx.scale(animalFacing, 1);
+
+  /* Queue */
+  ctx.beginPath();
+  ctx.moveTo(-11,2);
+  ctx.bezierCurveTo(-20,-3+wobble*8,-24,10,-30,7);
+  ctx.strokeStyle='#8a6a58'; ctx.lineWidth=1.5; ctx.lineCap='round'; ctx.stroke();
+
+  /* Corps */
+  ctx.fillStyle = phase==='dead' ? '#6a5848' : '#9a7862';
+  ctx.beginPath(); ctx.ellipse(0,2,11,7,wobble,0,Math.PI*2); ctx.fill();
+
+  /* Tête */
+  ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill();
+
+  /* Oreille */
+  ctx.fillStyle='#c09080';
+  ctx.beginPath(); ctx.arc(10,-5.5,3.2,0,Math.PI*2); ctx.fill();
+
+  /* Nez */
+  ctx.fillStyle='#ff9090';
+  ctx.beginPath(); ctx.arc(17.5,.5,1.2,0,Math.PI*2); ctx.fill();
+
+  /* Moustaches (vivante seulement) */
+  if (phase!=='dead') {
+    ctx.strokeStyle='rgba(220,200,180,.7)'; ctx.lineWidth=.7;
+    [[-1.5,0],[0,1],[1.5,0]].forEach(([wy,d2])=>{
+      ctx.beginPath(); ctx.moveTo(17.5,.5); ctx.lineTo(17.5+d2*8,wy+.5); ctx.stroke();
+    });
+  }
+
+  /* Œil */
+  if (phase==='dead') {
+    ctx.strokeStyle='#222'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(14,-2); ctx.lineTo(16.5,0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(16.5,-2); ctx.lineTo(14,0); ctx.stroke();
+  } else {
+    ctx.fillStyle='#111';
+    ctx.beginPath(); ctx.arc(15.5,-1,1.2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.85)';
+    ctx.beginPath(); ctx.arc(16,-1.5,.5,0,Math.PI*2); ctx.fill();
+  }
+
+  ctx.restore(); // fin de la transformation souris
+}
+
+/* Message mort — dessiné en coords absolues, APRÈS ctx.restore() de la souris */
+function drawDeathMessage() {
+  if (step!==2 || animalPhase()!=='dead') return;
+  ctx.save();
+  const tx=CL.ox-4, ty=CL.ot-42, tw=CL.ow+8, th=34;
+  ctx.fillStyle='rgba(8,4,14,.82)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(tx,ty,tw,th,5);
+  else ctx.rect(tx,ty,tw,th);
+  ctx.fill();
+  ctx.textAlign='center';
+  ctx.font='bold 10px Segoe UI';
+  ctx.fillStyle='#ff6644';
+  ctx.fillText('L\'animal périt…', CL.ox+CL.ow/2, ty+13);
+  ctx.font='italic 8.5px Segoe UI';
+  ctx.fillStyle='rgba(205,165,135,.78)';
+  ctx.fillText('« …en peu d\'instants »  — Lavoisier', CL.ox+CL.ow/2, ty+26);
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════
+   PHYSIQUE SOURIS
+   ══════════════════════════════════════════════════════ */
+function updateAnimal() {
+  if (step!==2) return;
+  animalT++;
+
+  const phase=animalPhase();
+  /* Zone haute : souris confinée dans le tiers supérieur de l'espace gazeux
+     → évite que l'élève croie qu'elle meurt en touchant le mercure */
+  const gasTop=CL.it+8, gasBot=()=>CL.it+(mercClocheY(1)-CL.it)*0.52;
+
+  if (phase==='dead') {
+    /* Souris morte : reste dans la zone haute, immobile */
+    const targetY=CL.it+(mercClocheY(1)-CL.it)*0.32;
+    animalY+=(targetY-animalY)*.08;
+    animalVX=0; animalVY=0;
+    return;
+  }
+
+  /* Phase d'entrée : apparaît dans la partie haute */
+  if (animalT<60) {
+    const finalY=CL.it+(mercClocheY(1)-CL.it)*0.28;
+    animalY=gasTop+(animalT/60)*(finalY-gasTop);
+    return;
+  }
+
+  const damp=phase==='active'?.90:phase==='slowing'?.65:.98;
+  const force=phase==='active'?.50:.06;
+  animalVX+=(Math.random()-.5)*force;
+  animalVY+=(Math.random()-.5)*force;
+  animalVX*=damp; animalVY*=damp;
+  animalX+=animalVX; animalY+=animalVY;
+
+  /* Rebonds — partie haute uniquement */
+  const mY=gasBot(), margin=12;
+  if (animalX<CL.ix+margin)       {animalX=CL.ix+margin;       animalVX=Math.abs(animalVX);}
+  if (animalX>CL.ix+CL.iw-margin) {animalX=CL.ix+CL.iw-margin; animalVX=-Math.abs(animalVX);}
+  if (animalY<gasTop+margin)       {animalY=gasTop+margin;       animalVY=Math.abs(animalVY);}
+  if (animalY>mY)                  {animalY=mY;                  animalVY=-Math.abs(animalVY);}
+
+  if (Math.abs(animalVX)>.08) animalFacing=animalVX>0?1:-1;
+
+  /* Mise à jour panneau quand l'animal vient de mourir */
+  if (animalT===A_DEAD+1) {
+    document.querySelector('#p-step2 .note').textContent =
+      'L\'animal est mort — l\'air ne peut plus entretenir la vie.';
+    document.querySelector('#p-step2 .note').style.color = '#ff7755';
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   SUPPORT / TABLE
+   ══════════════════════════════════════════════════════ */
+function drawSupport() {
+  ctx.save();
+  ctx.strokeStyle='rgba(70,80,130,.42)'; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.moveTo(M.cx-40,FN.y); ctx.lineTo(M.cx,M.bot); ctx.lineTo(M.cx+40,FN.y); ctx.stroke();
+  ctx.strokeStyle='rgba(50,55,105,.28)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(20,H-12); ctx.lineTo(W-20,H-12); ctx.stroke();
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════
+   HUD
+   ══════════════════════════════════════════════════════ */
+function updateHUD(p) {
+  const vRest=Math.max(P.VOL_FINAL,P.VOL_INIT-p*P.VOL_CONSOMME);
+  const dayNum=Math.min(Math.floor(p*12)+1,12);
+  document.getElementById('vol-init').textContent=P.VOL_INIT.toFixed(1).replace('.',',');
+  document.getElementById('vol-rest').textContent=vRest.toFixed(1).replace('.',',');
+  document.getElementById('day-num').textContent=dayNum;
+  /* Afficher bouton étape 2 quand réaction terminée */
+  document.getElementById('btn-step2').style.display=p>=1&&step===1?'block':'none';
+}
+
+/* ══════════════════════════════════════════════════════
+   BOUCLE
+   ══════════════════════════════════════════════════════ */
+function frame() {
+  tick++;
+
+  /* Réaction étape 1 */
+  if (step===1&&heating&&prog<1) {
+    prog=Math.min(1,prog+P.SPEED);
+    if (prog>=1) { heating=false; document.getElementById('btn-heat').disabled=true; }
+  }
+  flameI+=((step===1&&heating?1:0)-flameI)*.06;
+
+  /* Physique souris étape 2 */
+  updateAnimal();
+
+  /* Rendu */
+  drawBg();
+  drawSky(step===1?prog:1);  // étape 2 : ciel figé (12e jour)
+  drawFurnace();
+  drawFlame();
+  drawNeck();
+  drawMatras(prog);
+  drawClocheAndTrough(prog);
+  drawMouse();
+  drawDeathMessage();
+  drawSupport();
+  updateHUD(prog);
+
+  requestAnimationFrame(frame);
+}
+
+/* ══════════════════════════════════════════════════════
+   CONTRÔLES
+   ══════════════════════════════════════════════════════ */
+document.getElementById('btn-heat').addEventListener('click',()=>{ heating=true; });
+
+document.getElementById('btn-step2').addEventListener('click',()=>{
+  step=2;
+  /* Reset position souris en haut de la zone gazeuse de la cloche */
+  animalX=CL.ix+CL.iw/2; animalY=CL.it+16;
+  animalVX=0.9; animalVY=0.4; animalFacing=1; animalT=0;
+  /* Masquer contrôles étape 1, afficher étape 2 */
+  document.getElementById('p-vol-init').style.display='none';
+  document.getElementById('p-vol-rest').style.display='none';
+  document.getElementById('p-day').style.display='none';
+  document.getElementById('btn-heat').style.display='none';
+  document.getElementById('btn-step2').style.display='none';
+  document.getElementById('p-step2').style.display='block';
+});
+
+document.getElementById('btn-reset').addEventListener('click',()=>{
+  step=1; prog=0; heating=false; flameI=0; animalT=0;
+  document.getElementById('btn-heat').disabled=false;
+  document.getElementById('btn-heat').style.display='block';
+  document.getElementById('btn-step2').style.display='none';
+  document.getElementById('p-vol-init').style.display='block';
+  document.getElementById('p-vol-rest').style.display='block';
+  document.getElementById('p-day').style.display='block';
+  document.getElementById('p-step2').style.display='none';
+});
+
+frame();
+</script>
+</body>
+</html>
