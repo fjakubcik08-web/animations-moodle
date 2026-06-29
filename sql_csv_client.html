@@ -114,12 +114,35 @@
   }
 
   /* SQL editor */
-  #sql-input {
-    width: 100%;
+  #sql-editor {
+    position: relative;
+    border-radius: 8px;
     background: var(--code-bg);
+    overflow: visible;
+  }
+  #sql-highlight {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    padding: 10px 12px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    pointer-events: none;
+    color: var(--code-text);
+    box-sizing: border-box;
+  }
+  #sql-input {
+    position: relative;
+    display: block;
+    width: 100%;
+    background: transparent;
     border: none;
     border-radius: 8px;
-    color: var(--code-text);
+    color: transparent;
+    caret-color: #CDD9E5;
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 0.85rem;
     padding: 10px 12px;
@@ -127,8 +150,61 @@
     min-height: 90px;
     outline: none;
     line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow: auto;
   }
   #sql-input::placeholder { color: #5F7A99; }
+  #sql-input::selection { background: rgba(100,160,255,.35); color: transparent; }
+
+  /* Autocomplete */
+  #ac-dropdown {
+    display: none;
+    position: absolute;
+    left: 0; right: 0;
+    top: calc(100% + 2px);
+    z-index: 200;
+    background: #1E2A3A;
+    border: 1px solid #3A4A5A;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    max-height: 180px;
+    overflow-y: auto;
+    font-family: 'Consolas','Courier New',monospace;
+    font-size: 0.82rem;
+  }
+  .ac-item {
+    padding: 5px 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #CDD9E5;
+    white-space: nowrap;
+  }
+  .ac-item.ac-active { background: #2A3F5A; }
+  .ac-item:hover { background: #2A3F5A; }
+  .ac-badge {
+    font-size: 0.62rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: sans-serif;
+    font-weight: 600;
+    letter-spacing: .04em;
+    flex-shrink: 0;
+  }
+  .ac-kw  { background: #1A3A6A; color: #569CD6; }
+  .ac-fn  { background: #3A3A1A; color: #DCDCAA; }
+  .ac-col { background: #1A3A2A; color: #4EC9B0; }
+  .ac-tbl { background: #3A1A3A; color: #C586C0; }
+
+  /* Syntax colors */
+  .hl-kw  { color: #569CD6; font-weight: 600; }  /* bleu VS Code */
+  .hl-fn  { color: #DCDCAA; }                     /* jaune fonction */
+  .hl-str { color: #CE9178; }                     /* orange string */
+  .hl-num { color: #B5CEA8; }                     /* vert nombre */
+  .hl-op  { color: #9CDCFE; }                     /* cyan opérateur */
+  .hl-cm  { color: #6A9955; font-style: italic; } /* gris commentaire */
 
   #run-btn {
     width: 100%;
@@ -242,7 +318,7 @@
     gap: 0;
   }
   #tabs-bar .spacer { flex: 1; }
-  #copy-btn {
+  #copy-btn, #copy-query-btn {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -259,8 +335,10 @@
   }
   #copy-btn:hover { background: #E8F0FE; border-color: var(--primary); color: var(--primary); }
   #copy-btn.copied { background: #E6F4EA; border-color: var(--green); color: #137333; }
+  #copy-query-btn:hover { background: #FEF7E0; border-color: #F9AB00; color: #B06000; }
+  #copy-query-btn.copied { background: #E6F4EA; border-color: var(--green); color: #137333; }
   @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.15)} 100%{transform:scale(1)} }
-  #copy-btn.copied { animation: pop .25s ease; }
+  #copy-btn.copied, #copy-query-btn.copied { animation: pop .25s ease; }
   .tab-btn {
     padding: 10px 18px;
     font-size: 0.82rem;
@@ -375,7 +453,6 @@
     font-weight: 600;
     font-size: 0.75rem;
     letter-spacing: .04em;
-    text-transform: uppercase;
     position: sticky;
     top: 0;
     white-space: nowrap;
@@ -438,8 +515,13 @@
     <!-- SQL -->
     <div class="side-section">
       <div class="side-label">Requête <kbd style="float:right;font-size:.65rem;background:#eee;padding:1px 5px;border-radius:3px;color:#555">Ctrl+↵</kbd></div>
-      <textarea id="sql-input" placeholder="SELECT * FROM data LIMIT 50" spellcheck="false"></textarea>
+      <div id="sql-editor">
+        <div id="sql-highlight" aria-hidden="true"></div>
+        <textarea id="sql-input" placeholder="SELECT * FROM data LIMIT 50" spellcheck="false"></textarea>
+        <div id="ac-dropdown"></div>
+      </div>
       <button id="run-btn" onclick="runQuery()">▶ Exécuter</button>
+      <button id="copy-query-btn" onclick="copyQueryNorm()" title="Copie la requête normalisée (mots-clés en majuscules, espaces uniques) pour Moodle STR_Q">📎 Copier la requête</button>
     </div>
 
     <!-- Quick -->
@@ -746,6 +828,7 @@ function loadCSVText(text, name) {
 
     const q = `SELECT * FROM ${tname} LIMIT 50`;
     document.getElementById('sql-input').value = q;
+    updateHighlight();
     const { cols, rows: r } = engine.query(q);
     lastRows = r; lastCols = cols;
     renderTable(cols, r);
@@ -818,6 +901,84 @@ function renderHistoryPanel() {
   ).join('');
 }
 
+// ─── Normalise SQL pour Moodle STR_Q ─────────────────────────────────────────
+// Résultat : mots-clés en MAJUSCULES, un seul espace, pas d'espace autour de (),
+// de virgules ou du point — forme canonique reproductible.
+const ALL_KW = new Set([
+  'SELECT','FROM','WHERE','ORDER','BY','GROUP','HAVING','LIMIT','DISTINCT',
+  'AS','AND','OR','NOT','IN','LIKE','BETWEEN','IS','NULL','ASC','DESC',
+  'COUNT','SUM','AVG','MIN','MAX','JOIN','INNER','LEFT','RIGHT','ON',
+  'UNION','INTO','VALUES','SET','UPDATE','DELETE','TRUE','FALSE'
+]);
+
+function normalizeSQL(raw) {
+  // 1. collapse whitespace
+  let s = raw.replace(/\s+/g, ' ').trim();
+  // 2. tokenize en respectant les strings entre quotes
+  const tokens = [];
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === "'") {
+      let j = i + 1;
+      while (j < s.length && s[j] !== "'") { if (s[j] === '\\') j++; j++; }
+      tokens.push(s.slice(i, j + 1)); i = j + 1;
+    } else if (/[a-zA-Z_]/.test(s[i])) {
+      let j = i;
+      while (j < s.length && /[a-zA-Z0-9_]/.test(s[j])) j++;
+      const word = s.slice(i, j);
+      tokens.push(ALL_KW.has(word.toUpperCase()) ? word.toUpperCase() : word);
+      i = j;
+    } else if (/[0-9]/.test(s[i])) {
+      let j = i;
+      while (j < s.length && /[0-9.]/.test(s[j])) j++;
+      tokens.push(s.slice(i, j)); i = j;
+    } else if (/[(),*]/.test(s[i])) {
+      tokens.push(s[i]); i++;
+    } else if (s[i] === ' ') {
+      i++; // skip — on va reconstruire les espaces
+    } else {
+      // opérateurs =, <, >, !, <=, >=, !=, <>
+      let j = i;
+      while (j < s.length && /[=<>!]/.test(s[j])) j++;
+      tokens.push(s.slice(i, j)); i = j || i + 1;
+    }
+  }
+  // 3. reconstruit avec espaces sauf autour de ( ) , *
+  const noSpaceBefore = new Set([')', ',', '*']);
+  const noSpaceAfter  = new Set(['(', '*']);
+  let out = '';
+  for (let k = 0; k < tokens.length; k++) {
+    const t = tokens[k];
+    const prev = tokens[k - 1] || '';
+    const needSpace = k > 0
+      && !noSpaceBefore.has(t)
+      && !noSpaceAfter.has(prev)
+      && !(prev === '(' )
+      && !(t === ')');
+    if (needSpace) out += ' ';
+    out += t;
+  }
+  return out;
+}
+
+function copyQueryNorm() {
+  const btn = document.getElementById('copy-query-btn');
+  const raw = document.getElementById('sql-input').value.trim();
+  if (!raw) return;
+  const norm = normalizeSQL(raw);
+  navigator.clipboard.writeText(norm).then(() => {
+    btn.textContent = '✓ Copiée !';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📎 Copier la requête'; btn.classList.remove('copied'); }, 1800);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = norm; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    btn.textContent = '✓ Copiée !'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📎 Copier la requête'; btn.classList.remove('copied'); }, 1800);
+  });
+}
+
 function copyTableHTML() {
   const table = document.querySelector('#results-wrap table');
   const btn = document.getElementById('copy-btn');
@@ -865,6 +1026,7 @@ function copyTableHTML() {
 
 function recallQuery(i) {
   document.getElementById('sql-input').value = queryHistory[i];
+  updateHighlight();
   switchTab('results');
   document.getElementById('sql-input').focus();
 }
@@ -894,6 +1056,7 @@ function showError(msg) {
 function setQ(tpl) {
   const q = tpl.replace('{t}', currentTable||'data');
   document.getElementById('sql-input').value = q;
+  updateHighlight();
   document.getElementById('sql-input').focus();
 }
 
@@ -903,6 +1066,7 @@ function insertCol(col) {
   ta.value = v.slice(0,s)+col+v.slice(e);
   ta.selectionStart = ta.selectionEnd = s+col.length;
   ta.focus();
+  updateHighlight();
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
@@ -1033,8 +1197,175 @@ document.getElementById('csv-paste-area').addEventListener('input',function(){
   if(this.value.trim()) loadCSVText(this.value,'données');
 });
 
-document.getElementById('sql-input').addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();runQuery();}
+// ─── SQL Syntax Highlight ─────────────────────────────────────────────────────
+const KW  = /^(SELECT|FROM|WHERE|ORDER|BY|GROUP|HAVING|LIMIT|DISTINCT|AS|AND|OR|NOT|IN|LIKE|BETWEEN|IS|NULL|ASC|DESC|JOIN|ON|INNER|LEFT|RIGHT|OUTER|UNION|INTO|VALUES|SET|UPDATE|DELETE)$/i;
+const FN  = /^(COUNT|SUM|AVG|MIN|MAX)$/i;
+const OPS = /^[=<>!*,();]$/;
+
+function highlightSQL(text) {
+  const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const parts = [];
+  let i = 0;
+  while (i < text.length) {
+    // String littéral
+    if (text[i] === "'") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== "'") j++;
+      parts.push(`<span class="hl-str">${e(text.slice(i, j+1))}</span>`);
+      i = j + 1;
+    }
+    // Commentaire --
+    else if (text[i] === '-' && text[i+1] === '-') {
+      let j = i;
+      while (j < text.length && text[j] !== '\n') j++;
+      parts.push(`<span class="hl-cm">${e(text.slice(i, j))}</span>`);
+      i = j;
+    }
+    // Mot (keyword / fonction / identifiant)
+    else if (/[a-zA-Z_]/.test(text[i])) {
+      let j = i;
+      while (j < text.length && /[\w]/.test(text[j])) j++;
+      const w = text.slice(i, j);
+      if      (FN.test(w))  parts.push(`<span class="hl-fn">${e(w)}</span>`);
+      else if (KW.test(w))  parts.push(`<span class="hl-kw">${e(w)}</span>`);
+      else                  parts.push(e(w));
+      i = j;
+    }
+    // Nombre
+    else if (/[0-9]/.test(text[i])) {
+      let j = i;
+      while (j < text.length && /[0-9.]/.test(text[j])) j++;
+      parts.push(`<span class="hl-num">${e(text.slice(i, j))}</span>`);
+      i = j;
+    }
+    // Opérateurs
+    else if (OPS.test(text[i])) {
+      parts.push(`<span class="hl-op">${e(text[i])}</span>`);
+      i++;
+    }
+    else {
+      parts.push(e(text[i]));
+      i++;
+    }
+  }
+  return parts.join('') + '\n'; // trailing \n pour éviter le saut de ligne manquant
+}
+
+function updateHighlight() {
+  const ta = document.getElementById('sql-input');
+  const hl = document.getElementById('sql-highlight');
+  hl.innerHTML = highlightSQL(ta.value);
+  hl.scrollTop = ta.scrollTop;
+  hl.scrollLeft = ta.scrollLeft;
+}
+
+// ─── Autocomplete ─────────────────────────────────────────────────────────────
+const AC_KW = ['SELECT','FROM','WHERE','ORDER','BY','GROUP','HAVING','LIMIT','DISTINCT',
+  'AS','AND','OR','NOT','IN','LIKE','BETWEEN','IS','NULL','ASC','DESC',
+  'INNER','LEFT','RIGHT','JOIN','ON','UNION','TRUE','FALSE'];
+const AC_FN = ['COUNT','SUM','AVG','MIN','MAX'];
+
+let acIdx = -1, acList = [];
+
+function acCurrentWord(ta) {
+  const text = ta.value.slice(0, ta.selectionStart);
+  const m = text.match(/[a-zA-Z_][a-zA-Z0-9_]*$/);
+  return m ? m[0] : '';
+}
+
+function acShow() {
+  const ta = document.getElementById('sql-input');
+  const drop = document.getElementById('ac-dropdown');
+  const word = acCurrentWord(ta);
+  if (!word) { acHide(); return; }
+  const up = word.toUpperCase();
+
+  const kw = AC_KW.filter(k => k.startsWith(up) && k !== up).map(k => ({label:k, type:'kw'}));
+  const fn = AC_FN.filter(k => k.startsWith(up) && k !== up).map(k => ({label:k, type:'fn'}));
+  const col = currentHeaders.filter(c => c.toUpperCase().startsWith(up) && c.toUpperCase() !== up)
+                            .map(c => ({label:c, type:'col'}));
+  const tbl = currentTable && currentTable.toUpperCase().startsWith(up) && currentTable.toUpperCase() !== up
+              ? [{label: currentTable, type:'tbl'}] : [];
+  acList = [...kw, ...fn, ...tbl, ...col];
+
+  if (!acList.length) { acHide(); return; }
+  acIdx = 0;
+  drop.style.display = 'block';
+  acRender();
+}
+
+function acRender() {
+  const drop = document.getElementById('ac-dropdown');
+  drop.innerHTML = acList.map((it, i) => {
+    const badge = it.type === 'kw'  ? '<span class="ac-badge ac-kw">MOT-CLÉ</span>'
+                : it.type === 'fn'  ? '<span class="ac-badge ac-fn">FONCTION</span>'
+                : it.type === 'tbl' ? '<span class="ac-badge ac-tbl">TABLE</span>'
+                :                     '<span class="ac-badge ac-col">COLONNE</span>';
+    return `<div class="ac-item${i===acIdx?' ac-active':''}" onmousedown="acSelect(${i})">${badge}${it.label}</div>`;
+  }).join('');
+  // scroll active item into view
+  const active = drop.querySelector('.ac-active');
+  if (active) active.scrollIntoView({block:'nearest'});
+}
+
+function acHide() {
+  document.getElementById('ac-dropdown').style.display = 'none';
+  acList = []; acIdx = -1;
+}
+
+function acSelect(i) {
+  if (i < 0 || i >= acList.length) return;
+  const ta = document.getElementById('sql-input');
+  const word = acCurrentWord(ta);
+  const pos = ta.selectionStart;
+  const before = ta.value.slice(0, pos - word.length);
+  const after  = ta.value.slice(pos);
+  // keywords uppercase, columns as-is
+  const insert = acList[i].type === 'col' ? acList[i].label : acList[i].label;
+  ta.value = before + insert + after;
+  ta.selectionStart = ta.selectionEnd = before.length + insert.length;
+  ta.focus();
+  updateHighlight();
+  acHide();
+}
+
+// ─── SQL input events ─────────────────────────────────────────────────────────
+const sqlInput = document.getElementById('sql-input');
+
+sqlInput.addEventListener('input', () => { updateHighlight(); acShow(); });
+
+sqlInput.addEventListener('scroll', () => {
+  const hl = document.getElementById('sql-highlight');
+  hl.scrollTop = sqlInput.scrollTop;
+});
+
+sqlInput.addEventListener('keydown', e => {
+  const drop = document.getElementById('ac-dropdown');
+  const open = drop.style.display === 'block';
+
+  if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); acHide(); runQuery(); return; }
+
+  if (open) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      acIdx = Math.min(acIdx + 1, acList.length - 1);
+      acRender();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      acIdx = Math.max(acIdx - 1, 0);
+      acRender();
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      acSelect(acIdx);
+    } else if (e.key === 'Escape') {
+      acHide();
+    }
+  }
+});
+
+sqlInput.addEventListener('blur', () => setTimeout(acHide, 150));
+document.addEventListener('click', e => {
+  if (!e.target.closest('#sql-editor')) acHide();
 });
 </script>
 </body>
