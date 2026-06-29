@@ -510,6 +510,11 @@
         <div><button id="csv-toggle-paste" onclick="togglePaste()">▼ Zone de collage</button></div>
         <textarea id="csv-paste-area" placeholder="Coller le CSV ici…" spellcheck="false"></textarea>
       </div>
+      <div id="url-load-wrap" style="display:flex;gap:4px;margin-top:6px">
+        <input id="csv-url-input" type="text" placeholder="URL du fichier CSV…"
+          style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--text);background:var(--surface)">
+        <button onclick="loadCSVFromURL()" style="padding:5px 10px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-size:0.78rem;cursor:pointer;white-space:nowrap">Charger</button>
+      </div>
     </div>
 
     <!-- SQL -->
@@ -808,6 +813,15 @@ let lastRows = [], lastCols = [];
 let queryHistory = [];
 
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function loadCSVFromURL() {
+  const url = document.getElementById('csv-url-input').value.trim();
+  if (!url) return;
+  fetch(url)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(text => loadCSVText(text, url.split('/').pop()))
+    .catch(e => showError('Impossible de charger le fichier : ' + e.message));
+}
 
 function loadCSVText(text, name) {
   try {
