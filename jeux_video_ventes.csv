@@ -1,0 +1,262 @@
+Titre,Plateforme,Annee,Genre,Editeur,Ventes_Monde,Note_Metacritic,PEGI,Multijoueur
+Wii Sports,Wii,2006,Sport,Nintendo,82.74,76,3,Oui
+Animal Crossing New Horizons,Switch,2020,Simulation,Nintendo,42.31,90,3,Oui
+Super Mario Bros,NES,1985,Plateforme,Nintendo,40.24,88,3,Non
+Mario Kart 8 Deluxe,Switch,2017,Course,Nintendo,38.54,92,3,Oui
+GTA V,PS4,2013,Action,Rockstar,35.05,97,18,Oui
+Wii Sports Resort,Wii,2009,Sport,Nintendo,33.12,80,7,Oui
+Minecraft,PC,2011,Sandbox,Mojang,33.15,93,7,Oui
+Mario Kart Wii,Wii,2008,Course,Nintendo,37.32,82,3,Oui
+New Super Mario Bros,DS,2006,Plateforme,Nintendo,30.8,84,3,Oui
+New Super Mario Bros Wii,Wii,2009,Plateforme,Nintendo,30.01,87,3,Oui
+Pokemon Rouge et Bleu,GB,1996,RPG,Nintendo,31.37,89,7,Non
+Tetris,GB,1989,Puzzle,Nintendo,30.26,85,3,Oui
+Wii Play,Wii,2006,Compilation,Nintendo,28.02,58,3,Oui
+Duck Hunt,NES,1984,Tir,Nintendo,28.31,70,7,Oui
+Super Smash Bros Ultimate,Switch,2018,Combat,Nintendo,28.99,93,12,Oui
+GTA San Andreas,PS2,2004,Action,Rockstar,27.5,93,18,Oui
+Zelda Breath of the Wild,Switch,2017,Aventure,Nintendo,29.41,97,12,Non
+Nintendogs,DS,2005,Simulation,Nintendo,24.76,78,3,Non
+Mario Kart DS,DS,2005,Course,Nintendo,23.6,91,3,Oui
+Pokemon Or et Argent,GBC,1999,RPG,Nintendo,23.1,87,7,Non
+Call of Duty Black Ops,PS3,2010,FPS,Activision,26.2,87,18,Oui
+Super Mario World,SNES,1990,Plateforme,Nintendo,20.61,90,3,Non
+Call of Duty Modern Warfare 2,PS3,2009,FPS,Activision,22.71,86,18,Oui
+Cyberpunk 2077,PC,2020,RPG,CD Projekt,21.0,86,18,Non
+Elden Ring,PS5,2022,RPG,Bandai Namco,20.5,96,16,Oui
+Hogwarts Legacy,PS5,2023,RPG,Warner Bros,22.0,84,12,Non
+Call of Duty Modern Warfare,PS4,2019,FPS,Activision,20.01,81,18,Oui
+Red Dead Redemption 2,PS4,2018,Action,Rockstar,17.0,97,18,Oui
+Pokemon Epee et Bouclier,Switch,2019,RPG,Nintendo,25.37,80,7,Non
+Pokemon Diamant et Perle,DS,2006,RPG,Nintendo,17.67,85,7,Non
+Pokemon X et Y,3DS,2013,RPG,Nintendo,16.44,87,7,Non
+Brain Age,DS,2005,Education,Nintendo,19.01,77,3,Non
+FIFA 18,PS4,2017,Sport,EA Sports,24.0,82,3,Oui
+God of War,PS4,2018,Action,Sony,11.4,94,18,Non
+Spider-Man,PS4,2018,Action,Sony,13.2,87,16,Non
+Uncharted 4,PS4,2016,Aventure,Sony,8.7,93,16,Non
+Horizon Zero Dawn,PS4,2017,RPG,Sony,7.6,89,16,Non
+The Last of Us,PS3,2013,Action-Aventure,Sony,7.4,95,18,Non
+Overwatch,PC,2016,FPS,Blizzard,7.0,91,12,Oui
+Diablo III,PC,2012,RPG,Blizzard,30.0,88,16,Oui
+Starcraft II,PC,2010,Strategie,Blizzard,6.0,93,12,Oui
+The Sims 4,PC,2014,Simulation,EA,10.0,70,12,Non
+Mortal Kombat 11,PS4,2019,Combat,Warner Bros,12.0,82,18,Oui
+Tekken 7,PS4,2017,Combat,Bandai Namco,10.0,82,16,Oui
+Sonic the Hedgehog 2,MD,1992,Plateforme,Sega,6.03,79,3,Oui
+Pac-Man,Arcade,1980,Arcade,Namco,7.68,88,3,Oui
+Clair Obscur Expedition 33,PC,2025,RPG,Kepler Interactive,3.0,91,16,Non
+Zelda Ocarina of Time,N64,1998,Aventure,Nintendo,7.6,99,12,Non
+Zelda Tears of the Kingdom,Switch,2023,Aventure,Nintendo,20.61,96,12,Non
+Super Mario Odyssey,Switch,2017,Plateforme,Nintendo,27.0,97,3,Non
+Super Mario Galaxy,Wii,2007,Plateforme,Nintendo,12.8,97,3,Non
+Super Mario Galaxy 2,Wii,2010,Plateforme,Nintendo,7.41,97,3,Non
+Super Mario 64,N64,1996,Plateforme,Nintendo,11.89,94,3,Non
+Donkey Kong Country,SNES,1994,Plateforme,Nintendo,9.3,85,7,Oui
+Street Fighter II,SNES,1992,Combat,Capcom,6.3,88,12,Oui
+Mortal Kombat,SNES,1993,Combat,Midway,5.7,80,18,Oui
+Final Fantasy VII,PS1,1997,RPG,Square,9.8,92,12,Non
+Final Fantasy X,PS2,2001,RPG,Square,8.05,92,12,Non
+Final Fantasy XV,PS4,2016,RPG,Square Enix,8.9,81,16,Non
+Final Fantasy XVI,PS5,2023,RPG,Square Enix,3.0,87,18,Non
+Dragon Quest XI,PS4,2017,RPG,Square Enix,6.5,88,12,Non
+Monster Hunter World,PS4,2018,RPG,Capcom,21.0,90,16,Oui
+Monster Hunter Rise,Switch,2021,RPG,Capcom,12.0,88,12,Oui
+Resident Evil 2 Remake,PS4,2019,Horreur,Capcom,13.0,91,18,Non
+Resident Evil 4 Remake,PS5,2023,Horreur,Capcom,6.9,93,18,Non
+Resident Evil Village,PS5,2021,Horreur,Capcom,10.0,84,18,Non
+Devil May Cry 5,PS4,2019,Action,Capcom,6.0,90,18,Non
+Dark Souls III,PC,2016,RPG,Bandai Namco,10.0,89,16,Oui
+Dark Souls,PC,2011,RPG,Bandai Namco,8.0,89,16,Oui
+Sekiro,PC,2019,Action,Activision,5.0,90,18,Non
+Bloodborne,PS4,2015,RPG,Sony,2.0,92,18,Non
+Halo 3,Xbox 360,2007,FPS,Microsoft,12.06,94,16,Oui
+Halo Infinite,Xbox Series,2021,FPS,Microsoft,10.0,87,12,Oui
+Gears of War,Xbox 360,2006,TPS,Microsoft,5.0,94,18,Oui
+Forza Horizon 5,Xbox Series,2021,Course,Microsoft,28.0,92,3,Oui
+Forza Horizon 4,PC,2018,Course,Microsoft,12.0,92,3,Oui
+Sea of Thieves,PC,2018,Aventure,Microsoft,40.0,69,12,Oui
+Ori and the Blind Forest,PC,2015,Plateforme,Microsoft,3.0,88,7,Non
+FIFA 22,PS5,2021,Sport,EA Sports,9.0,78,3,Oui
+FIFA 23,PS5,2022,Sport,EA Sports,10.4,78,3,Oui
+EA FC 24,PS5,2023,Sport,EA Sports,5.0,75,3,Oui
+NBA 2K23,PS5,2022,Sport,2K Sports,5.0,73,3,Oui
+NBA 2K24,PS5,2023,Sport,2K Sports,3.0,71,3,Oui
+Madden NFL 23,PS5,2022,Sport,EA Sports,4.0,72,3,Oui
+UFC 4,PS4,2020,Sport,EA Sports,3.0,74,16,Oui
+WWE 2K23,PS5,2023,Sport,2K Sports,2.0,75,16,Oui
+Tony Hawk Pro Skater 1+2,PS4,2020,Sport,Activision,5.0,90,12,Oui
+Crash Bandicoot N Sane Trilogy,PS4,2017,Plateforme,Activision,10.0,80,7,Non
+Spyro Reignited Trilogy,PS4,2018,Plateforme,Activision,6.0,79,7,Non
+Skylanders Spyro's Adventure,Wii,2011,Action,Activision,5.0,82,7,Non
+Assassins Creed II,PS3,2009,Action-Aventure,Ubisoft,9.0,91,18,Non
+Assassins Creed Origins,PS4,2017,Action-Aventure,Ubisoft,10.0,81,18,Non
+Assassins Creed Odyssey,PS4,2018,Action-Aventure,Ubisoft,10.0,83,18,Non
+Assassins Creed Valhalla,PS5,2020,Action-Aventure,Ubisoft,20.0,82,18,Non
+Assassins Creed Mirage,PS5,2023,Action-Aventure,Ubisoft,5.0,76,18,Non
+Far Cry 5,PS4,2018,FPS,Ubisoft,10.0,83,18,Non
+Far Cry 6,PS5,2021,FPS,Ubisoft,10.0,73,18,Non
+Watch Dogs 2,PS4,2016,Action,Ubisoft,8.0,79,18,Non
+Rainbow Six Siege,PC,2015,FPS,Ubisoft,70.0,79,18,Oui
+Just Dance 2022,Switch,2021,Musique,Ubisoft,3.0,70,3,Oui
+Rayman Legends,PS4,2013,Plateforme,Ubisoft,3.0,91,7,Oui
+The Division 2,PC,2019,TPS,Ubisoft,10.0,80,18,Oui
+Ghost Recon Breakpoint,PS4,2019,TPS,Ubisoft,5.0,58,18,Oui
+Apex Legends,PC,2019,Battle Royale,EA,0.0,88,16,Oui
+Valorant,PC,2020,FPS,Riot Games,0.0,80,16,Oui
+League of Legends,PC,2009,MOBA,Riot Games,0.0,82,12,Oui
+Fortnite,PC,2017,Battle Royale,Epic Games,0.0,81,12,Oui
+Rocket League,PC,2015,Sport,Epic Games,0.0,86,3,Oui
+Genshin Impact,PC,2020,RPG,HoYoverse,0.0,84,12,Oui
+Honkai Star Rail,PC,2023,RPG,HoYoverse,0.0,87,12,Non
+World of Warcraft,PC,2004,MMORPG,Blizzard,0.0,93,12,Oui
+Hearthstone,PC,2014,Cartes,Blizzard,0.0,88,7,Oui
+Counter-Strike 2,PC,2023,FPS,Valve,0.0,75,16,Oui
+Dota 2,PC,2013,MOBA,Valve,0.0,90,16,Oui
+Portal 2,PC,2011,Puzzle,Valve,9.0,95,7,Oui
+Half-Life 2,PC,2004,FPS,Valve,12.0,96,16,Non
+Left 4 Dead 2,PC,2009,FPS,Valve,12.0,89,18,Oui
+Team Fortress 2,PC,2007,FPS,Valve,0.0,92,12,Oui
+The Witcher 3,PC,2015,RPG,CD Projekt,50.0,93,18,Non
+The Witcher 2,PC,2011,RPG,CD Projekt,8.0,88,18,Non
+Baldurs Gate 3,PC,2023,RPG,Larian Studios,10.0,96,18,Oui
+Divinity Original Sin 2,PC,2017,RPG,Larian Studios,5.0,93,18,Oui
+Hades,PC,2020,Rogue-like,Supergiant,3.0,93,12,Non
+Celeste,PC,2018,Plateforme,Maddy Makes Games,1.0,94,7,Non
+Hollow Knight,PC,2017,Plateforme,Team Cherry,3.0,90,7,Non
+Stardew Valley,PC,2016,Simulation,ConcernedApe,20.0,89,3,Oui
+Among Us,PC,2018,Strategie,Innersloth,0.0,85,7,Oui
+Fall Guys,PC,2020,Battle Royale,Mediatonic,0.0,80,3,Oui
+Cuphead,PC,2017,Plateforme,Studio MDHR,6.0,88,7,Oui
+Undertale,PC,2015,RPG,Toby Fox,1.0,92,7,Non
+Disco Elysium,PC,2019,RPG,ZA/UM,1.0,97,18,Non
+Outer Wilds,PC,2019,Aventure,Annapurna,1.0,85,7,Non
+Return of the Obra Dinn,PC,2018,Puzzle,3909 LLC,0.5,88,12,Non
+Slay the Spire,PC,2019,Cartes,MegaCrit,3.0,89,12,Non
+Dead Cells,PC,2018,Rogue-like,Motion Twin,6.0,91,16,Non
+Vampire Survivors,PC,2022,Rogue-like,Poncle,3.0,90,7,Non
+Terraria,PC,2011,Sandbox,Re-Logic,44.0,83,7,Oui
+Factorio,PC,2020,Strategie,Wube Software,4.0,90,7,Non
+Cities Skylines,PC,2015,Simulation,Paradox,12.0,85,3,Non
+Age of Empires IV,PC,2021,Strategie,Microsoft,3.0,81,12,Oui
+Age of Empires II Definitive,PC,2019,Strategie,Microsoft,6.0,92,12,Oui
+Civilization VI,PC,2016,Strategie,2K Games,8.0,88,12,Oui
+Total War Warhammer III,PC,2022,Strategie,Sega,2.0,82,16,Oui
+Crusader Kings III,PC,2020,Strategie,Paradox,3.0,91,18,Non
+Stellaris,PC,2016,Strategie,Paradox,3.0,78,12,Non
+Euro Truck Simulator 2,PC,2012,Simulation,SCS Software,12.0,79,3,Non
+Planet Zoo,PC,2019,Simulation,Frontier,3.0,85,3,Non
+Two Point Hospital,PC,2018,Simulation,Sega,5.0,83,3,Non
+Kerbal Space Program,PC,2015,Simulation,Private Division,3.0,88,3,Non
+No Mans Sky,PC,2016,Aventure,Hello Games,10.0,61,7,Oui
+Subnautica,PC,2018,Survie,Unknown Worlds,5.0,87,7,Non
+The Forest,PC,2018,Survie,Endnight Games,10.0,75,18,Oui
+Rust,PC,2018,Survie,Facepunch,14.0,69,18,Oui
+DayZ,PC,2018,Survie,Bohemia Interactive,4.0,61,18,Oui
+ARK Survival Evolved,PC,2017,Survie,Studio Wildcard,20.0,70,16,Oui
+7 Days to Die,PC,2016,Survie,The Fun Pimps,3.0,65,18,Oui
+Valheim,PC,2021,Survie,Coffee Stain,12.0,83,12,Oui
+Palworld,PC,2024,Survie,Pocketpair,25.0,70,12,Oui
+Satisfactory,PC,2024,Simulation,Coffee Stain,3.0,85,7,Oui
+Lethal Company,PC,2023,Horreur,Zeekerss,0.0,88,12,Oui
+Phasmophobia,PC,2020,Horreur,Kinetic Games,0.0,78,16,Oui
+Devour,PC,2021,Horreur,STRAIGHT4 Studios,0.0,65,16,Oui
+Outlast,PC,2013,Horreur,Red Barrels,4.0,80,18,Non
+Amnesia The Dark Descent,PC,2010,Horreur,Frictional Games,2.0,85,18,Non
+Alien Isolation,PC,2014,Horreur,Sega,1.0,79,18,Non
+Until Dawn,PS4,2015,Horreur,Sony,8.0,79,18,Non
+Detroit Become Human,PS4,2018,Aventure,Sony,8.0,78,18,Non
+Heavy Rain,PS3,2010,Aventure,Sony,5.0,87,18,Non
+Beyond Two Souls,PS3,2013,Aventure,Sony,2.0,70,18,Non
+Death Stranding,PS4,2019,Action,Sony,10.0,82,16,Non
+Ghost of Tsushima,PS4,2020,Action-Aventure,Sony,10.0,83,18,Non
+Returnal,PS5,2021,Rogue-like,Sony,2.0,86,16,Non
+Demon's Souls Remake,PS5,2020,RPG,Sony,2.0,92,16,Non
+Ratchet and Clank Rift Apart,PS5,2021,Plateforme,Sony,3.0,88,7,Non
+Gran Turismo 7,PS5,2022,Course,Sony,7.0,87,3,Oui
+Gran Turismo Sport,PS4,2017,Course,Sony,9.0,75,3,Oui
+Nioh 2,PS4,2020,Action,Koei Tecmo,1.5,85,18,Non
+Persona 5 Royal,PS4,2019,RPG,Atlus,4.0,95,17,Non
+Persona 4 Golden,PC,2012,RPG,Atlus,3.0,93,12,Non
+Shin Megami Tensei V,Switch,2021,RPG,Atlus,1.5,83,16,Non
+Fire Emblem Three Houses,Switch,2019,RPG,Nintendo,3.4,89,12,Non
+Fire Emblem Engage,Switch,2023,RPG,Nintendo,1.8,78,12,Non
+Xenoblade Chronicles 3,Switch,2022,RPG,Nintendo,1.8,83,12,Non
+Bayonetta 3,Switch,2022,Action,Nintendo,1.0,85,18,Non
+Kirby Forgotten Land,Switch,2022,Plateforme,Nintendo,6.96,83,7,Non
+Pikmin 4,Switch,2023,Strategie,Nintendo,3.27,84,7,Non
+Splatoon 3,Switch,2022,Tir,Nintendo,13.0,83,7,Oui
+Metroid Dread,Switch,2021,Action,Nintendo,3.0,88,7,Non
+Luigi's Mansion 3,Switch,2019,Aventure,Nintendo,15.0,86,7,Non
+Ring Fit Adventure,Switch,2019,Sport,Nintendo,15.0,83,3,Non
+Nintendogs Cats,3DS,2011,Simulation,Nintendo,4.62,73,3,Non
+Tomodachi Life,3DS,2013,Simulation,Nintendo,6.53,64,3,Non
+Mario Party Superstars,Switch,2021,Compilation,Nintendo,15.0,75,3,Oui
+Mario Party 8,Wii,2007,Compilation,Nintendo,8.89,62,3,Oui
+Super Mario Party,Switch,2018,Compilation,Nintendo,21.0,74,3,Oui
+1-2 Switch,Switch,2017,Compilation,Nintendo,3.17,58,3,Oui
+Just Dance 2020,Switch,2019,Musique,Ubisoft,5.0,65,3,Oui
+Guitar Hero III,Wii,2007,Musique,Activision,7.0,87,12,Oui
+Rock Band,PS3,2007,Musique,Harmonix,3.0,92,12,Oui
+Dance Dance Revolution,Arcade,1998,Musique,Konami,3.0,80,3,Oui
+Taiko no Tatsujin,Switch,2018,Musique,Bandai Namco,2.0,79,3,Oui
+Osu!,PC,2007,Musique,ppy,0.0,80,7,Oui
+Beat Saber,PSVR,2018,Musique,Beat Games,4.0,87,7,Non
+Superhot VR,PSVR,2017,FPS,Superhot Team,1.0,88,12,Non
+Astro Bot,PS5,2024,Plateforme,Sony,4.0,94,7,Non
+Lies of P,PS5,2023,RPG,Neowiz,3.0,80,16,Non
+Lords of the Fallen,PS5,2023,RPG,CI Games,2.0,74,18,Non
+Star Wars Jedi Survivor,PS5,2023,Action-Aventure,EA,4.0,84,16,Non
+Star Wars Jedi Fallen Order,PS4,2019,Action-Aventure,EA,10.0,80,16,Non
+Battlefield 2042,PC,2021,FPS,EA,5.0,68,18,Oui
+Battlefield V,PC,2018,FPS,EA,7.0,81,18,Oui
+Battlefield 1,PC,2016,FPS,EA,15.0,89,18,Oui
+Battlefield 4,PC,2013,FPS,EA,10.0,83,18,Oui
+Need for Speed Heat,PS4,2019,Course,EA,5.0,72,12,Oui
+Need for Speed Unbound,PS5,2022,Course,EA,3.0,73,12,Oui
+Burnout Paradise Remastered,PS4,2018,Course,EA,3.0,80,7,Oui
+Dragon Age Inquisition,PC,2014,RPG,EA,10.0,85,16,Non
+Mass Effect Legendary,PC,2021,RPG,EA,3.0,87,16,Non
+Mass Effect 2,PC,2010,RPG,EA,2.0,96,18,Non
+Jedi Survivor,PS5,2023,Action-Aventure,EA,5.0,84,16,Non
+Anthem,PC,2019,Action,EA,5.0,55,16,Oui
+Immortals Fenyx Rising,PC,2020,Action-Aventure,Ubisoft,5.0,77,12,Non
+Riders Republic,PC,2021,Sport,Ubisoft,5.0,76,12,Oui
+Prince of Persia Lost Crown,Switch,2024,Plateforme,Ubisoft,2.0,88,12,Non
+Skull and Bones,PC,2024,Action,Ubisoft,3.0,63,18,Oui
+Like a Dragon Ishin,PS5,2023,Action,Sega,1.0,78,18,Non
+Like a Dragon Infinite Wealth,PS5,2024,RPG,Sega,1.0,91,18,Non
+Yakuza 0,PC,2015,Action,Sega,3.0,85,18,Non
+Sonic Frontiers,Switch,2022,Plateforme,Sega,3.6,68,7,Non
+Sonic Superstars,Switch,2023,Plateforme,Sega,1.0,69,7,Oui
+Two Point Campus,PC,2022,Simulation,Sega,2.0,78,3,Non
+Football Manager 2024,PC,2023,Sport,Sega,1.0,81,3,Non
+Persona 3 Reload,PC,2024,RPG,Atlus,1.0,91,16,Non
+Metaphor Refantazio,PC,2024,RPG,Atlus,1.0,94,12,Non
+Astlibra Revision,PC,2022,RPG,KEIZO,0.5,80,12,Non
+Hi-Fi Rush,PC,2023,Action,Bethesda,3.0,87,12,Non
+Starfield,PC,2023,RPG,Bethesda,6.0,83,18,Non
+Fallout 4,PC,2015,RPG,Bethesda,25.0,84,18,Non
+Fallout 76,PC,2018,RPG,Bethesda,13.0,52,18,Oui
+The Elder Scrolls V Skyrim,PC,2011,RPG,Bethesda,30.0,96,18,Non
+DOOM Eternal,PC,2020,FPS,Bethesda,3.0,88,18,Non
+DOOM 2016,PC,2016,FPS,Bethesda,3.0,85,18,Non
+Quake Champions,PC,2017,FPS,Bethesda,0.0,72,18,Oui
+Prey,PC,2017,FPS,Bethesda,2.0,82,18,Non
+Deathloop,PC,2021,FPS,Bethesda,3.0,88,18,Non
+Ghostwire Tokyo,PC,2022,Action,Bethesda,3.0,75,18,Non
+Indiana Jones Great Circle,PC,2024,Aventure,Bethesda,3.0,84,12,Non
+Alan Wake 2,PC,2023,Horreur,Epic Games,1.5,89,18,Non
+Control,PC,2019,Action,505 Games,2.0,85,16,Non
+Remedy Collection,PC,2023,Action,Remedy,1.0,82,18,Non
+Sifu,PC,2022,Combat,Microids,2.0,80,16,Non
+Tunic,PC,2022,Aventure,Finji,0.5,86,7,Non
+Kena Bridge of Spirits,PC,2021,Aventure,Ember Lab,1.0,82,7,Non
+It Takes Two,PC,2021,Plateforme,EA,12.0,89,12,Oui
+Unravel Two,PC,2018,Plateforme,EA,5.0,82,3,Oui
+A Way Out,PC,2018,Action,EA,4.0,78,18,Oui
+Hazelight,PC,2022,Action,EA,1.0,80,16,Oui
+Ico,PS2,2001,Aventure,Sony,1.0,90,12,Non
+Shadow of the Colossus,PS2,2005,Aventure,Sony,2.0,91,12,Non
+Journey,PS3,2012,Aventure,Sony,3.0,92,3,Non
+Flower,PS3,2009,Aventure,Sony,1.0,87,3,Non
