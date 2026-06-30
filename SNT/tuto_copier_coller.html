@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tuto — Copier les résultats SQL dans le tableur</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; font-size: 14px; background: #f4f6f9; color: #222; padding: 20px; }
+
+h1 { font-size: 1.2rem; color: #185FA5; margin-bottom: 18px; text-align: center; }
+
+.steps { display: flex; flex-direction: column; gap: 14px; max-width: 680px; margin: 0 auto; }
+
+.step {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
+}
+
+.num {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: #185FA5;
+  color: #fff;
+  font-weight: bold;
+  font-size: 1rem;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.content { flex: 1; }
+.content p { line-height: 1.5; margin-bottom: 6px; }
+.content p:last-child { margin-bottom: 0; }
+
+.mock {
+  background: #f0f4ff;
+  border: 1px solid #c5d5f0;
+  border-radius: 7px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Bouton simulé client SQL */
+.btn-sql {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #fff; border: 1px solid #c5d5f0;
+  border-radius: 5px; padding: 4px 10px;
+  font-size: 12px; font-weight: 600; color: #185FA5;
+  white-space: nowrap;
+}
+
+/* Bouton simulé tableur */
+.btn-tableur {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #fff; border: 1px solid #c5d5f0;
+  border-radius: 5px; padding: 4px 10px;
+  font-size: 12px; font-weight: 600; color: #0a7a40;
+  white-space: nowrap;
+}
+
+.tag-x  { background: #185FA5; color: #fff; border-radius: 3px; padding: 1px 6px; font-size: 11px; font-weight: bold; }
+.tag-y  { background: #0a7a40; color: #fff; border-radius: 3px; padding: 1px 6px; font-size: 11px; font-weight: bold; }
+
+/* Mini tableur visuel */
+.mini-table { border-collapse: collapse; font-size: 11px; margin-top: 8px; }
+.mini-table th { background: #185FA5; color: #fff; padding: 3px 10px; border: 1px solid #aaa; }
+.mini-table td { padding: 3px 10px; border: 1px solid #ddd; background: #fff; text-align: right; }
+.mini-table tr:nth-child(even) td { background: #f8f9fa; }
+
+/* Barre de strips colonnes */
+.col-header { display: flex; gap: 4px; margin-top: 8px; }
+.col-card {
+  border: 1px solid #ccc; border-radius: 5px; overflow: hidden;
+  width: 80px; font-size: 11px; text-align: center;
+}
+.col-strip { height: 5px; background: #d0d0d0; }
+.col-strip.x  { background: #185FA5; }
+.col-strip.y1 { background: #0a7a40; }
+.col-name { padding: 4px 2px; font-weight: bold; font-size: 11px; }
+.col-unit { font-size: 10px; color: #888; padding-bottom: 3px; }
+
+.arrow { font-size: 1.3rem; color: #185FA5; margin: 0 4px; }
+
+.note { font-size: 11px; color: #888; font-style: italic; margin-top: 4px; }
+
+.ctx-menu-mock {
+  display: inline-block;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  box-shadow: 2px 3px 8px rgba(0,0,0,0.15);
+  font-size: 12px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.ctx-menu-mock div {
+  padding: 6px 14px;
+  color: #333;
+}
+.ctx-menu-mock div.hi {
+  background: #f5f5f5;
+  font-weight: bold;
+  color: #185FA5;
+}
+</style>
+</head>
+<body>
+
+<h1>📊 Comment tracer une courbe à partir des résultats SQL ?</h1>
+
+<div class="steps">
+
+  <!-- ÉTAPE 1 -->
+  <div class="step">
+    <div class="num">1</div>
+    <div class="content">
+      <p><strong>Exécuter la requête SQL</strong> dans le client et vérifier les résultats.</p>
+      <div class="mock">
+        <table class="mini-table">
+          <tr><th>annee</th><th>temp_moy</th></tr>
+          <tr><td>1950</td><td>12.5</td></tr>
+          <tr><td>1951</td><td>12.7</td></tr>
+          <tr><td>1952</td><td>12.4</td></tr>
+          <tr><td>…</td><td>…</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ÉTAPE 2 -->
+  <div class="step">
+    <div class="num">2</div>
+    <div class="content">
+      <p><strong>Copier le tableau</strong> en cliquant sur le bouton :</p>
+      <div class="mock">
+        <span class="btn-sql">📋 Copier la table</span>
+        <span style="color:#555">← cliquer ici</span>
+      </div>
+      <p class="note">Le tableau est copié avec les en-têtes de colonnes.</p>
+    </div>
+  </div>
+
+  <!-- ÉTAPE 3 -->
+  <div class="step">
+    <div class="num">3</div>
+    <div class="content">
+      <p><strong>Dans le tableur</strong>, faire un <strong>clic droit</strong> sur la cellule A1, puis choisir :</p>
+      <div class="ctx-menu-mock">
+        <div class="hi">⬇ Importer ici…</div>
+        <div style="color:#c0392b">🗑 Supprimer la ligne</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ÉTAPE 4 -->
+  <div class="step">
+    <div class="num">4</div>
+    <div class="content">
+      <p><strong>Coller</strong> le contenu copié dans la zone de texte (<kbd>Ctrl</kbd>+<kbd>V</kbd>), puis cliquer <strong>OK — Importer</strong>.</p>
+      <div class="mock" style="flex-direction:column; align-items:flex-start; gap:6px;">
+        <div style="width:100%; background:#fff; border:1px solid #ccc; border-radius:4px; padding:6px; font-size:11px; color:#aaa; min-height:40px;">
+          annee&nbsp;&nbsp;&nbsp;temp_moy<br>1950&nbsp;&nbsp;&nbsp;&nbsp;12.5<br>1951&nbsp;&nbsp;&nbsp;&nbsp;12.7 …
+        </div>
+        <button style="background:#185FA5;color:#fff;border:none;border-radius:4px;padding:4px 14px;font-size:12px;cursor:default;">OK — Importer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ÉTAPE 5 -->
+  <div class="step">
+    <div class="num">5</div>
+    <div class="content">
+      <p><strong>Assigner les axes</strong> en cliquant sur les bandeaux colorés en haut de chaque colonne :</p>
+      <div class="col-header">
+        <div class="col-card">
+          <div class="col-strip x"></div>
+          <div class="col-name">annee</div>
+          <div class="col-unit"><span class="tag-x">X</span></div>
+        </div>
+        <div class="col-card">
+          <div class="col-strip y1"></div>
+          <div class="col-name">temp_moy</div>
+          <div class="col-unit"><span class="tag-y">Y1</span></div>
+        </div>
+      </div>
+      <p class="note">Bandeau <span style="color:#185FA5;font-weight:bold">bleu</span> = axe X &nbsp;|&nbsp; Bandeau <span style="color:#0a7a40;font-weight:bold">vert</span> = axe Y1</p>
+    </div>
+  </div>
+
+  <!-- ÉTAPE 6 -->
+  <div class="step">
+    <div class="num">6</div>
+    <div class="content">
+      <p><strong>La courbe s'affiche</strong> automatiquement à droite. Observer la tendance et conclure.</p>
+      <div class="mock" style="justify-content:center;">
+        <svg width="220" height="90" viewBox="0 0 220 90">
+          <rect width="220" height="90" rx="6" fill="#f8faff"/>
+          <polyline points="10,75 30,72 50,70 70,68 90,65 110,60 130,55 150,50 170,44 190,38 210,30"
+            fill="none" stroke="#185FA5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <text x="10" y="88" font-size="9" fill="#aaa">1950</text>
+          <text x="190" y="88" font-size="9" fill="#aaa">2023</text>
+          <text x="6" y="12" font-size="9" fill="#0a7a40">T°C ↑</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
