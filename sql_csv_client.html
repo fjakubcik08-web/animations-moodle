@@ -318,7 +318,7 @@
     gap: 0;
   }
   #tabs-bar .spacer { flex: 1; }
-  #copy-btn, #copy-query-btn {
+  #copy-btn, #copy-visual-btn, #copy-query-btn {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -333,12 +333,14 @@
     transition: all .15s;
     white-space: nowrap;
   }
-  #copy-btn:hover { background: #E8F0FE; border-color: var(--primary); color: var(--primary); }
-  #copy-btn.copied { background: #E6F4EA; border-color: var(--green); color: #137333; }
+  #copy-visual-btn:hover { background: #E8F0FE; border-color: var(--primary); color: var(--primary); }
+  #copy-visual-btn.copied { background: #E6F4EA; border-color: var(--green); color: #137333; }
+  #copy-btn:hover { background: #EDE7F6; border-color: #7C4DFF; color: #512DA8; }
+  
   #copy-query-btn:hover { background: #FEF7E0; border-color: #F9AB00; color: #B06000; }
   #copy-query-btn.copied { background: #E6F4EA; border-color: var(--green); color: #137333; }
   @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.15)} 100%{transform:scale(1)} }
-  #copy-btn.copied, #copy-query-btn.copied { animation: pop .25s ease; }
+  #copy-btn.copied, #copy-visual-btn.copied, #copy-query-btn.copied { animation: pop .25s ease; }
   .tab-btn {
     padding: 10px 18px;
     font-size: 0.82rem;
@@ -557,7 +559,8 @@
       <button class="tab-btn" onclick="switchTab('cols')">Colonnes</button>
       <button class="tab-btn" onclick="switchTab('history')">Historique</button>
       <div class="spacer"></div>
-      <button id="copy-btn" onclick="copyTableHTML()">📋 Copier la table</button>
+      <button id="copy-visual-btn" onclick="copyTableVisual()">📋 Copier la table</button>
+      <button id="copy-btn" onclick="copyTableHTML()">📋 Copier la table (HTML)</button>
     </div>
     <div id="results-wrap">
       <div class="placeholder">
@@ -1086,11 +1089,50 @@ function copyTableHTML() {
   navigator.clipboard.write([item]).then(() => {
     btn.textContent = '✓ Copié !';
     btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '📋 Copier la table'; btn.classList.remove('copied'); }, 1800);
+    setTimeout(() => { btn.textContent = '📋 Copier la table (HTML)'; btn.classList.remove('copied'); }, 1800);
   }).catch(() => {
     // Fallback
     const ta = document.createElement('textarea');
     ta.value = html; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    btn.textContent = '✓ Copié !'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 Copier la table (HTML)'; btn.classList.remove('copied'); }, 1800);
+  });
+}
+
+function copyTableVisual() {
+  const btn = document.getElementById('copy-visual-btn');
+  if (!lastCols.length) return;
+
+  // TSV avec en-têtes — colle dans Excel/Sheets/LibreOffice
+  const tsv = [lastCols.join('\t'),
+    ...lastRows.map(row => lastCols.map(c => (row[c] ?? '')).join('\t'))
+  ].join('\n');
+
+  // HTML avec en-têtes — colle avec mise en forme dans Word/Moodle
+  const thS = 'background:#1A73E8;color:#fff;padding:6px 10px;border:1px solid #aaa;font-weight:600;text-align:left';
+  const tdS = 'padding:5px 10px;border:1px solid #ccc';
+  let html = '<table style="border-collapse:collapse;font-family:sans-serif;font-size:13px"><thead><tr>';
+  for (const c of lastCols) html += `<th style="${thS}">${esc(c)}</th>`;
+  html += '</tr></thead><tbody>';
+  lastRows.forEach((row, i) => {
+    html += `<tr style="background:${i%2===0?'#fff':'#F8F9FA'}">`;
+    for (const c of lastCols) html += `<td style="${tdS}">${esc(String(row[c] ?? ''))}</td>`;
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+
+  const item = new ClipboardItem({
+    'text/plain': new Blob([tsv], {type:'text/plain'}),
+    'text/html':  new Blob([html], {type:'text/html'})
+  });
+  navigator.clipboard.write([item]).then(() => {
+    btn.textContent = '✓ Copié !';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 Copier la table'; btn.classList.remove('copied'); }, 1800);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = tsv; document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); document.body.removeChild(ta);
     btn.textContent = '✓ Copié !'; btn.classList.add('copied');
     setTimeout(() => { btn.textContent = '📋 Copier la table'; btn.classList.remove('copied'); }, 1800);
