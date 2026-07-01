@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Ultrason — Émetteur / Récepteur</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#111;color:#bbb;padding:6px}
+.wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:5px}
+h1{font-size:11px;color:#5080c0;text-align:center;letter-spacing:.07em;text-transform:uppercase}
+.blk{background:#0e0e0e;border:1px solid #222;border-radius:7px;padding:5px 8px}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+.lbl{font-size:10px;color:#777}
+select{font-size:10px;background:#1a1a1a;color:#ccc;border:1px solid #383838;border-radius:3px;padding:1px 5px;cursor:pointer}
+.btn{font-size:10px;padding:2px 10px;border-radius:3px;border:1px solid #383838;background:#1a1a1a;color:#ccc;cursor:pointer}
+.btn.on{background:#0a3825;color:#3dc870;border-color:#3dc870}
+.btn.off{background:#380a0a;color:#e05050;border-color:#e05050}
+.btn.pause{background:#2a2010;color:#d0a030;border-color:#d0a030}
+canvas{display:block;width:100%;border-radius:4px}
+.minfo{display:flex;gap:10px;margin-top:3px;padding:2px 6px;background:#060a06;border-radius:3px}
+.minfo span{font-size:10px;font-family:monospace}
+.params{display:flex;gap:5px}
+.pc{flex:1;background:#141414;border:1px solid #222;border-radius:6px;padding:5px 10px}
+.pc .lbl{display:block;margin-bottom:2px}
+.pc input[type=range]{width:100%;margin-bottom:1px}
+.pv{font-size:11px;font-weight:600;color:#4880f0}
+#dinfo{text-align:center;font-size:10px;color:#8080a0;margin-top:2px;font-family:monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Montage Émetteur — Récepteur Ultrason</h1>
+
+<!-- OSCILLOSCOPE -->
+<div class="blk">
+  <div class="row">
+    <span class="lbl" style="color:#3dc870;font-weight:700">OSCILLOSCOPE</span>
+    <span class="lbl">Base de temps :</span>
+    <select id="tb">
+      <option value="0.1">0.1 ms/div</option>
+      <option value="0.2" selected>0.2 ms/div</option>
+      <option value="0.5">0.5 ms/div</option>
+      <option value="1">1 ms/div</option>
+      <option value="2">2 ms/div</option>
+    </select>
+    <span class="lbl">Amplitude :</span>
+    <select id="amp">
+      <option value="0.5">0.5 V/div</option>
+      <option value="1" selected>1 V/div</option>
+      <option value="2">2 V/div</option>
+    </select>
+    <button class="btn on"  id="bpow">⏻ Marche</button>
+    <button class="btn off" id="bsync">⇔ Synchro OFF</button>
+    <button class="btn pause" id="bpause">⏸ Pause</button>
+  </div>
+  <canvas id="osc"></canvas>
+  <div class="minfo">
+    <span style="color:#e0b040">t₁ = <b id="dt1">—</b> ms</span>
+    <span style="color:#e06060">t₂ = <b id="dt2">—</b> ms</span>
+    <span style="color:#9080e0">Δt = <b id="ddt">—</b> ms</span>
+  </div>
+</div>
+
+<!-- SCÈNE -->
+<div class="blk">
+  <canvas id="scn"></canvas>
+  <div id="dinfo">—</div>
+</div>
+
+<!-- PARAMS -->
+<div class="params">
+</div>
+</div><!-- wrap -->
+
+<script>
+// ── URL param vitesse son (base64 XOR 42) ──────────────────────────────────
+function decodeURL(){
+  let v=340;
+  try{const h=location.hash.slice(1);if(h){const r=atob(h);let s='';
+    for(let i=0;i<r.length;i++)s+=String.fromCharCode(r.charCodeAt(i)^42);
+    const p=JSON.parse(s);if(p.v)v=+p.v;}}catch(e){}
+  return v;
+}
+const VS=decodeURL(); // m/s (caché)
+
+// ── État global ──────────────────────────────────────────────────────────────
+let PWR=true, SYNC=false, PAUSED=false; // synchro OFF par défaut
+let TB=0.2, AMP=1;
+let F=40000, FS=5;
+const NC=8;       // cycles par salve
+const LEAD=0.25;  // ms : décalage de l'émission sur l'écran (vers droite)
+
+// Scène virtuelle 700×190
+const SW=700, SH=190;
+const EX=78, EY=SH*0.46;
+const RL=118, RR=624; // limites règle (5→100 cm)
+let D_cm=10;          // distance en cm (entier, par pas de 1)
+
+function RXpx(){return RL+(D_cm-5)/95*(RR-RL);}
+function getTau(){return D_cm/100/VS*1000;} // ms
+
+// Oscillo virtuel 700×185
+const OW=700, OH=185, NDX=10, NDY=8;
+
+// Curseurs (ms dans le temps signal)
+let C1=0, C2=getTau();
+let dCur=0, Drift=0;
+
+// Pause (snapshot complet au moment du clic)
+let frozenNow=0, frozenTau=0, frozenAtten=1, frozenDrift=0;
+
+// ── Canvas ───────────────────────────────────────────────────────────────────
+const oscC=document.getElementById('osc'), oscX=oscC.getContext('2d');
+const scnC=document.getElementById('scn'), scnX=scnC.getContext('2d');
+
+function resize(){
+  const W=Math.min(oscC.parentElement.clientWidth-16,750);
+  oscC.width=W; oscC.height=Math.round(W*OH/OW);
+  scnC.width=W; scnC.height=Math.round(W*SH/SW);
+}
+resize(); window.addEventListener('resize',resize);
+const OS=()=>oscC.width/OW;
+const SS=()=>scnC.width/SW;
+
+// ── Signal ───────────────────────────────────────────────────────────────────
+function bd(){return NC/F*1000;} // durée salve ms
+
+function sig(t_ms, delay=0){
+  const t=t_ms-delay;
+  const per=1000/FS;
+  const ph=((t%per)+per)%per;
+  const b=bd();
+  if(ph<=0||ph>=b) return 0;
+  const rise=0.7/F*1000;
+  let env=1;
+  if(ph<rise) env=ph/rise;
+  else if(ph>b-rise) env=(b-ph)/rise;
+  return env*Math.sin(2*Math.PI*F/1000*ph);
+}
+
+// Jitter (courbes vivantes)
+function jit(px,now){
+  return 0.022*(Math.sin(now*0.0038+px*0.18)+0.6*Math.sin(now*0.0071+px*0.32));
+}
+
+// ── Oscilloscope ─────────────────────────────────────────────────────────────
+function drawOsc(now){
+  const W=oscC.width,H=oscC.height,s=OS();
+  const ctx=oscX;
+
+  ctx.fillStyle='#0b160b'; ctx.fillRect(0,0,W,H);
+
+  // grille
+  for(let i=0;i<=NDX;i++){
+    const x=W*i/NDX;
+    ctx.strokeStyle=i===5?'#183018':'#0d1e0d';
+    ctx.lineWidth=i===5?1:0.5;
+    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();
+  }
+  for(let i=0;i<=NDY;i++){
+    const y=H*i/NDY;
+    ctx.strokeStyle=i===4?'#183018':'#0d1e0d';
+    ctx.lineWidth=i===4?1:0.5;
+    ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
+  }
+  if(!PWR) return;
+
+  const displayNow=PAUSED?frozenNow:now;
+  const tw=NDX*TB;
+  const t0=PAUSED?frozenDrift:(SYNC?-LEAD:Drift);
+  const tau=PAUSED?frozenTau:getTau();
+  const atten=PAUSED?frozenAtten:Math.min(1.0, Math.max(0.08, 10/D_cm)); // atténuation 1/D
+
+  // centres canaux
+  const cy1=H*0.27, cy2=H*0.73;
+  const ca=H*0.22/AMP;
+
+  // zéro tiretés
+  ctx.save();ctx.strokeStyle='#1a381a';ctx.lineWidth=0.6;ctx.setLineDash([3,4]);
+  ctx.beginPath();ctx.moveTo(0,cy1);ctx.lineTo(W,cy1);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(0,cy2);ctx.lineTo(W,cy2);ctx.stroke();
+  ctx.setLineDash([]);ctx.restore();
+
+  // tracé signal
+  function trace(cy,delay,bright,att=1){
+    ctx.save();
+    ctx.shadowBlur=bright?5*s:3*s;
+    ctx.shadowColor=bright?'rgba(30,255,70,.5)':'rgba(20,190,50,.4)';
+    ctx.strokeStyle=bright?'#1cff45':'#16cc38';
+    ctx.lineWidth=1.6*s;
+    ctx.beginPath();
+    let first=true;
+    for(let px=0;px<=W;px++){
+      const t=t0+px/W*tw;
+      const v=sig(t,delay)*att + (PAUSED?0:jit(px,displayNow));
+      const y=cy - v*ca;
+      first?ctx.moveTo(px,y):ctx.lineTo(px,y);
+      first=false;
+    }
+    ctx.stroke();ctx.restore();
+  }
+  trace(cy1,0,true,1);
+  trace(cy2,tau,false,atten);
+
+  // labels canaux
+  ctx.font=`${9*s}px monospace`;
+  ctx.fillStyle='#25e055'; ctx.fillText('CH1 Émission',3*s,cy1-ca-3*s);
+  ctx.fillStyle='#16a035'; ctx.fillText('CH2 Réception',3*s,cy2-ca-3*s);
+  // atténuation
+  ctx.fillStyle='#206a30'; ctx.textAlign='right';
+  ctx.fillText(`att. ×${atten.toFixed(2)}`,W-3*s,cy2-ca-3*s);
+  ctx.textAlign='left';
+
+  // curseurs (clampés à la fenêtre)
+  function cur(tms,col,lbl){
+    const x=(tms-t0)/tw*W;
+    if(x<0||x>W) return;
+    ctx.save();
+    ctx.strokeStyle=col;ctx.lineWidth=1.2*s;ctx.setLineDash([4*s,3*s]);
+    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle=col;ctx.font=`bold ${9*s}px monospace`;
+    ctx.fillText(lbl,x+3*s,11*s);ctx.restore();
+  }
+  cur(C1,'#e0b040','t₁');
+  cur(C2,'#e06060','t₂');
+
+  // flèche Δt
+  {
+    const x1=(C1-t0)/tw*W, x2=(C2-t0)/tw*W;
+    const ay=H*0.9;
+    if(x1>0&&x2>0&&x1<W&&x2<W){
+      ctx.save();
+      ctx.strokeStyle='#9080e0';ctx.fillStyle='#9080e0';ctx.lineWidth=s;
+      ctx.beginPath();ctx.moveTo(x1,ay);ctx.lineTo(x2,ay);ctx.stroke();
+      [[x1,1],[x2,-1]].forEach(([x,d])=>{
+        ctx.beginPath();ctx.moveTo(x,ay);
+        ctx.lineTo(x+d*6*s,ay-3.5*s);ctx.lineTo(x+d*6*s,ay+3.5*s);
+        ctx.closePath();ctx.fill();
+      });
+      ctx.font=`${8*s}px monospace`;ctx.textAlign='center';
+      ctx.fillText('Δt='+Math.abs(C2-C1).toFixed(3)+'ms',(x1+x2)/2,ay-5*s);
+      ctx.restore();
+    }
+  }
+
+  // Indicateur PAUSE
+  if(PAUSED){
+    ctx.save();
+    ctx.font=`bold ${11*s}px sans-serif`;ctx.fillStyle='rgba(200,160,20,.85)';
+    ctx.textAlign='center';
+    ctx.fillText('⏸ PAUSE',W/2,H/2);
+    ctx.restore();
+  }
+}
+
+// ── Paquets SUPER SAIYAN ─────────────────────────────────────────────────────
+let pkts=[], lastPkt=-9999;
+
+function spawnPkts(now){
+  const per=1000/FS;
+  if(now-lastPkt>=per){pkts.push({b:now,p:0});lastPkt=now;}
+  const tr=getTau();
+  pkts=pkts.filter(pk=>{pk.p=(now-pk.b)/tr;return pk.p<=1.2;});
+}
+
+function drawPkts(ctx,ex,ey,rx,s,now){
+  const bH=Math.max(10,24*s);  // demi-hauteur du faisceau
+  const pkW=Math.max(16,44*s); // demi-largeur du paquet
+
+  pkts.forEach(pk=>{
+    if(pk.p<0||pk.p>1.12) return;
+    const cx=ex+pk.p*(rx-ex);
+    const al=pk.p>0.86?1-(pk.p-0.86)/0.26:1;
+
+    // Halo radial
+    const gr=ctx.createRadialGradient(cx,ey,0,cx,ey,pkW*1.8);
+    gr.addColorStop(0,`rgba(255,170,10,${0.24*al})`);
+    gr.addColorStop(0.55,`rgba(255,80,0,${0.08*al})`);
+    gr.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=gr;
+    ctx.fillRect(cx-pkW*1.8,ey-bH*2.6,pkW*3.6,bH*5.2);
+
+    // Fronts d'onde (arcs courbés)
+    const nW=NC;
+    for(let w=0;w<nW;w++){
+      const wx=cx-pkW+(2*pkW*w/(nW-1));
+      if(wx<ex+2||wx>rx-2) continue;
+      const env=Math.sin(Math.PI*w/(nW-1));
+      const cv=(3+pk.p*5)*s;
+
+      ctx.save();
+      // Couche glow orange
+      ctx.shadowBlur=Math.max(10,24*s);
+      ctx.shadowColor=`rgba(255,80,0,${0.18*env*al})`;
+      ctx.strokeStyle=`rgba(255,110,10,${0.28*env*al})`;
+      ctx.lineWidth=Math.max(3.5,8*s);
+      ctx.beginPath();ctx.moveTo(wx,ey-bH);ctx.quadraticCurveTo(wx+cv,ey,wx,ey+bH);ctx.stroke();
+
+      // Couche jaune
+      ctx.shadowBlur=Math.max(6,13*s);
+      ctx.shadowColor=`rgba(255,220,20,${0.35*env*al})`;
+      ctx.strokeStyle=`rgba(255,210,35,${0.6*env*al})`;
+      ctx.lineWidth=Math.max(2,3.5*s);
+      ctx.beginPath();ctx.moveTo(wx,ey-bH);ctx.quadraticCurveTo(wx+cv,ey,wx,ey+bH);ctx.stroke();
+
+      // Cœur blanc
+      ctx.shadowBlur=0;
+      ctx.strokeStyle=`rgba(255,255,210,${0.92*env*al})`;
+      ctx.lineWidth=Math.max(0.7,1.3*s);
+      ctx.beginPath();ctx.moveTo(wx,ey-bH);ctx.quadraticCurveTo(wx+cv,ey,wx,ey+bH);ctx.stroke();
+      ctx.restore();
+    }
+
+    // Particules
+    const sd=Math.round(pk.b/20)*20;
+    for(let k=0;k<22;k++){
+      const r1=Math.sin(sd*127+k*419)*0.5+0.5;
+      const r2=Math.cos(sd*419+k*127)*0.5+0.5;
+      const r3=Math.sin(sd*311+k*733)*0.5+0.5;
+      const osc=Math.sin(now*0.005+k)*4*s;
+      const px=cx+(r1-0.5)*pkW*2.8, py=ey+(r2-0.5)*bH*2.8+osc;
+      if(px<ex||px>rx) continue;
+      const pr=Math.max(0.8,(1+r3*2.6)*s), pa=r3*0.65*al;
+      ctx.save();
+      ctx.shadowBlur=Math.max(5,9*s);ctx.shadowColor=`rgba(255,180,20,${pa})`;
+      ctx.fillStyle=`rgba(255,210,70,${pa})`;
+      ctx.beginPath();ctx.arc(px,py,pr,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    }
+
+    // Éclairs latéraux
+    if(pk.p>0.08&&pk.p<0.93){
+      const t2=now*0.0015;
+      [1,-1].forEach(side=>{
+        const bs=sd+side*777;
+        const bph=Math.sin(bs*173)*0.5+0.5;
+        const sx=cx+(bph-0.5)*pkW*1.5, sy=ey+side*bH*0.88;
+        const len=(8+bph*14)*s;
+        const ang=side*Math.PI/2+Math.sin(t2*2.6+bs)*0.55;
+        const intensity=Math.abs(Math.sin(t2*3.8+bs))*0.4*al;
+        ctx.save();
+        ctx.shadowBlur=Math.max(4,10*s);ctx.shadowColor=`rgba(255,240,80,${intensity})`;
+        ctx.strokeStyle=`rgba(255,255,160,${intensity})`;ctx.lineWidth=Math.max(0.5,s);
+        ctx.beginPath();ctx.moveTo(sx,sy);
+        ctx.lineTo(sx+Math.cos(ang)*len*0.45+Math.sin(t2*5+bs)*3*s,sy+Math.sin(ang)*len*0.45);
+        ctx.lineTo(sx+Math.cos(ang)*len,sy+Math.sin(ang)*len);
+        ctx.stroke();ctx.restore();
+      });
+    }
+
+    // Impact flash
+    if(pk.p>0.88&&pk.p<=1.12){
+      const fa=Math.sin((pk.p-0.88)/0.24*Math.PI)*al;
+      ctx.save();
+      for(let r=1;r<=5;r++){
+        ctx.shadowBlur=Math.max(8,18*s);ctx.shadowColor=`rgba(80,210,255,${fa*.7})`;
+        ctx.strokeStyle=`rgba(140,230,255,${fa*(1-r/6)})`;
+        ctx.lineWidth=Math.max(1,1.4*s);
+        ctx.beginPath();ctx.arc(rx-20*s,ey,r*Math.max(4,6*s)*fa,-0.85,0.85);ctx.stroke();
+      }
+      ctx.shadowBlur=Math.max(12,22*s);ctx.shadowColor=`rgba(200,255,255,${fa})`;
+      ctx.fillStyle=`rgba(200,255,255,${fa*0.45})`;
+      ctx.beginPath();ctx.arc(rx-18*s,ey,Math.max(2,6*fa*s),0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    }
+  });
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function rrect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
+}
+
+// ── Transducteur (design épuré) ───────────────────────────────────────────────
+// Face active à droite pour É, à gauche pour R.
+// Corps : bw=22*s × bh=44*s, centré en (cx,cy).
+// Face : bande colorée de 5*s de large, côté intérieur.
+const XBODY_HALF = 11; // demi-largeur corps (virtuel)
+
+function drawXducer(ctx,cx,cy,s,isE){
+  ctx.save();
+  const bw=22*s, bh=44*s, fW=5*s;
+  const bx=cx-bw/2, by=cy-bh/2;
+
+  const [bodyC,faceC,rimC,lblC]=isE
+    ?['#0c2040','#1e68d0','#4a88e0','#7abaff']
+    :['#0c2a14','#1a9038','#3eb055','#60d070'];
+
+  // Glow fixe (pas de shadowBlur animé → pas de clignotement)
+  ctx.shadowBlur=10*s; ctx.shadowColor=isE?'rgba(40,100,220,.2)':'rgba(30,160,60,.2)';
+
+  // Corps
+  ctx.fillStyle=bodyC; ctx.strokeStyle=rimC; ctx.lineWidth=1.2*s;
+  rrect(ctx,bx,by,bw,bh,4*s); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur=0;
+
+  // Bande face (clippée aux coins arrondis)
+  ctx.save();
+  rrect(ctx,bx,by,bw,bh,4*s); ctx.clip();
+  const fx=isE?bx+bw-fW:bx;
+  ctx.fillStyle=faceC; ctx.fillRect(fx,by,fW,bh);
+  // Striations membrane
+  ctx.strokeStyle=isE?'rgba(160,200,255,.45)':'rgba(100,230,130,.45)';
+  ctx.lineWidth=0.7*s;
+  for(let y=by+3*s;y<by+bh;y+=4.5*s){
+    ctx.beginPath();ctx.moveTo(fx,y);ctx.lineTo(fx+fW,y);ctx.stroke();
+  }
+  ctx.restore();
+
+  // Reflet discret sur le corps
+  ctx.save();
+  rrect(ctx,bx,by,bw,bh,4*s); ctx.clip();
+  const rg=ctx.createLinearGradient(bx,by,bx+bw,by);
+  rg.addColorStop(0,'rgba(255,255,255,.06)');
+  rg.addColorStop(0.4,'rgba(255,255,255,.0)');
+  ctx.fillStyle=rg; ctx.fillRect(bx,by,bw,bh);
+  ctx.restore();
+
+  // Lettre E / R
+  const lx=isE?bx+(bw-fW)/2:bx+fW+(bw-fW)/2;
+  ctx.fillStyle='rgba(255,255,255,.92)';
+  ctx.font=`bold ${14*s}px sans-serif`; ctx.textAlign='center';
+  ctx.fillText(isE?'E':'R',lx,cy+5*s);
+
+  // Connecteurs (broches en bas)
+  ctx.strokeStyle=rimC; ctx.lineWidth=1.5*s;
+  [-6,6].forEach(dx=>{
+    ctx.beginPath();ctx.moveTo(cx+dx*s,by+bh);ctx.lineTo(cx+dx*s,by+bh+5*s);ctx.stroke();
+  });
+
+  // Label sous le corps
+  ctx.fillStyle=lblC; ctx.font=`bold ${9*s}px sans-serif`; ctx.textAlign='center';
+  ctx.fillText(isE?'Émetteur':'Récepteur',cx,by+bh+15*s);
+
+  ctx.restore();
+}
+
+// ── Scène ─────────────────────────────────────────────────────────────────────
+function drawScene(now){
+  const W=scnC.width,H=scnC.height,s=SS();
+  const ctx=scnX;
+  ctx.fillStyle='#080d18';ctx.fillRect(0,0,W,H);
+
+  const rx=RXpx();
+  const ex=EX*s, ey=EY*s, rxs=rx*s;
+  const rl=RL*s, rr=RR*s;
+
+  // Règle
+  const rulerY=ey+62*s;
+  ctx.strokeStyle='#253545';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(rl,rulerY);ctx.lineTo(rr,rulerY);ctx.stroke();
+  for(let cm=5;cm<=100;cm++){
+    const x=rl+(cm-5)/95*(rr-rl);
+    const th=cm%10===0?8:cm%5===0?5:3;
+    ctx.strokeStyle=cm%10===0?'#3a5a6a':'#1e2e3a';
+    ctx.lineWidth=cm%10===0?1:0.5;
+    ctx.beginPath();ctx.moveTo(x,rulerY);ctx.lineTo(x,rulerY+th*s);ctx.stroke();
+    if(cm%10===0){
+      ctx.fillStyle='#4a6070';ctx.font=`${7.5*s}px sans-serif`;
+      ctx.textAlign='center';ctx.fillText(cm,x,rulerY+14*s);
+    }
+  }
+  ctx.fillStyle='#4a6070';ctx.font=`${7.5*s}px sans-serif`;
+  ctx.textAlign='right';ctx.fillText('cm',rr+10*s,rulerY+14*s);
+
+  // Flèche D
+  const ay=ey-60*s;
+  const ae=ex+(XBODY_HALF+4)*s, ar=rxs-(XBODY_HALF+4)*s;
+  if(ar>ae){
+    ctx.strokeStyle='#7070c0';ctx.fillStyle='#9090d8';ctx.lineWidth=s;
+    ctx.beginPath();ctx.moveTo(ae,ay);ctx.lineTo(ar,ay);ctx.stroke();
+    [[ae,1],[ar,-1]].forEach(([x,dd])=>{
+      ctx.beginPath();ctx.moveTo(x,ay);
+      ctx.lineTo(x+dd*6*s,ay-3.5*s);ctx.lineTo(x+dd*6*s,ay+3.5*s);
+      ctx.closePath();ctx.fill();
+    });
+    ctx.font=`bold ${10*s}px sans-serif`;ctx.textAlign='center';
+    ctx.fillStyle='#a0a0e0';
+    ctx.fillText(`D = ${D_cm} cm`,(ex+rxs)/2,ay-6*s);
+  }
+
+  // Paquets super saiyan (face É → face R)
+  const emitterFaceX=(EX+XBODY_HALF)*s;
+  const receiverFaceX=(rx-XBODY_HALF)*s;
+  if(PWR&&receiverFaceX>emitterFaceX+10)
+    drawPkts(ctx,emitterFaceX,ey,receiverFaceX,s,now);
+
+  // Transducteurs PAR-DESSUS les paquets
+  drawXducer(ctx,ex,ey,s,true);
+  drawXducer(ctx,rxs,ey,s,false);
+}
+
+// ── Boucle ───────────────────────────────────────────────────────────────────
+let lastT=0;
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt=now-lastT;lastT=now;
+  // Synchro OFF : défilement lent (~4 s pour traverser l'écran)
+  if(!SYNC&&PWR&&!PAUSED){Drift+=dt*0.0005;if(Drift>NDX*TB)Drift=0;}
+  if(PWR&&!PAUSED) spawnPkts(now);
+  drawOsc(now);
+  drawScene(now);
+  // Affichages
+  document.getElementById('dt1').textContent=C1.toFixed(3);
+  document.getElementById('dt2').textContent=C2.toFixed(3);
+  document.getElementById('ddt').textContent=Math.abs(C2-C1).toFixed(3);
+  const att=(Math.min(1,Math.max(0.08,10/D_cm))*100).toFixed(0);
+  document.getElementById('dinfo').textContent=
+    `D = ${D_cm} cm  |  τ = ${getTau().toFixed(3)} ms  |  att. R = ${att}%`;
+}
+
+requestAnimationFrame(now=>{lastT=now;lastPkt=now-1000/FS;loop(now);});
+
+// ── Contrôles boutons ────────────────────────────────────────────────────────
+document.getElementById('bpow').addEventListener('click',function(){
+  PWR=!PWR;this.textContent='⏻ '+(PWR?'Marche':'Arrêt');
+  this.className='btn '+(PWR?'on':'off');
+});
+document.getElementById('bsync').addEventListener('click',function(){
+  SYNC=!SYNC;this.textContent='⇔ Synchro '+(SYNC?'ON':'OFF');
+  this.className='btn '+(SYNC?'on':'off');
+  if(SYNC)Drift=0;
+});
+document.getElementById('bpause').addEventListener('click',function(){
+  PAUSED=!PAUSED;
+  if(PAUSED){
+    frozenNow=lastT;
+    frozenTau=getTau();
+    frozenAtten=Math.min(1.0,Math.max(0.08,10/D_cm));
+    frozenDrift=SYNC?-LEAD:Drift;
+  }
+  this.textContent=PAUSED?'▶ Reprendre':'⏸ Pause';
+  this.className=PAUSED?'btn on':'btn pause';
+});
+document.getElementById('tb').addEventListener('change',e=>{TB=+e.target.value;});
+document.getElementById('amp').addEventListener('change',e=>{AMP=+e.target.value;});
+
+// ── Drag récepteur (snap 1 cm) ────────────────────────────────────────────────
+let dR=false,dOX=0;
+function svx(e){
+  const r=scnC.getBoundingClientRect();
+  return((e.touches?e.touches[0].clientX:e.clientX)-r.left)/SS();
+}
+function snapCm(vx){
+  // convertit virtual px → cm (snap au cm) → clamp 10..100
+  const raw=5+(vx-RL)/(RR-RL)*95;
+  return Math.max(10,Math.min(100,Math.round(raw)));
+}
+scnC.addEventListener('mousedown',e=>{
+  const vx=svx(e);
+  if(Math.abs(vx-RXpx())<30){dR=true;dOX=vx-RXpx();}
+});
+scnC.addEventListener('mousemove',e=>{
+  if(dR){D_cm=snapCm(svx(e)-dOX);}
+  scnC.style.cursor=Math.abs(svx(e)-RXpx())<30?(dR?'grabbing':'grab'):'default';
+});
+scnC.addEventListener('mouseup',()=>dR=false);
+scnC.addEventListener('mouseleave',()=>dR=false);
+scnC.addEventListener('touchstart',e=>{
+  e.preventDefault();const vx=svx(e);
+  if(Math.abs(vx-RXpx())<36){dR=true;dOX=vx-RXpx();}
+},{passive:false});
+scnC.addEventListener('touchmove',e=>{
+  e.preventDefault();if(dR)D_cm=snapCm(svx(e)-dOX);
+},{passive:false});
+scnC.addEventListener('touchend',()=>dR=false);
+
+// ── Drag curseurs oscillo (clampés à la fenêtre) ──────────────────────────────
+let dCur2=0;
+function omt(e){
+  const r=oscC.getBoundingClientRect();
+  const cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
+  const t0=SYNC?-LEAD:Drift;
+  return t0+cx/oscC.width*NDX*TB;
+}
+function clampCur(t){
+  const t0=SYNC?-LEAD:Drift;
+  return Math.max(t0,Math.min(t0+NDX*TB,t));
+}
+oscC.addEventListener('mousedown',e=>{
+  const t=omt(e),th=TB*0.8;
+  const d1=Math.abs(t-C1),d2=Math.abs(t-C2);
+  if(Math.min(d1,d2)<th)dCur2=d1<d2?1:2;
+});
+oscC.addEventListener('mousemove',e=>{
+  if(dCur2){const t=clampCur(omt(e));if(dCur2===1)C1=t;else C2=t;}
+  const t=omt(e);
+  oscC.style.cursor=(Math.abs(t-C1)<TB||Math.abs(t-C2)<TB)?'col-resize':'crosshair';
+});
+oscC.addEventListener('mouseup',()=>dCur2=0);
+oscC.addEventListener('mouseleave',()=>dCur2=0);
+oscC.addEventListener('touchstart',e=>{
+  e.preventDefault();const t=omt(e),th=TB;
+  const d1=Math.abs(t-C1),d2=Math.abs(t-C2);
+  if(Math.min(d1,d2)<th)dCur2=d1<d2?1:2;
+},{passive:false});
+oscC.addEventListener('touchmove',e=>{
+  e.preventDefault();if(dCur2){const t=clampCur(omt(e));if(dCur2===1)C1=t;else C2=t;}
+},{passive:false});
+oscC.addEventListener('touchend',()=>dCur2=0);
+</script>
+</body>
+</html>
