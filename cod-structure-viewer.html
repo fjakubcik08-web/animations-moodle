@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COD - Visualisation structure cristalline</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#000;font-family:Arial,Helvetica,sans-serif;overflow:hidden;}
+  #app{position:relative;width:100%;height:100vh;min-height:400px;}
+  #toolbar{position:absolute;top:0;left:0;right:0;z-index:10;
+    background:#1565c0;color:#fff;padding:6px 10px;display:flex;gap:8px;align-items:center;
+    flex-wrap:wrap;font-size:13px;box-sizing:border-box;}
+  #toolbar label{opacity:.85;}
+  #toolbar input[type=number]{width:90px;padding:3px 5px;border:none;border-radius:3px;}
+  #toolbar button{padding:4px 10px;border:none;border-radius:3px;background:#0d47a1;color:#fff;cursor:pointer;}
+  #toolbar button:hover{background:#0a3a80;}
+  #toolbar select{padding:3px 5px;border:none;border-radius:3px;}
+  #toolbar .nav{margin-left:auto;display:flex;gap:6px;}
+  #frameHolder{position:absolute;top:34px;left:0;right:0;bottom:0;background:#000;}
+  iframe{width:100%;height:100%;border:0;display:block;}
+  #watermark{position:absolute;bottom:8px;right:12px;z-index:5;color:#ff9800;
+    font-family:'Courier New',monospace;font-weight:bold;font-size:13px;pointer-events:none;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <label>COD id :</label>
+    <input type="number" id="codInput" min="1" step="1" placeholder="ex: 1527138">
+    <button id="loadBtn">Charger</button>
+    <label>style :</label>
+    <select id="modeSelect">
+      <option value="balls">boules/bâtons</option>
+      <option value="vdw">Van der Waals</option>
+      <option value="stick">bâtons</option>
+      <option value="wireframe">fil de fer</option>
+    </select>
+    <div class="nav">
+      <button id="prevBtn" title="entrée précédente">&#9664; id-1</button>
+      <button id="nextBtn" title="entrée suivante">id+1 &#9654;</button>
+    </div>
+  </div>
+  <div id="frameHolder">
+    <iframe id="viewerFrame" allow="fullscreen" loading="eager"></iframe>
+  </div>
+  <div id="watermark">COD</div>
+</div>
+
+<script>
+/* Rendu délégué à MolView (embed.molview.org), qui sait nativement charger
+   une entrée COD par id, générer la maille via les opérations de symétrie du CIF,
+   et gérer rotation/zoom à la souris — beaucoup plus fiable qu'un parseur maison. */
+
+function getCodIdFromUrl(){
+  const p = new URLSearchParams(window.location.search);
+  return p.get('cod') || p.get('id') || '1527138';
+}
+function setUrlParams(id, mode){
+  const url = new URL(window.location.href);
+  url.searchParams.set('cod', id);
+  url.searchParams.set('mode', mode);
+  window.history.replaceState({}, '', url);
+}
+function embedUrl(id, mode){
+  return 'https://embed.molview.org/v1/?mode=' + encodeURIComponent(mode) +
+    '&codid=' + encodeURIComponent(id) + '&bg=black';
+}
+function loadCod(id, mode){
+  id = String(id).trim();
+  mode = mode || document.getElementById('modeSelect').value;
+  if(!id) return;
+  document.getElementById('viewerFrame').src = embedUrl(id, mode);
+  document.getElementById('codInput').value = id;
+  document.getElementById('watermark').textContent = 'COD ' + id;
+  setUrlParams(id, mode);
+}
+
+document.getElementById('loadBtn').addEventListener('click', () => {
+  loadCod(document.getElementById('codInput').value);
+});
+document.getElementById('codInput').addEventListener('keydown', e => {
+  if(e.key === 'Enter') document.getElementById('loadBtn').click();
+});
+document.getElementById('prevBtn').addEventListener('click', () => {
+  const id = parseInt(document.getElementById('codInput').value, 10);
+  if(id > 1) loadCod(id - 1);
+});
+document.getElementById('nextBtn').addEventListener('click', () => {
+  const id = parseInt(document.getElementById('codInput').value, 10);
+  if(id) loadCod(id + 1);
+});
+document.getElementById('modeSelect').addEventListener('change', () => {
+  loadCod(document.getElementById('codInput').value);
+});
+
+/* Démarrage */
+const startId = getCodIdFromUrl();
+const startMode = new URLSearchParams(window.location.search).get('mode') || 'balls';
+document.getElementById('codInput').value = startId;
+document.getElementById('modeSelect').value = startMode;
+loadCod(startId, startMode);
+</script>
+</body>
+</html>
