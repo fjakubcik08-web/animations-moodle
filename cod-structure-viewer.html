@@ -332,7 +332,6 @@ function loadCod(id){
   buildStructure(entry, repr);
   infoEl.style.display = 'flex';
   infoEl.innerHTML =
-    '<b>' + entry.formula + '</b> — ' + TYPE_LABEL[entry.type] + ' — a = ' + entry.a + ' Å' +
     '<span class="chip"><span class="dot" style="background:' + entry.catColor + '"></span>' + entry.cat + ' (cation)</span>' +
     '<span class="chip"><span class="dot" style="background:' + entry.aniColor + '"></span>' + entry.ani + ' (anion)</span>';
   document.getElementById('watermark').textContent = '';
