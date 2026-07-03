@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>COD - Visualisation structure cristalline</title>
+<title>Maille cristalline - structures ioniques cubiques</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   html,body{margin:0;padding:0;height:100%;background:#000;font-family:Arial,Helvetica,sans-serif;overflow:hidden;}
   #app{position:relative;width:100%;height:100vh;min-height:400px;}
@@ -12,84 +13,311 @@
     flex-wrap:wrap;font-size:13px;box-sizing:border-box;}
   #toolbar label{opacity:.85;}
   #toolbar input[type=number]{width:90px;padding:3px 5px;border:none;border-radius:3px;}
+  #toolbar select{padding:3px 5px;border:none;border-radius:3px;}
   #toolbar button{padding:4px 10px;border:none;border-radius:3px;background:#0d47a1;color:#fff;cursor:pointer;}
   #toolbar button:hover{background:#0a3a80;}
-  #toolbar select{padding:3px 5px;border:none;border-radius:3px;}
   #toolbar .nav{margin-left:auto;display:flex;gap:6px;}
-  #frameHolder{position:absolute;top:34px;left:0;right:0;bottom:0;background:#000;}
-  iframe{width:100%;height:100%;border:0;display:block;}
+  #canvasHolder{position:absolute;top:34px;left:0;right:0;bottom:0;background:#000;}
+  canvas{display:block;width:100%;height:100%;cursor:grab;}
+  canvas:active{cursor:grabbing;}
+  #infoBar{position:absolute;top:40px;left:8px;z-index:5;background:rgba(0,0,0,.6);
+    color:#eee;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+    padding:6px 10px;border-radius:4px;display:flex;gap:14px;align-items:center;}
+  #infoBar .chip{display:flex;align-items:center;gap:6px;}
+  #infoBar .dot{width:14px;height:14px;border-radius:50%;flex:none;
+    box-shadow:inset -2px -2px 3px rgba(0,0,0,.5), inset 1px 1px 2px rgba(255,255,255,.4);}
+  #status{position:absolute;top:40px;left:8px;z-index:6;color:#ccc;font-size:13px;
+    background:rgba(0,0,0,.6);padding:8px 12px;border-radius:4px;max-width:420px;display:none;}
   #watermark{position:absolute;bottom:8px;right:12px;z-index:5;color:#ff9800;
     font-family:'Courier New',monospace;font-weight:bold;font-size:13px;pointer-events:none;}
-  #legendPanel{position:absolute;top:40px;right:8px;z-index:8;display:none;
-    background:rgba(20,20,20,.92);border:1px solid #444;border-radius:6px;
-    padding:8px 10px;max-height:calc(100% - 56px);overflow-y:auto;width:190px;
-    box-shadow:0 2px 10px rgba(0,0,0,.5);}
-  #legendPanel h4{margin:0 0 6px;color:#ddd;font-size:12px;font-weight:normal;
-    border-bottom:1px solid #444;padding-bottom:4px;}
-  .legendGrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;}
-  .legendItem{display:flex;align-items:center;gap:6px;font-size:12px;color:#eee;
-    font-family:Arial,Helvetica,sans-serif;}
-  .legendDot{width:14px;height:14px;border-radius:50%;flex:none;
-    box-shadow:inset -2px -2px 3px rgba(0,0,0,.5), inset 1px 1px 2px rgba(255,255,255,.4);}
+  #legend2{position:absolute;bottom:8px;left:8px;z-index:5;color:#ccc;font-size:11px;
+    font-family:'Courier New',monospace;background:rgba(0,0,0,.5);padding:5px 8px;border-radius:4px;}
 </style>
 </head>
 <body>
 <div id="app">
   <div id="toolbar">
-    <label>COD id :</label>
-    <input type="number" id="codInput" min="1" step="1" placeholder="ex: 1527138">
-    <button id="loadBtn">Charger</button>
-    <label>style :</label>
-    <select id="modeSelect">
-      <option value="balls">boules/bâtons</option>
-      <option value="vdw">Van der Waals</option>
-      <option value="stick">bâtons</option>
-      <option value="wireframe">fil de fer</option>
+    <label>représentation :</label>
+    <select id="reprSelect">
+      <option value="compacte">compacte (sphères jointives)</option>
+      <option value="eclatee">éclatée (boules et bâtons)</option>
     </select>
-    <button id="legendBtn" title="afficher/masquer la légende des couleurs">🎨 Légende</button>
+    <label style="margin-left:8px;"><input type="checkbox" id="autoRotate" checked style="vertical-align:middle;"> rotation auto</label>
     <div class="nav">
-      <button id="prevBtn" title="entrée précédente">&#9664; id-1</button>
-      <button id="nextBtn" title="entrée suivante">id+1 &#9654;</button>
+      <button id="prevBtn" title="entrée précédente dans la base">&#9664;</button>
+      <button id="nextBtn" title="entrée suivante dans la base">&#9654;</button>
     </div>
   </div>
-  <div id="frameHolder">
-    <iframe id="viewerFrame" allow="fullscreen" loading="eager"></iframe>
-  </div>
-  <div id="legendPanel">
-    <h4>Couleur → élément (convention Jmol/CPK, identique à celle utilisée dans la vue 3D)</h4>
-    <div class="legendGrid" id="legendGrid"></div>
-  </div>
-  <div id="watermark">COD</div>
+  <div id="canvasHolder"></div>
+  <div id="infoBar" style="display:none;"></div>
+  <div id="status"></div>
+  <div id="watermark"></div>
+  <div id="legend2">glisser: rotation / molette: zoom</div>
 </div>
 
 <script>
-/* Rendu délégué à MolView (embed.molview.org), qui sait nativement charger
-   une entrée COD par id, générer la maille via les opérations de symétrie du CIF,
-   et gérer rotation/zoom à la souris — beaucoup plus fiable qu'un parseur maison. */
+/* ============================================================================
+   Rendu maison (Three.js), aucune dépendance externe au runtime (pas de fetch,
+   pas de CORS, pas de site tiers). Les positions atomiques sont des gabarits
+   cristallographiques exacts (pas de parseur CIF générique) pour les 4 seuls
+   types de maille présents dans database_1ES.xlsx / ionic_struc2 :
 
-function getCodIdFromUrl(){
-  const p = new URLSearchParams(window.location.search);
-  return p.get('cod') || p.get('id') || '1527138';
+   - rocksalt     (NaCl, Fm-3m, 1:1)   cation FCC (coins+faces) / anion arêtes+centre
+   - blende       (ZnS,  F-43m, 1:1)   cation FCC (coins+faces) / anion 4 sites tétra.
+   - fluorite     (CaF2, Fm-3m, 1:2)   cation FCC (coins+faces) / anion 8 sites tétra.
+   - antifluorite (Na2O, Fm-3m, 2:1)   anion FCC (coins+faces)  / cation 8 sites tétra.
+
+   Complétion aux bords (coins/arêtes/faces dupliqués) pour obtenir la maille
+   conventionnelle complète et visuellement périodique attendue en 1ère,
+   au lieu du sous-ensemble asymétrique minimal qu'affichait MolView/ChemDoodle.
+   ========================================================================= */
+
+/* ---- Base de données (extraite de database_1ES.xlsx, feuille ionic_struc2) ---- */
+const DB = {
+  1010076:{a:5.82,type:"blende",formula:"CuBr",cat:"Cu",ani:"Br",catColor:"#a52a2a",aniColor:"#a52a2a"},
+  1010117:{a:5.82,type:"blende",formula:"MnSe",cat:"Mn",ani:"Se",catColor:"#808090",aniColor:"#ff1493"},
+  1010991:{a:5.501,type:"blende",formula:"CuCl",cat:"Cu",ani:"Cl",catColor:"#a52a2a",aniColor:"#00ff00"},
+  1011199:{a:6.04,type:"blende",formula:"HgSe",cat:"Hg",ani:"Se",catColor:"#ff1493",aniColor:"#ff1493"},
+  1011239:{a:6.1,type:"blende",formula:"CuI",cat:"Cu",ani:"I",catColor:"#a52a2a",aniColor:"#a020f0"},
+  1011368:{a:5.858,type:"blende",formula:"HgS",cat:"Hg",ani:"S",catColor:"#ff1493",aniColor:"#ffc832"},
+  1011382:{a:5.59,type:"blende",formula:"MnS",cat:"Mn",ani:"S",catColor:"#808090",aniColor:"#ffc832"},
+  9008829:{a:6.473,type:"blende",formula:"AgI",cat:"Ag",ani:"I",catColor:"#808090",aniColor:"#a020f0"},
+  9008843:{a:4.255,type:"blende",formula:"CuF",cat:"Cu",ani:"F",catColor:"#a52a2a",aniColor:"#daa520"},
+  1000041:{a:5.62,type:"rocksalt",formula:"NaCl",cat:"Na",ani:"Cl",catColor:"#0000ff",aniColor:"#00ff00"},
+  1000043:{a:5.462,type:"fluorite",formula:"CaF2",cat:"Ca",ani:"F",catColor:"#808090",aniColor:"#daa520"},
+  1000044:{a:4.799,type:"rocksalt",formula:"CaO",cat:"Ca",ani:"O",catColor:"#808090",aniColor:"#f00000"},
+  1000053:{a:4.217,type:"rocksalt",formula:"MgO",cat:"Mg",ani:"O",catColor:"#228b22",aniColor:"#f00000"},
+  1010042:{a:4.92,type:"rocksalt",formula:"AgF",cat:"Ag",ani:"F",catColor:"#808090",aniColor:"#daa520"},
+  1010045:{a:5.962,type:"rocksalt",formula:"NaBr",cat:"Na",ani:"Br",catColor:"#0000ff",aniColor:"#a52a2a"},
+  1010046:{a:6.585,type:"rocksalt",formula:"KBr",cat:"K",ani:"Br",catColor:"#ff1493",aniColor:"#a52a2a"},
+  1010064:{a:4.61,type:"antifluorite",formula:"Li2O",cat:"Li",ani:"O",catColor:"#b22222",aniColor:"#f00000"},
+  1010326:{a:5.143,type:"rocksalt",formula:"LiCl",cat:"Li",ani:"Cl",catColor:"#b22222",aniColor:"#00ff00"},
+  1010393:{a:4.408,type:"rocksalt",formula:"MnO",cat:"Mn",ani:"O",catColor:"#808090",aniColor:"#f00000"},
+  1010580:{a:5.54,type:"fluorite",formula:"HgF2",cat:"Hg",ani:"F",catColor:"#ff1493",aniColor:"#daa520"},
+  1010874:{a:5.708,type:"antifluorite",formula:"Li2S",cat:"Li",ani:"S",catColor:"#b22222",aniColor:"#ffc832"},
+  1010876:{a:5.55,type:"antifluorite",formula:"Na2O",cat:"Na",ani:"O",catColor:"#0000ff",aniColor:"#f00000"},
+  1010878:{a:6.436,type:"antifluorite",formula:"K2O",cat:"K",ani:"O",catColor:"#ff1493",aniColor:"#f00000"},
+  1010978:{a:5.3437,type:"rocksalt",formula:"KF",cat:"K",ani:"F",catColor:"#ff1493",aniColor:"#daa520"},
+  1010990:{a:4.028,type:"rocksalt",formula:"LiF",cat:"Li",ani:"F",catColor:"#b22222",aniColor:"#daa520"},
+  1011003:{a:4.699,type:"rocksalt",formula:"CdO",cat:"Cd",ani:"O",catColor:"#ff1493",aniColor:"#f00000"},
+  1011127:{a:6.277,type:"rocksalt",formula:"KCl",cat:"K",ani:"Cl",catColor:"#ff1493",aniColor:"#00ff00"},
+  1011141:{a:4.614,type:"rocksalt",formula:"NaF",cat:"Na",ani:"F",catColor:"#0000ff",aniColor:"#daa520"},
+  1011169:{a:4.332,type:"rocksalt",formula:"FeO",cat:"Fe",ani:"O",catColor:"#ffa500",aniColor:"#f00000"},
+  1011363:{a:5.489,type:"rocksalt",formula:"LiBr",cat:"Li",ani:"Br",catColor:"#b22222",aniColor:"#a52a2a"},
+  1011373:{a:6.005,type:"antifluorite",formula:"Li2Se",cat:"Li",ani:"Se",catColor:"#b22222",aniColor:"#ff1493"},
+  1011374:{a:6.526,type:"antifluorite",formula:"Na2S",cat:"Na",ani:"S",catColor:"#0000ff",aniColor:"#ffc832"},
+  1011378:{a:6.809,type:"antifluorite",formula:"Na2Se",cat:"Na",ani:"Se",catColor:"#0000ff",aniColor:"#ff1493"},
+  1509151:{a:5.7403,type:"rocksalt",formula:"AgBr",cat:"Ag",ani:"Br",catColor:"#808090",aniColor:"#a52a2a"},
+  1530196:{a:6.002,type:"fluorite",formula:"PbF2",cat:"Pb",ani:"F",catColor:"#ff1493",aniColor:"#daa520"},
+  1533087:{a:4.263,type:"rocksalt",formula:"CoO",cat:"Co",ani:"O",catColor:"#ff1493",aniColor:"#f00000"},
+  1539418:{a:5.996,type:"rocksalt",formula:"PbS",cat:"Pb",ani:"S",catColor:"#ff1493",aniColor:"#ffc832"},
+  8104342:{a:5.1943,type:"rocksalt",formula:"MgS",cat:"Mg",ani:"S",catColor:"#228b22",aniColor:"#ffc832"},
+  9008597:{a:5.47,type:"rocksalt",formula:"AgCl",cat:"Ag",ani:"Cl",catColor:"#808090",aniColor:"#00ff00"},
+  9008673:{a:5.451,type:"rocksalt",formula:"MgSe",cat:"Mg",ani:"Se",catColor:"#228b22",aniColor:"#ff1493"},
+  9009006:{a:5.388,type:"fluorite",formula:"CdF2",cat:"Cd",ani:"F",catColor:"#ff1493",aniColor:"#daa520"}
+};
+const DB_IDS = Object.keys(DB).map(Number).sort((a,b)=>a-b);
+
+/* ---- Gabarits cristallographiques (positions fractionnaires, avant complétion aux bords) ---- */
+const FCC_BASE = [[0,0,0],[0,.5,.5],[.5,0,.5],[.5,.5,0]];       // 4 positions FCC (coins+faces après complétion)
+const TET4     = [[.25,.25,.25],[.75,.75,.25],[.75,.25,.75],[.25,.75,.75]]; // 4 des 8 sites tétraédriques
+const TET8     = [[.25,.25,.25],[.25,.25,.75],[.25,.75,.25],[.25,.75,.75],
+                   [.75,.25,.25],[.75,.25,.75],[.75,.75,.25],[.75,.75,.75]]; // 8 sites tétraédriques
+const EDGE_CENTER = [[.5,0,0],[0,.5,0],[0,0,.5],[.5,1,0],[1,.5,0],[.5,0,1],
+                      [0,.5,1],[1,0,.5],[0,1,.5],[.5,1,1],[1,.5,1],[1,1,.5]]; // 12 arêtes
+const BODY_CENTER = [[.5,.5,.5]];
+
+// Complète un ensemble FCC (0,0,0)-famille -> 8 coins + 6 faces (14 positions, périodicité visible)
+function completeFCC(){
+  const corners = [];
+  for(let x=0;x<=1;x++) for(let y=0;y<=1;y++) for(let z=0;z<=1;z++) corners.push([x,y,z]);
+  const faces = [[.5,.5,0],[.5,.5,1],[.5,0,.5],[.5,1,.5],[0,.5,.5],[1,.5,.5]];
+  return corners.concat(faces);
 }
-function setUrlParams(id, mode){
+
+function buildTemplate(type){
+  // renvoie {catPos:[[x,y,z],...], aniPos:[[x,y,z],...], bondFrac}
+  if(type === 'rocksalt'){
+    return { catPos: completeFCC(), aniPos: EDGE_CENTER.concat(BODY_CENTER), bondFrac: 0.51 };
+  }
+  if(type === 'blende'){
+    return { catPos: completeFCC(), aniPos: TET4, bondFrac: 0.46 };
+  }
+  if(type === 'fluorite'){
+    return { catPos: completeFCC(), aniPos: TET8, bondFrac: 0.46 };
+  }
+  if(type === 'antifluorite'){
+    return { catPos: TET8, aniPos: completeFCC(), bondFrac: 0.46 };
+  }
+  return { catPos: [[0,0,0]], aniPos: [[.5,.5,.5]], bondFrac: 0.6 };
+}
+
+/* ---- Three.js scène ---- */
+let scene, camera, renderer, group;
+let dragging = false, lastX = 0, lastY = 0;
+let rotX = 0.42, rotY = 0.68, camDist = 11;
+let autoRotate = true;
+
+function initScene(){
+  const holder = document.getElementById('canvasHolder');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(42, holder.clientWidth/holder.clientHeight, 0.1, 1000);
+  renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setClearColor(0x000000, 1);
+  renderer.setSize(holder.clientWidth, holder.clientHeight);
+  holder.innerHTML = '';
+  holder.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.75);
+  dl.position.set(6,9,7);
+  scene.add(dl);
+  const dl2 = new THREE.DirectionalLight(0xffffff, 0.3);
+  dl2.position.set(-6,-3,-5);
+  scene.add(dl2);
+
+  group = new THREE.Group();
+  scene.add(group);
+
+  const dom = renderer.domElement;
+  dom.addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+  window.addEventListener('pointerup', () => dragging = false);
+  window.addEventListener('pointermove', e => {
+    if(!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    rotY += dx * 0.008;
+    rotX += dy * 0.008;
+    rotX = Math.max(-1.5, Math.min(1.5, rotX));
+  });
+  dom.addEventListener('wheel', e => {
+    e.preventDefault();
+    camDist *= (1 + e.deltaY * 0.001);
+    camDist = Math.max(4, Math.min(40, camDist));
+  }, {passive:false});
+
+  window.addEventListener('resize', onResize);
+  animate();
+}
+function onResize(){
+  const holder = document.getElementById('canvasHolder');
+  camera.aspect = holder.clientWidth / holder.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(holder.clientWidth, holder.clientHeight);
+}
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRotate && !dragging) rotY += 0.0035;
+  camera.position.x = camDist * Math.sin(rotY) * Math.cos(rotX);
+  camera.position.y = camDist * Math.sin(rotX);
+  camera.position.z = camDist * Math.cos(rotY) * Math.cos(rotX);
+  camera.lookAt(0,0,0);
+  renderer.render(scene, camera);
+}
+function clearGroup(){
+  while(group.children.length) group.remove(group.children[0]);
+}
+
+function buildStructure(entry, repr){
+  clearGroup();
+  const CELL = 6; // taille de la maille à l'écran (unités Three.js)
+  const half = CELL/2;
+  const tmpl = buildTemplate(entry.type);
+
+  function toScene(p){ return new THREE.Vector3(p[0]*CELL - half, p[1]*CELL - half, p[2]*CELL - half); }
+
+  // arêtes de la maille (coins 0..1)
+  const edgeGeom = new THREE.BufferGeometry();
+  const positions = [];
+  const edges = [
+    [[0,0,0],[1,0,0]],[[0,1,0],[1,1,0]],[[0,0,1],[1,0,1]],[[0,1,1],[1,1,1]],
+    [[0,0,0],[0,1,0]],[[1,0,0],[1,1,0]],[[0,0,1],[0,1,1]],[[1,0,1],[1,1,1]],
+    [[0,0,0],[0,0,1]],[[1,0,0],[1,0,1]],[[1,1,0],[1,1,1]],[[0,1,0],[0,1,1]]
+  ];
+  edges.forEach(([p1,p2]) => {
+    const a = toScene(p1), b = toScene(p2);
+    positions.push(a.x,a.y,a.z, b.x,b.y,b.z);
+  });
+  edgeGeom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  group.add(new THREE.LineSegments(edgeGeom, new THREE.LineBasicMaterial({color:0xffffff})));
+
+  // distance plus proche voisin (pour rayons + liaisons), en unités scène
+  const NN = tmpl.bondFrac * CELL;
+  // "compacte" : sphères jointives (empilement ionique réel) / "eclatee" : petites sphères + bâtons (JSmol)
+  const isCompact = repr !== 'eclatee';
+  const rCat = (isCompact ? 0.40 : 0.20) * NN;
+  const rAni = (isCompact ? 0.58 : 0.24) * NN;
+
+  const catMat = new THREE.MeshPhongMaterial({color: entry.catColor, shininess: 70});
+  const aniMat = new THREE.MeshPhongMaterial({color: entry.aniColor, shininess: 70});
+  const catGeom = new THREE.SphereGeometry(rCat, 24, 18);
+  const aniGeom = new THREE.SphereGeometry(rAni, 24, 18);
+
+  const catScene = tmpl.catPos.map(toScene);
+  const aniScene = tmpl.aniPos.map(toScene);
+
+  catScene.forEach(pos => { const m = new THREE.Mesh(catGeom, catMat); m.position.copy(pos); group.add(m); });
+  aniScene.forEach(pos => { const m = new THREE.Mesh(aniGeom, aniMat); m.position.copy(pos); group.add(m); });
+
+  // liaisons cation-anion : seulement en représentation éclatée (en compacte, les sphères
+  // jointives suffisent à montrer le contact, un bâton serait caché dedans)
+  if(!isCompact){
+  const bondRadius = 0.05 * NN;
+  const bondThresh = tmpl.bondFrac * CELL * 1.08;
+  function halfBond(from, to, color){
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const len = dir.length();
+    const cyl = new THREE.CylinderGeometry(bondRadius, bondRadius, len, 10);
+    const mat = new THREE.MeshPhongMaterial({color, shininess: 60});
+    const mesh = new THREE.Mesh(cyl, mat);
+    mesh.position.copy(from).addScaledVector(dir, 0.5);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize());
+    group.add(mesh);
+  }
+  catScene.forEach(p1 => {
+    aniScene.forEach(p2 => {
+      const d = p1.distanceTo(p2);
+      if(d < bondThresh){
+        const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+        halfBond(p1, mid, entry.catColor);
+        halfBond(mid, p2, entry.aniColor);
+      }
+    });
+  });
+  } // fin if(!isCompact)
+}
+
+/* ---- UI / chargement ---- */
+const TYPE_LABEL = {rocksalt:'type NaCl (rocksalt)', blende:'type ZnS (blende)',
+  fluorite:'type CaF2 (fluorine)', antifluorite:'type Na2O (antifluorine)'};
+
+function loadCod(id){
+  id = parseInt(id, 10);
+  const statusEl = document.getElementById('status');
+  const infoEl = document.getElementById('infoBar');
+  const entry = DB[id];
+  if(!entry){
+    infoEl.style.display = 'none';
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = 'COD ' + id + ' n\'est pas dans la base (uniquement les '
+      + DB_IDS.length + ' structures ioniques cubiques de <b>database_1ES.xlsx</b> / ionic_struc2).<br>'
+      + 'Essaie par ex. ' + DB_IDS.slice(0,5).join(', ') + ' ...';
+    document.getElementById('watermark').textContent = '';
+    return;
+  }
+  statusEl.style.display = 'none';
+  const repr = document.getElementById('reprSelect').value;
+  buildStructure(entry, repr);
+  infoEl.style.display = 'flex';
+  infoEl.innerHTML =
+    '<b>' + entry.formula + '</b> — ' + TYPE_LABEL[entry.type] + ' — a = ' + entry.a + ' Å' +
+    '<span class="chip"><span class="dot" style="background:' + entry.catColor + '"></span>' + entry.cat + ' (cation)</span>' +
+    '<span class="chip"><span class="dot" style="background:' + entry.aniColor + '"></span>' + entry.ani + ' (anion)</span>';
+  document.getElementById('watermark').textContent = 'COD ' + id;
+  document.getElementById('codInput').value = id;
   const url = new URL(window.location.href);
   url.searchParams.set('cod', id);
-  url.searchParams.set('mode', mode);
   window.history.replaceState({}, '', url);
-}
-function embedUrl(id, mode){
-  return 'https://embed.molview.org/v1/?mode=' + encodeURIComponent(mode) +
-    '&codid=' + encodeURIComponent(id) + '&bg=black';
-}
-function loadCod(id, mode){
-  id = String(id).trim();
-  mode = mode || document.getElementById('modeSelect').value;
-  if(!id) return;
-  document.getElementById('viewerFrame').src = embedUrl(id, mode);
-  document.getElementById('codInput').value = id;
-  document.getElementById('watermark').textContent = 'COD ' + id;
-  setUrlParams(id, mode);
-  buildLegend(id);
 }
 
 document.getElementById('loadBtn').addEventListener('click', () => {
@@ -100,76 +328,30 @@ document.getElementById('codInput').addEventListener('keydown', e => {
 });
 document.getElementById('prevBtn').addEventListener('click', () => {
   const id = parseInt(document.getElementById('codInput').value, 10);
-  if(id > 1) loadCod(id - 1);
+  const idx = DB_IDS.indexOf(id);
+  if(idx > 0) loadCod(DB_IDS[idx-1]);
+  else if(idx === -1) loadCod(DB_IDS[0]);
 });
 document.getElementById('nextBtn').addEventListener('click', () => {
   const id = parseInt(document.getElementById('codInput').value, 10);
-  if(id) loadCod(id + 1);
+  const idx = DB_IDS.indexOf(id);
+  if(idx >= 0 && idx < DB_IDS.length-1) loadCod(DB_IDS[idx+1]);
+  else if(idx === -1) loadCod(DB_IDS[0]);
 });
-document.getElementById('modeSelect').addEventListener('change', () => {
+document.getElementById('autoRotate').addEventListener('change', e => { autoRotate = e.target.checked; });
+document.getElementById('reprSelect').addEventListener('change', () => {
   loadCod(document.getElementById('codInput').value);
 });
 
-/* ============ Légende couleurs (convention Jmol/CPK — MolView utilise le même standard) ============ */
-const JMOL_COLORS = [
-  ['H','#ffffff'],['He','#d9ffff'],['Li','#cc80ff'],['Be','#c2ff00'],['B','#ffb5b5'],
-  ['C','#909090'],['N','#3050f8'],['O','#ff0d0d'],['F','#90e050'],['Ne','#b3e3f5'],
-  ['Na','#ab5cf2'],['Mg','#8aff00'],['Al','#bfa6a6'],['Si','#f0c8a0'],['P','#ff8000'],
-  ['S','#ffff30'],['Cl','#1ff01f'],['Ar','#80d1e3'],['K','#8f40d4'],['Ca','#3dff00'],
-  ['Sc','#e6e6e6'],['Ti','#bfc2c7'],['V','#a6a6ab'],['Cr','#8a99c7'],['Mn','#9c7ac7'],
-  ['Fe','#e06633'],['Co','#f090a0'],['Ni','#50d050'],['Cu','#c88033'],['Zn','#7d80b0'],
-  ['Ga','#c28f8f'],['Ge','#668f8f'],['As','#bd80e3'],['Se','#ffa100'],['Br','#a62929'],
-  ['Kr','#5cb8d1'],['Rb','#702eb0'],['Sr','#00ff00'],['Y','#94ffff'],['Zr','#94e0e0'],
-  ['Nb','#73c2c9'],['Mo','#54b5b5'],['Ag','#c0c0c0'],['Cd','#ffd98f'],['In','#a67573'],
-  ['Sn','#668080'],['Sb','#9e63b5'],['Te','#d47a00'],['I','#940094'],['Cs','#57178f'],
-  ['Ba','#00c900'],['Au','#ffd123'],['Hg','#b8b8d0'],['Pb','#575961'],['Bi','#9e4fb5'],
-  ['W','#2194d6']
-];
-/* Table cod_id -> [symbole cation, symbole anion], extraite de database_1ES.xlsx (feuille
-   ionic_struc2, 41 structures ioniques cubiques à 2 éléments validées "3D_ok"). Statique,
-   aucun appel réseau : évite le CORS de COD et le bruit d'une légende à 50 entrées. */
-const COD_ELEMENTS = {
-  1010076:["Cu","Br"], 1010117:["Mn","Se"], 1010991:["Cu","Cl"], 1011199:["Hg","Se"],
-  1011239:["Cu","I"], 1011368:["Hg","S"], 1011382:["Mn","S"], 9008829:["Ag","I"],
-  9008843:["Cu","F"], 1000041:["Na","Cl"], 1000043:["Ca","F"], 1000044:["Ca","O"],
-  1000053:["Mg","O"], 1010042:["Ag","F"], 1010045:["Na","Br"], 1010046:["K","Br"],
-  1010064:["Li","O"], 1010326:["Li","Cl"], 1010393:["Mn","O"], 1010580:["Hg","F"],
-  1010874:["Li","S"], 1010876:["Na","O"], 1010878:["K","O"], 1010978:["K","F"],
-  1010990:["Li","F"], 1011003:["Cd","O"], 1011127:["K","Cl"], 1011141:["Na","F"],
-  1011169:["Fe","O"], 1011363:["Li","Br"], 1011373:["Li","Se"], 1011374:["Na","S"],
-  1011378:["Na","Se"], 1509151:["Ag","Br"], 1530196:["Pb","F"], 1533087:["Co","O"],
-  1539418:["Pb","S"], 8104342:["Mg","S"], 9008597:["Ag","Cl"], 9008673:["Mg","Se"],
-  9009006:["Cd","F"]
-};
-function buildLegend(id){
-  const grid = document.getElementById('legendGrid');
-  const titleEl = document.querySelector('#legendPanel h4');
-  grid.innerHTML = '';
-  const known = COD_ELEMENTS[parseInt(id, 10)];
-  const list = known
-    ? JMOL_COLORS.filter(([sym]) => known.includes(sym))
-    : JMOL_COLORS;
-  titleEl.textContent = known
-    ? 'Éléments présents (COD ' + id + ')'
-    : 'Couleur → élément (Jmol/CPK, id inconnu de la base — liste complète)';
-  list.forEach(([sym, color]) => {
-    const item = document.createElement('div');
-    item.className = 'legendItem';
-    item.innerHTML = '<span class="legendDot" style="background:' + color + '"></span>' + sym;
-    grid.appendChild(item);
-  });
+/* ---- Démarrage ---- */
+function getCodIdFromUrl(){
+  const p = new URLSearchParams(window.location.search);
+  return p.get('cod') || p.get('id') || '1000041';
 }
-document.getElementById('legendBtn').addEventListener('click', () => {
-  const panel = document.getElementById('legendPanel');
-  panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
-});
-
-/* Démarrage */
 const startId = getCodIdFromUrl();
-const startMode = new URLSearchParams(window.location.search).get('mode') || 'balls';
 document.getElementById('codInput').value = startId;
-document.getElementById('modeSelect').value = startMode;
-loadCod(startId, startMode);
+initScene();
+loadCod(startId);
 </script>
 </body>
 </html>
