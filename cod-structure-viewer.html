@@ -291,6 +291,29 @@ function buildStructure(entry, repr){
 const TYPE_LABEL = {rocksalt:'type NaCl (rocksalt)', blende:'type ZnS (blende)',
   fluorite:'type CaF2 (fluorine)', antifluorite:'type Na2O (antifluorine)'};
 
+/* ---- Encodage du paramètre d'URL (XOR + base64 URL-safe) ----
+   Même schéma que côté Python (voir encode_cod ci-dessous, à mettre dans FJmoodl.py).
+   But : éviter d'exposer l'id COD en clair dans l'URL/iframe src. */
+const XOR_KEY = 0x5A;
+function encodeCod(id){
+  const s = String(id);
+  let x = '';
+  for(let i=0;i<s.length;i++) x += String.fromCharCode(s.charCodeAt(i) ^ XOR_KEY);
+  return btoa(x).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function decodeCod(code){
+  let b64 = code.replace(/-/g,'+').replace(/_/g,'/');
+  while(b64.length % 4) b64 += '=';
+  let x;
+  try{ x = atob(b64); } catch(e){ return null; }
+  let s = '';
+  for(let i=0;i<x.length;i++) s += String.fromCharCode(x.charCodeAt(i) ^ XOR_KEY);
+  const n = parseInt(s, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+let currentId = null;
+
 function loadCod(id){
   id = parseInt(id, 10);
   const statusEl = document.getElementById('status');
@@ -299,12 +322,11 @@ function loadCod(id){
   if(!entry){
     infoEl.style.display = 'none';
     statusEl.style.display = 'block';
-    statusEl.innerHTML = 'COD ' + id + ' n\'est pas dans la base (uniquement les '
-      + DB_IDS.length + ' structures ioniques cubiques de <b>database_1ES.xlsx</b> / ionic_struc2).<br>'
-      + 'Essaie par ex. ' + DB_IDS.slice(0,5).join(', ') + ' ...';
+    statusEl.innerHTML = 'Structure inconnue.';
     document.getElementById('watermark').textContent = '';
     return;
   }
+  currentId = id;
   statusEl.style.display = 'none';
   const repr = document.getElementById('reprSelect').value;
   buildStructure(entry, repr);
@@ -313,43 +335,38 @@ function loadCod(id){
     '<b>' + entry.formula + '</b> — ' + TYPE_LABEL[entry.type] + ' — a = ' + entry.a + ' Å' +
     '<span class="chip"><span class="dot" style="background:' + entry.catColor + '"></span>' + entry.cat + ' (cation)</span>' +
     '<span class="chip"><span class="dot" style="background:' + entry.aniColor + '"></span>' + entry.ani + ' (anion)</span>';
-  document.getElementById('watermark').textContent = 'COD ' + id;
-  document.getElementById('codInput').value = id;
+  document.getElementById('watermark').textContent = '';
   const url = new URL(window.location.href);
-  url.searchParams.set('cod', id);
+  url.searchParams.delete('cod');
+  url.searchParams.delete('id');
+  url.searchParams.set('c', encodeCod(id));
   window.history.replaceState({}, '', url);
 }
 
-document.getElementById('loadBtn').addEventListener('click', () => {
-  loadCod(document.getElementById('codInput').value);
-});
-document.getElementById('codInput').addEventListener('keydown', e => {
-  if(e.key === 'Enter') document.getElementById('loadBtn').click();
-});
 document.getElementById('prevBtn').addEventListener('click', () => {
-  const id = parseInt(document.getElementById('codInput').value, 10);
-  const idx = DB_IDS.indexOf(id);
+  const idx = DB_IDS.indexOf(currentId);
   if(idx > 0) loadCod(DB_IDS[idx-1]);
-  else if(idx === -1) loadCod(DB_IDS[0]);
 });
 document.getElementById('nextBtn').addEventListener('click', () => {
-  const id = parseInt(document.getElementById('codInput').value, 10);
-  const idx = DB_IDS.indexOf(id);
+  const idx = DB_IDS.indexOf(currentId);
   if(idx >= 0 && idx < DB_IDS.length-1) loadCod(DB_IDS[idx+1]);
-  else if(idx === -1) loadCod(DB_IDS[0]);
 });
 document.getElementById('autoRotate').addEventListener('change', e => { autoRotate = e.target.checked; });
 document.getElementById('reprSelect').addEventListener('change', () => {
-  loadCod(document.getElementById('codInput').value);
+  if(currentId != null) loadCod(currentId);
 });
 
 /* ---- Démarrage ---- */
 function getCodIdFromUrl(){
   const p = new URLSearchParams(window.location.search);
+  if(p.get('c')){
+    const decoded = decodeCod(p.get('c'));
+    if(decoded != null) return decoded;
+  }
+  // repli non encodé, pratique pour tester à la main
   return p.get('cod') || p.get('id') || '1000041';
 }
 const startId = getCodIdFromUrl();
-document.getElementById('codInput').value = startId;
 initScene();
 loadCod(startId);
 </script>
