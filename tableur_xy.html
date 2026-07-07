@@ -1288,11 +1288,32 @@ function doImportHTML() {
     msg.style.color='#c0392b'; msg.textContent='Impossible de lire l\'entête.'; return;
   }
 
-  // Lignes de données importées
-  const importData = lines.slice(1).map(l => {
-    const cells = l.split(sep);
-    return importNames.map((_, ci) => cells[ci] !== undefined ? cells[ci].trim() : '');
-  });
+  const dataLines = lines.slice(1);
+
+  // Certains navigateurs (notamment sous Safe Exam Browser) sérialisent une
+  // sélection de tableau en "colonne par colonne" au lieu de "ligne par ligne" :
+  // toutes les valeurs de la 1re colonne d'abord, puis toutes celles de la 2e, etc.
+  // (chaque ligne collée ne contient alors qu'une seule valeur, sans séparateur).
+  // On détecte ce cas et on reconstruit les lignes en conséquence.
+  const nbSepLines = dataLines.filter(l => l.includes(sep)).length;
+  const isColumnMajor = importNames.length > 1
+    && nbSepLines === 0
+    && dataLines.length % importNames.length === 0;
+
+  let importData;
+  if (isColumnMajor) {
+    const chunkSize = dataLines.length / importNames.length;
+    const chunks = importNames.map((_, ci) => dataLines.slice(ci*chunkSize, (ci+1)*chunkSize));
+    importData = Array.from({length: chunkSize}, (_, r) =>
+      importNames.map((_, ci) => (chunks[ci][r] !== undefined ? chunks[ci][r].trim() : ''))
+    );
+  } else {
+    // Lignes de données importées (format habituel : une ligne = une rangée)
+    importData = dataLines.map(l => {
+      const cells = l.split(sep);
+      return importNames.map((_, ci) => cells[ci] !== undefined ? cells[ci].trim() : '');
+    });
+  }
 
   const startCol = _importStartCol;
   const endCol   = startCol + importNames.length - 1;  // dernière col nécessaire
@@ -1338,7 +1359,8 @@ function doImportHTML() {
 
   buildTable();
   document.getElementById('import-dlg').style.display = 'none';
-  showMsg('Importé à partir de la colonne ' + (startCol+1) + ' : ' + importNames.length + ' col., ' + importData.length + ' lignes', 'ok');
+  const colModeNote = isColumnMajor ? ' (collage en colonnes reconstruit automatiquement)' : '';
+  showMsg('Importé à partir de la colonne ' + (startCol+1) + ' : ' + importNames.length + ' col., ' + importData.length + ' lignes' + colModeNote, 'ok');
 }
 
 // ══════════════════════════════════════════
