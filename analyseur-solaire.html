@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Évolution de l'ensoleillement terrestre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#060B16;
+    --panel:#0E1728;
+    --panel-2:#111D34;
+    --line:#1C2A48;
+    --text:#E8ECF6;
+    --muted:#7C8AB0;
+    --h-color:#FFC94A;
+    --d-color:#3DDC97;
+    --lat-color:#9B87F5;
+    --ete:#FF7A45;
+    --equ:#C9D3E8;
+    --hiver:#4EA8FF;
+    --irr-color:#FF5C7A;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:radial-gradient(circle at 15% -10%, #0E1A33 0%, var(--bg) 55%);
+    color:var(--text); font-family:'Inter',sans-serif; padding:22px;
+  }
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif; margin:0;}
+  .wrap{max-width:1500px; margin:0 auto;}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;}
+  .brand{display:flex; align-items:center; gap:14px;}
+  .brand .sun{font-size:30px; filter:drop-shadow(0 0 12px #FFC94A66);}
+  .brand h1{font-size:22px; letter-spacing:.3px;}
+  .brand p{margin:2px 0 0; color:var(--muted); font-size:13px;}
+  .topicons{display:flex; gap:22px;}
+  .topicons button{
+    background:none; border:none; color:var(--muted); font-size:11px; font-family:'Inter';
+    display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;
+  }
+  .topicons button:hover{color:var(--text);}
+  .topicons svg{width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.6;}
+
+  .grid{display:grid; grid-template-columns:280px 1fr 300px; gap:16px;}
+  .center-col{display:flex; flex-direction:column; gap:16px;}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px;}
+  .label{font-size:11px; letter-spacing:1px; color:var(--muted); text-transform:uppercase; font-weight:600; display:flex; align-items:center; gap:6px; margin-bottom:10px;}
+
+  .datebox{background:var(--panel-2); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--line);}
+  .datebox .d{font-size:22px; font-family:'Space Grotesk'; font-weight:700;}
+  .datebox .n{font-size:11px; color:var(--muted); margin-top:2px;}
+  .playbar{display:flex; justify-content:center; gap:8px; margin-top:12px;}
+  .playbar button{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text); width:32px; height:32px;
+    border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .playbar button:hover{border-color:var(--lat-color);}
+  .grad-slider{-webkit-appearance:none; width:100%; height:6px; border-radius:4px; margin-top:12px;
+    background:linear-gradient(90deg,#4EA8FF,#3DDC97,#FFC94A,#FF7A45,#FFC94A,#3DDC97,#4EA8FF);}
+  .grad-slider::-webkit-slider-thumb{-webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:#fff; border:3px solid var(--lat-color); cursor:pointer;}
+
+  input[type=range]{width:100%;}
+  input[type=range]{-webkit-appearance:none; height:4px; background:var(--line); border-radius:3px; outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:var(--lat-color); cursor:pointer; box-shadow:0 0 0 4px #9B87F52a;}
+
+  .latval{font-family:'Space Grotesk'; font-size:26px; font-weight:700; color:var(--lat-color); text-align:center; margin:6px 0;}
+  .scalerow{display:flex; justify-content:space-between; font-size:10px; color:var(--muted);}
+
+  .valcard{margin-top:14px;}
+  .vrow{background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px;}
+  .vrow .t{font-size:11px; color:var(--muted); display:flex; align-items:center; gap:6px;}
+  .vrow .v{font-family:'Space Grotesk'; font-size:20px; font-weight:700; margin-top:2px;}
+  .vrow .sub{font-size:11px; color:var(--muted); margin-top:4px;}
+
+  .legend div{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); margin-bottom:6px;}
+  .sw{width:16px; height:3px; border-radius:2px; flex-shrink:0;}
+  .sw.dash{background:none; border-top:2px dashed;}
+
+  svg.chart{width:100%; display:block;}
+  .grid-line{stroke:#1C2A48; stroke-width:1;}
+  .axis-label{font-size:10px; fill:var(--muted); font-family:'Inter';}
+  .curve{fill:none; stroke-width:3; stroke-linecap:round;}
+  .ref{fill:none; stroke-width:1.6; stroke-dasharray:5 4; opacity:.55;}
+  .cursor-line{stroke:#FF9800; stroke-width:1; pointer-events:none; opacity:.7;}
+  .lat-line{stroke:var(--lat-color); stroke-width:1.4; stroke-dasharray:4 4;}
+  .drag-hit{stroke:transparent; stroke-width:26; pointer-events:stroke; cursor:ew-resize; touch-action:none;}
+  .pt{stroke:#060B16; stroke-width:2; cursor:ew-resize; touch-action:none;}
+  .badge{fill:var(--panel-2); stroke:var(--lat-color); stroke-width:1;}
+  .badge-text{fill:var(--text); font-size:12px; font-weight:700; font-family:'Space Grotesk';}
+
+  .chartTitle{font-size:12px; font-weight:700; letter-spacing:.5px; margin-bottom:4px; display:flex; align-items:center; gap:8px;}
+  .drag-handle{cursor:grab; color:var(--muted); font-size:14px; letter-spacing:-1px; user-select:none;}
+  .draggable-chart{cursor:default; transition:transform .15s ease, box-shadow .15s ease;}
+  .draggable-chart.dragging{opacity:.35;}
+  .draggable-chart.drag-over-top{box-shadow:inset 0 3px 0 var(--lat-color);}
+  .draggable-chart.drag-over-bottom{box-shadow:inset 0 -3px 0 var(--lat-color);}
+
+  .globe-wrap{display:flex; justify-content:center;}
+  .sunpos-wrap{display:flex; justify-content:center; margin-top:6px;}
+  .meta{font-size:11px; color:var(--muted); text-align:center; margin-top:8px;}
+  .meta b{color:var(--text);}
+
+  .toggles{margin-top:16px;}
+  .trow{display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-top:1px solid var(--line); font-size:12.5px;}
+  .trow:first-of-type{border-top:none;}
+  .switch{position:relative; width:36px; height:20px; flex-shrink:0;}
+  .switch input{opacity:0; width:0; height:0;}
+  .slider-tog{position:absolute; inset:0; background:var(--line); border-radius:20px; cursor:pointer; transition:.2s;}
+  .slider-tog:before{content:""; position:absolute; width:14px; height:14px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s;}
+  input:checked + .slider-tog{background:var(--lat-color);}
+  input:checked + .slider-tog:before{transform:translateX(16px);}
+
+  .timeline{padding:14px 18px;}
+  .tl-track{position:relative; height:6px; border-radius:4px; background:linear-gradient(90deg,#4EA8FF,#C9D3E8 25%,#FF7A45 50%,#C9D3E8 75%,#4EA8FF); cursor:pointer;}
+  .tl-dot{position:absolute; top:50%; width:14px; height:14px; border-radius:50%; background:#fff; border:3px solid var(--lat-color); transform:translate(-50%,-50%); pointer-events:none;}
+  .tl-labels{display:flex; justify-content:space-between; margin-top:10px; font-size:11px; color:var(--muted); text-align:center;}
+  .tl-labels div b{display:block; color:var(--text); font-size:12px;}
+
+  .helpbox{position:fixed; top:80px; right:30px; background:var(--panel); border:1px solid var(--lat-color); border-radius:12px; padding:14px 16px; max-width:280px; font-size:12.5px; color:var(--muted); box-shadow:0 10px 30px #0008; display:none; z-index:50;}
+  .helpbox b{color:var(--text);}
+
+  @media(max-width:1150px){.grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="sun">☀️</div>
+      <div>
+        <h1>Évolution de l'ensoleillement terrestre</h1>
+        <p>Hauteur du Soleil à midi et durée du jour en fonction de la latitude et de la date</p>
+      </div>
+    </div>
+    <div class="topicons">
+      <button id="btn-help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>Aide</button>
+      <button id="btn-unit"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 10h16M10 4v16"/></svg><span id="unit-label">Décimal</span></button>
+      <button id="btn-full"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Plein écran</button>
+    </div>
+  </div>
+
+  <div class="helpbox" id="helpbox">
+    <b>Comment lire ce tableau de bord</b><br><br>
+    • Déplacez le curseur <b>Date</b> pour parcourir l'année.<br>
+    • Ajustez la <b>latitude</b> pour suivre un lieu précis (marqueur violet).<br>
+    • Passez la souris sur les graphes pour lire une valeur à n'importe quelle latitude.<br>
+    • Les courbes pointillées sont des repères fixes : solstices et équinoxes.
+  </div>
+
+  <div class="grid">
+
+    <!-- LEFT -->
+    <div class="left-col">
+      <div class="panel">
+        <div class="label">📅 Date</div>
+        <div class="datebox">
+          <div class="d" id="date-label">21 juin</div>
+          <div class="n">Jour de l'année : <span id="day-num">172</span></div>
+        </div>
+        <input type="range" class="grad-slider" id="day" min="1" max="365" value="172">
+        <div class="playbar">
+          <button id="btn-first" title="Début">|◀</button>
+          <button id="btn-prev" title="Jour précédent">◀</button>
+          <button id="btn-play" title="Lecture">▶</button>
+          <button id="btn-next" title="Jour suivant">▶</button>
+          <button id="btn-last" title="Fin">▶|</button>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <div class="label">📍 Latitude sélectionnée</div>
+        <div class="latval"><span id="lat-val">45.0</span>° N</div>
+        <input type="range" id="lat" min="-90" max="90" value="45" step="0.5">
+        <div class="scalerow"><span>-90°</span><span>0°</span><span>+90°</span></div>
+      </div>
+
+      <div class="panel valcard" style="margin-top:16px;">
+        <div class="label">Valeurs à cette latitude</div>
+        <div class="vrow">
+          <div class="t">☀️ Hauteur du Soleil à midi</div>
+          <div class="v" id="v-h" style="color:var(--h-color)">—</div>
+        </div>
+        <div class="vrow">
+          <div class="t">🕓 Durée du jour</div>
+          <div class="v" id="v-d" style="color:var(--d-color)">—</div>
+          <div class="sub">Aube : <span id="v-aube">—</span> · Crépuscule : <span id="v-cr">—</span></div>
+        </div>
+        <div class="vrow">
+          <div class="t">🔆 Éclairement au sol à midi</div>
+          <div class="v" id="v-irr" style="color:var(--irr-color)">—</div>
+          <div class="sub">Ciel dégagé — hors nuages/pollution</div>
+        </div>
+      </div>
+
+      <div class="panel legend" style="margin-top:16px;">
+        <div class="label">Légende</div>
+        <div><span class="sw" style="background:var(--h-color)"></span>Hauteur du Soleil à midi</div>
+        <div><span class="sw" style="background:var(--d-color)"></span>Durée du jour</div>
+        <div><span class="sw" style="background:var(--irr-color)"></span>Éclairement au sol (ciel dégagé)</div>
+        <div><span class="sw dash" style="border-color:var(--ete)"></span>Solstice d'été (≈21 juin)</div>
+        <div><span class="sw dash" style="border-color:var(--equ)"></span>Équinoxe (≈20 mars / 22 sept.)</div>
+        <div><span class="sw dash" style="border-color:var(--hiver)"></span>Solstice d'hiver (≈21 déc.)</div>
+      </div>
+    </div>
+
+    <!-- CENTER -->
+    <div class="center-col" id="center-col">
+      <div class="panel draggable-chart" draggable="true" data-key="h">
+        <div class="chartTitle" style="color:var(--h-color)"><span class="drag-handle">⠿</span>HAUTEUR DU SOLEIL À MIDI (degrés)</div>
+        <svg class="chart" id="chart-h" viewBox="0 0 1000 340" draggable="false">
+          <g id="grid-h"></g>
+          <path id="ref-ete-h" class="ref" style="stroke:var(--ete)"/>
+          <path id="ref-equ-h" class="ref" style="stroke:var(--equ)"/>
+          <path id="ref-hiver-h" class="ref" style="stroke:var(--hiver)"/>
+          <path id="curve-h" class="curve" style="stroke:var(--h-color)"/>
+          <line id="lat-line-h" class="lat-line" x1="0" y1="20" x2="0" y2="300"/>
+          <line id="hit-h" class="drag-hit" x1="0" y1="20" x2="0" y2="300"/>
+          <circle id="pt-h" r="6" class="pt" style="fill:var(--h-color)"/>
+          <g id="badge-h"></g>
+        </svg>
+      </div>
+
+      <div class="panel draggable-chart" draggable="true" data-key="d">
+        <div class="chartTitle" style="color:var(--d-color)"><span class="drag-handle">⠿</span>DURÉE DU JOUR (heures)</div>
+        <svg class="chart" id="chart-d" viewBox="0 0 1000 300" draggable="false">
+          <g id="grid-d"></g>
+          <path id="ref-ete-d" class="ref" style="stroke:var(--ete)"/>
+          <path id="ref-equ-d" class="ref" style="stroke:var(--equ)"/>
+          <path id="ref-hiver-d" class="ref" style="stroke:var(--hiver)"/>
+          <path id="curve-d" class="curve" style="stroke:var(--d-color)"/>
+          <line id="lat-line-d" class="lat-line" x1="0" y1="20" x2="0" y2="260"/>
+          <line id="hit-d" class="drag-hit" x1="0" y1="20" x2="0" y2="260"/>
+          <circle id="pt-d" r="6" class="pt" style="fill:var(--d-color)"/>
+          <g id="badge-d"></g>
+        </svg>
+      </div>
+
+      <div class="panel draggable-chart" draggable="true" data-key="irr">
+        <div class="chartTitle" style="color:var(--irr-color)"><span class="drag-handle">⠿</span>ÉCLAIREMENT AU SOL À MIDI (W/m² — ciel dégagé)</div>
+        <svg class="chart" id="chart-irr" viewBox="0 0 1000 300" draggable="false">
+          <g id="grid-irr"></g>
+          <path id="ref-ete-irr" class="ref" style="stroke:var(--ete)"/>
+          <path id="ref-equ-irr" class="ref" style="stroke:var(--equ)"/>
+          <path id="ref-hiver-irr" class="ref" style="stroke:var(--hiver)"/>
+          <path id="curve-irr" class="curve" style="stroke:var(--irr-color)"/>
+          <line id="lat-line-irr" class="lat-line" x1="0" y1="20" x2="0" y2="260"/>
+          <line id="hit-irr" class="drag-hit" x1="0" y1="20" x2="0" y2="260"/>
+          <circle id="pt-irr" r="6" class="pt" style="fill:var(--irr-color)"/>
+          <g id="badge-irr"></g>
+        </svg>
+      </div>
+
+      <div class="panel timeline">
+        <div class="tl-track" id="tl-track"><div class="tl-dot" id="tl-dot"></div></div>
+        <div class="tl-labels">
+          <div><b>21 déc.</b>Solstice d'hiver</div>
+          <div><b>20 mars</b>Équinoxe</div>
+          <div style="color:var(--ete)"><b style="color:var(--ete)">21 juin</b>Solstice d'été</div>
+          <div><b>22 sept.</b>Équinoxe</div>
+          <div><b>21 déc.</b>Solstice d'hiver</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right-col">
+      <div class="panel">
+        <div class="label">🌍 Vue géocentrique</div>
+        <div class="globe-wrap">
+          <svg viewBox="0 0 300 300" width="100%">
+            <defs>
+              <radialGradient id="oceanGrad" cx="35%" cy="30%" r="75%">
+                <stop offset="0%" stop-color="#2E6FD9"/>
+                <stop offset="100%" stop-color="#0F2C63"/>
+              </radialGradient>
+            </defs>
+            <circle cx="150" cy="150" r="105" fill="url(#oceanGrad)"/>
+            <ellipse cx="150" cy="150" rx="105" ry="12.6" fill="none" stroke="#4A5D8A" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>
+            <ellipse cx="150" cy="122.65" rx="96.32" ry="11.56" fill="none" stroke="#4A5D8A" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>
+            <ellipse cx="150" cy="177.35" rx="96.32" ry="11.56" fill="none" stroke="#4A5D8A" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>
+            <ellipse cx="150" cy="72.35" rx="41.77" ry="5.01" fill="none" stroke="#4A5D8A" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>
+            <ellipse cx="150" cy="227.65" rx="41.77" ry="5.01" fill="none" stroke="#4A5D8A" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>
+            <path id="lat-arc-night" fill="none" stroke="#3A4A72" stroke-width="2.2"/>
+            <path id="lat-arc-day" fill="none" stroke="#9B87F5" stroke-width="2.8"/>
+            <circle id="subsolar-dot" cx="150" cy="150" r="5" fill="#FFC94A" stroke="#0B1220" stroke-width="1.5"/>
+            <circle cx="150" cy="150" r="105" fill="none" stroke="#33456e" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <div class="meta" id="globe-meta"></div>
+        <div class="meta" style="margin-top:2px;">
+          <span style="color:#9B87F5">⬤</span> Jour à cette latitude &nbsp;
+          <span style="color:#3A4A72">⬤</span> Nuit &nbsp;
+          <span style="color:#FFC94A">⬤</span> Point subsolaire (Soleil au zénith)
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <div class="label">☀️ Position du Soleil à midi</div>
+        <div class="sunpos-wrap">
+          <svg viewBox="0 0 300 210" width="100%">
+            <defs>
+              <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#FFE9A8"/>
+                <stop offset="100%" stop-color="#FFC94A" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <path d="M0 180 Q150 168 300 180 L300 210 L0 210 Z" fill="#0F2C1F"/>
+            <line x1="90" y1="140" x2="90" y2="18" stroke="#4B5A80" stroke-width="1.4" stroke-dasharray="3 4"/>
+            <text x="94" y="24" class="axis-label" fill="#7C8AB0">Zénith</text>
+            <g id="sun-scene"></g>
+            <g id="stickman">
+              <circle cx="90" cy="128" r="7" fill="#E8ECF6"/>
+              <line x1="90" y1="135" x2="90" y2="165" stroke="#E8ECF6" stroke-width="3"/>
+              <line x1="90" y1="165" x2="80" y2="180" stroke="#E8ECF6" stroke-width="3"/>
+              <line x1="90" y1="165" x2="100" y2="180" stroke="#E8ECF6" stroke-width="3"/>
+              <line x1="90" y1="142" x2="78" y2="155" stroke="#E8ECF6" stroke-width="3"/>
+              <line x1="90" y1="142" x2="102" y2="155" stroke="#E8ECF6" stroke-width="3"/>
+            </g>
+          </svg>
+        </div>
+        <div class="meta">Latitude : <b id="sun-lat"></b> &nbsp;|&nbsp; Date : <b id="sun-date"></b></div>
+      </div>
+
+      <div class="panel toggles">
+        <div class="label">Affichage</div>
+        <div class="trow">Afficher les grilles
+          <label class="switch"><input type="checkbox" id="tog-grid" checked><span class="slider-tog"></span></label>
+        </div>
+        <div class="trow">Afficher les valeurs numériques
+          <label class="switch"><input type="checkbox" id="tog-vals" checked><span class="slider-tog"></span></label>
+        </div>
+        <div class="trow">Animation automatique
+          <label class="switch"><input type="checkbox" id="tog-anim"><span class="slider-tog"></span></label>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="meta" style="margin-top:16px;">Les calculs tiennent compte de la réfraction atmosphérique (34') et du rayon solaire apparent (16'). — Source : NOAA Solar Calculator</div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const daySlider=$('day'), latSlider=$('lat');
+let unitDMS=false, playing=false, playTimer=null;
+
+// ---- Physique (formule NOAA simplifiée) ----
+function getD(lat, N){
+  const phi = lat*Math.PI/180;
+  const M = (2*Math.PI/365.2422)*(N-80);
+  const delta = Math.asin(Math.sin(M + 0.0334*Math.sin(M)) * Math.sin(0.409));
+  let h_d = Math.asin(Math.sin(phi)*Math.sin(delta) + Math.cos(phi)*Math.cos(delta)) * 180/Math.PI;
+  let h = Math.max(0, h_d + (1.02/Math.tan((h_d + 10.3/(h_d+5.11))*Math.PI/180))/60);
+  let cos_w = -Math.tan(phi)*Math.tan(delta);
+  let duration = cos_w <= -1 ? 24 : (cos_w >= 1 ? 0 : (2/15)*Math.acos(cos_w)*180/Math.PI);
+
+  // Éclairement au sol à midi, ciel dégagé (modèle simplifié : air mass de Kasten-Young
+  // + transmittance atmosphérique type Meinel + correction excentricité Terre-Soleil)
+  let irr = 0;
+  if(h > 0){
+    const hr = h*Math.PI/180;
+    const AM = 1 / (Math.sin(hr) + 0.50572*Math.pow(h+6.07995, -1.6364));
+    const Eo = 1 + 0.033*Math.cos(2*Math.PI*N/365);
+    const I0 = 1361; // constante solaire, W/m²
+    const directNormal = I0*Eo*Math.pow(0.7, Math.pow(AM,0.678));
+    irr = 1.1 * directNormal * Math.sin(hr); // +10% de rayonnement diffus (approx. usuelle)
+  }
+  return {h, duration, delta:delta*180/Math.PI, irr};
+}
+
+// ---- Mapping graphes ----
+const xPos = lat => 70 + ((lat+90)/180)*900;
+const yPosH = v => 300 - (v/90)*280;
+const yPosD = v => 260 - (v/24)*240;
+const yPosE = v => 260 - (v/1200)*240;
+
+function buildPath(N, yFn, key){
+  let d="";
+  for(let lat=-90; lat<=90; lat++){
+    const val = getD(lat,N)[key];
+    const x=xPos(lat), y=yFn(val);
+    d += (lat===-90? "M ":" L ") + x.toFixed(1) + " " + y.toFixed(1);
+  }
+  return d;
+}
+
+function drawGrid(){
+  let gh="", gd="", gi="";
+  for(let lat=-90; lat<=90; lat+=30){
+    const x=xPos(lat);
+    gh += `<line x1="${x}" y1="20" x2="${x}" y2="300" class="grid-line"/><text x="${x}" y="318" text-anchor="middle" class="axis-label">${lat>0?'+':''}${lat}°</text>`;
+    gd += `<line x1="${x}" y1="20" x2="${x}" y2="260" class="grid-line"/><text x="${x}" y="278" text-anchor="middle" class="axis-label">${lat>0?'+':''}${lat}°</text>`;
+    gi += `<line x1="${x}" y1="20" x2="${x}" y2="260" class="grid-line"/><text x="${x}" y="278" text-anchor="middle" class="axis-label">${lat>0?'+':''}${lat}°</text>`;
+  }
+  for(let v=0; v<=90; v+=15){
+    const y=yPosH(v);
+    gh += `<line x1="70" y1="${y}" x2="970" y2="${y}" class="grid-line"/><text x="60" y="${y+4}" text-anchor="end" class="axis-label">${v}°</text>`;
+  }
+  for(let v=0; v<=24; v+=4){
+    const y=yPosD(v);
+    gd += `<line x1="70" y1="${y}" x2="970" y2="${y}" class="grid-line"/><text x="60" y="${y+4}" text-anchor="end" class="axis-label">${v}h</text>`;
+  }
+  for(let v=0; v<=1200; v+=200){
+    const y=yPosE(v);
+    gi += `<line x1="70" y1="${y}" x2="970" y2="${y}" class="grid-line"/><text x="60" y="${y+4}" text-anchor="end" class="axis-label">${v}</text>`;
+  }
+  $('grid-h').innerHTML=gh;
+  $('grid-d').innerHTML=gd;
+  $('grid-irr').innerHTML=gi;
+}
+
+// courbes de référence fixes
+function drawRefs(){
+  $('ref-ete-h').setAttribute('d', buildPath(172, yPosH, 'h'));
+  $('ref-ete-d').setAttribute('d', buildPath(172, yPosD, 'duration'));
+  $('ref-equ-h').setAttribute('d', buildPath(80, yPosH, 'h'));
+  $('ref-equ-d').setAttribute('d', buildPath(80, yPosD, 'duration'));
+  $('ref-hiver-h').setAttribute('d', buildPath(355, yPosH, 'h'));
+  $('ref-hiver-d').setAttribute('d', buildPath(355, yPosD, 'duration'));
+  $('ref-ete-irr').setAttribute('d', buildPath(172, yPosE, 'irr'));
+  $('ref-equ-irr').setAttribute('d', buildPath(80, yPosE, 'irr'));
+  $('ref-hiver-irr').setAttribute('d', buildPath(355, yPosE, 'irr'));
+}
+
+function fmtHM(hDecimal){
+  const h=Math.floor(hDecimal), m=Math.round((hDecimal-h)*60);
+  return `${h}h${m.toString().padStart(2,'0')}`;
+}
+function fmtClock(hDecimal){
+  hDecimal = ((hDecimal%24)+24)%24;
+  const h=Math.floor(hDecimal), m=Math.round((hDecimal-h)*60);
+  return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+}
+function fmtDeg(v){
+  if(!unitDMS) return v.toFixed(1)+"°";
+  const d=Math.floor(v), m=Math.round((v-d)*60);
+  return `${d}°${m.toString().padStart(2,'0')}'`;
+}
+
+function dateFromDay(N){
+  const d=new Date(2026,0,N);
+  return d.toLocaleDateString('fr-FR',{day:'numeric',month:'long'});
+}
+
+function update(){
+  const N=parseInt(daySlider.value);
+  const lat=parseFloat(latSlider.value);
+  $('date-label').textContent=dateFromDay(N);
+  $('day-num').textContent=N;
+  $('lat-val').textContent=lat.toFixed(1);
+
+  $('curve-h').setAttribute('d', buildPath(N, yPosH, 'h'));
+  $('curve-d').setAttribute('d', buildPath(N, yPosD, 'duration'));
+  $('curve-irr').setAttribute('d', buildPath(N, yPosE, 'irr'));
+
+  const {h,duration,irr}=getD(lat,N);
+  const x=xPos(lat);
+  $('lat-line-h').setAttribute('x1',x); $('lat-line-h').setAttribute('x2',x);
+  $('lat-line-d').setAttribute('x1',x); $('lat-line-d').setAttribute('x2',x);
+  $('lat-line-irr').setAttribute('x1',x); $('lat-line-irr').setAttribute('x2',x);
+  $('hit-h').setAttribute('x1',x); $('hit-h').setAttribute('x2',x);
+  $('hit-d').setAttribute('x1',x); $('hit-d').setAttribute('x2',x);
+  $('hit-irr').setAttribute('x1',x); $('hit-irr').setAttribute('x2',x);
+  $('pt-h').setAttribute('cx',x); $('pt-h').setAttribute('cy',yPosH(h));
+  $('pt-d').setAttribute('cx',x); $('pt-d').setAttribute('cy',yPosD(duration));
+  $('pt-irr').setAttribute('cx',x); $('pt-irr').setAttribute('cy',yPosE(irr));
+
+  const showVals=$('tog-vals').checked;
+  const bh=x<500 ? x+14 : x-134;
+  $('badge-h').innerHTML = showVals ? `<rect class="badge" x="${bh}" y="${yPosH(h)-34}" width="120" height="26" rx="6"/><text class="badge-text" x="${bh+10}" y="${yPosH(h)-16}">${fmtDeg(lat)} N · ${h.toFixed(1)}°</text>` : "";
+  $('badge-d').innerHTML = showVals ? `<rect class="badge" x="${bh}" y="${yPosD(duration)-34}" width="120" height="26" rx="6"/><text class="badge-text" x="${bh+10}" y="${yPosD(duration)-16}">${fmtHM(duration)}</text>` : "";
+  $('badge-irr').innerHTML = showVals ? `<rect class="badge" x="${bh}" y="${yPosE(irr)-34}" width="120" height="26" rx="6"/><text class="badge-text" x="${bh+10}" y="${yPosE(irr)-16}">${Math.round(irr)} W/m²</text>` : "";
+
+  $('v-h').textContent=fmtDeg(h);
+  $('v-d').textContent=fmtHM(duration);
+  $('v-aube').textContent=fmtClock(12-duration/2);
+  $('v-cr').textContent=fmtClock(12+duration/2);
+  $('v-irr').textContent=Math.round(irr)+" W/m²";
+
+  // timeline dot
+  $('tl-dot').style.left=(N/365*100)+"%";
+
+  drawGlobe(lat,N);
+  drawSun(h);
+  $('sun-lat').textContent=lat.toFixed(1)+"° N";
+  $('sun-date').textContent=dateFromDay(N);
+}
+
+// ---- Globe géocentrique ----
+// L'anneau de latitude est coloré en deux arcs (jour / nuit) dont la longueur reflète
+// la durée réelle du jour à cette latitude et cette date. Le point jaune (subsolaire)
+// indique la latitude où le Soleil est exactement au zénith à midi : sa position, qui
+// oscille entre les deux tropiques au fil de l'année, illustre l'inclinaison de l'axe
+// terrestre — la cause des saisons.
+function drawGlobe(lat,N){
+  const {delta, duration}=getD(lat,N);
+  const cx=150, cy=150, R=105;
+  const latY=cy - (lat/90)*R;
+  const latRx=R*Math.cos(lat*Math.PI/180);
+  const latRy=Math.max(2.5, latRx*0.12);
+
+  function arcPath(a0,a1){
+    let d="", steps=48;
+    for(let i=0;i<=steps;i++){
+      const t=a0+(a1-a0)*i/steps, rad=t*Math.PI/180;
+      const x=cx+latRx*Math.cos(rad), y=latY+latRy*Math.sin(rad);
+      d += (i===0?"M ":" L ") + x.toFixed(2) + " " + y.toFixed(2);
+    }
+    return d;
+  }
+  const half=(duration/24)*180; // demi-arc "jour", en degrés autour de l'anneau (24h = 360°)
+  $('lat-arc-day').setAttribute('d', half<=0 ? "" : arcPath(-Math.min(half,180), Math.min(half,180)));
+  $('lat-arc-night').setAttribute('d', half>=180 ? "" : arcPath(Math.max(half,0), 360-Math.max(half,0)));
+
+  $('subsolar-dot').setAttribute('cy', (cy - (delta/90)*R).toFixed(2));
+
+  let badge="";
+  if(duration>=23.98) badge="☀️ Jour polaire (soleil de minuit)";
+  else if(duration<=0.02) badge="🌑 Nuit polaire";
+  $('globe-meta').innerHTML=`Point subsolaire : <b>${delta>=0?'+':''}${delta.toFixed(1)}°</b> de latitude${badge?`<br>${badge}`:""}`;
+}
+
+// ---- Scène Soleil ----
+function drawSun(h){
+  const headX=90, headY=128, Rs=95;
+  const ang=(90-h)*Math.PI/180;
+  const sx=headX + Rs*Math.sin(ang);
+  const sy=headY - Rs*Math.cos(ang);
+  let out="";
+  out+=`<line x1="${headX}" y1="${headY}" x2="${sx}" y2="${sy}" stroke="#FFC94A" stroke-width="1.4" stroke-dasharray="4 4" opacity="0.8"/>`;
+  // arc angle
+  const arcR=34;
+  const a0=-90, a1=-90+(90-h);
+  const p0x=headX+arcR*Math.sin(0), p0y=headY-arcR*Math.cos(0);
+  const p1x=headX+arcR*Math.sin(ang), p1y=headY-arcR*Math.cos(ang);
+  const largeArc = (90-h)>180?1:0;
+  out+=`<path d="M ${p0x} ${p0y} A ${arcR} ${arcR} 0 ${largeArc} 1 ${p1x} ${p1y}" fill="none" stroke="#FF9800" stroke-width="1.6"/>`;
+  out+=`<text x="${headX+18}" y="${headY-40}" class="axis-label" fill="#FF9800" font-weight="700">${h.toFixed(1)}°</text>`;
+  out+=`<circle cx="${sx}" cy="${sy}" r="26" fill="url(#sunGlow)"/>`;
+  out+=`<circle cx="${sx}" cy="${sy}" r="10" fill="#FFC94A"/>`;
+  for(let i=0;i<8;i++){
+    const a=i*Math.PI/4;
+    out+=`<line x1="${sx+13*Math.cos(a)}" y1="${sy+13*Math.sin(a)}" x2="${sx+19*Math.cos(a)}" y2="${sy+19*Math.sin(a)}" stroke="#FFC94A" stroke-width="2" stroke-linecap="round"/>`;
+  }
+  $('sun-scene').innerHTML=out;
+}
+
+// ---- Interactions curseur graphe (survol) ----
+function attachHover(svgId, yFn, key, infoPrefix){
+  const svg=$(svgId);
+  svg.addEventListener('mousemove', e=>{
+    const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
+    const p=pt.matrixTransform(svg.getScreenCTM().inverse());
+    if(p.x<70||p.x>970) return;
+  });
+}
+
+// ---- Grilles toggle ----
+$('tog-grid').addEventListener('change', e=>{
+  $('grid-h').style.opacity = e.target.checked?1:0;
+  $('grid-d').style.opacity = e.target.checked?1:0;
+  $('grid-irr').style.opacity = e.target.checked?1:0;
+});
+$('tog-vals').addEventListener('change', update);
+
+// ---- Lecture automatique ----
+function setPlay(state){
+  playing=state;
+  $('btn-play').textContent = playing ? "⏸" : "▶";
+  if(playing){
+    playTimer=setInterval(()=>{
+      let v=parseInt(daySlider.value)+1;
+      if(v>365) v=1;
+      daySlider.value=v; update();
+    },70);
+  } else {
+    clearInterval(playTimer);
+  }
+}
+$('btn-play').addEventListener('click',()=>setPlay(!playing));
+$('tog-anim').addEventListener('change', e=>setPlay(e.target.checked));
+$('btn-next').addEventListener('click',()=>{daySlider.value=Math.min(365,+daySlider.value+1); update();});
+$('btn-prev').addEventListener('click',()=>{daySlider.value=Math.max(1,+daySlider.value-1); update();});
+$('btn-first').addEventListener('click',()=>{daySlider.value=1; update();});
+$('btn-last').addEventListener('click',()=>{daySlider.value=365; update();});
+
+// ---- Timeline cliquable ----
+$('tl-track').addEventListener('click', e=>{
+  const r=e.currentTarget.getBoundingClientRect();
+  const pct=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
+  daySlider.value=Math.round(pct*365)||1;
+  update();
+});
+
+// ---- Unités ----
+$('btn-unit').addEventListener('click',()=>{
+  unitDMS=!unitDMS;
+  $('unit-label').textContent = unitDMS?"DMS":"Décimal";
+  update();
+});
+
+// ---- Aide ----
+$('btn-help').addEventListener('click',()=>{
+  const box=$('helpbox');
+  box.style.display = box.style.display==='block' ? 'none':'block';
+});
+
+// ---- Plein écran ----
+$('btn-full').addEventListener('click',()=>{
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+});
+
+daySlider.addEventListener('input', update);
+latSlider.addEventListener('input', update);
+
+// ---- Glisser-déposer pour réordonner les graphes ----
+function initDragReorder(){
+  const container = $('center-col');
+  let dragEl=null;
+
+  container.querySelectorAll('.draggable-chart').forEach(panel=>{
+    panel.addEventListener('dragstart', e=>{
+      if(e.target.closest('svg')){ e.preventDefault(); return; }
+      dragEl=panel;
+      setTimeout(()=>panel.classList.add('dragging'),0);
+    });
+    panel.addEventListener('dragend', ()=>{
+      panel.classList.remove('dragging');
+      container.querySelectorAll('.draggable-chart').forEach(p=>p.classList.remove('drag-over-top','drag-over-bottom'));
+      dragEl=null;
+    });
+    panel.addEventListener('dragover', e=>{
+      e.preventDefault();
+      if(!dragEl || dragEl===panel) return;
+      const box=panel.getBoundingClientRect();
+      const before = (e.clientY - box.top) < box.height/2;
+      panel.classList.toggle('drag-over-top', before);
+      panel.classList.toggle('drag-over-bottom', !before);
+    });
+    panel.addEventListener('dragleave', ()=>{
+      panel.classList.remove('drag-over-top','drag-over-bottom');
+    });
+    panel.addEventListener('drop', e=>{
+      e.preventDefault();
+      panel.classList.remove('drag-over-top','drag-over-bottom');
+      if(!dragEl || dragEl===panel) return;
+      const box=panel.getBoundingClientRect();
+      const before = (e.clientY - box.top) < box.height/2;
+      container.insertBefore(dragEl, before ? panel : panel.nextSibling);
+    });
+  });
+}
+initDragReorder();
+
+// ---- Glisser un curseur de latitude directement sur un graphe ----
+function xToLat(svg, clientX){
+  const pt=svg.createSVGPoint(); pt.x=clientX; pt.y=0;
+  const p=pt.matrixTransform(svg.getScreenCTM().inverse());
+  const clampedX=Math.min(970,Math.max(70,p.x));
+  let lat = ((clampedX-70)/900)*180 - 90;
+  lat = Math.round(lat/0.5)*0.5;
+  return Math.max(-90, Math.min(90, lat));
+}
+function attachLatDrag(svgId, handleIds){
+  const svg=$(svgId);
+  handleIds.forEach(hid=>{
+    const handle=$(hid);
+    handle.addEventListener('pointerdown', e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      handle.setPointerCapture(e.pointerId);
+      latSlider.value=xToLat(svg, e.clientX); update();
+      const move=ev=>{ latSlider.value=xToLat(svg, ev.clientX); update(); };
+      const up=()=>{ handle.removeEventListener('pointermove',move); handle.removeEventListener('pointerup',up); };
+      handle.addEventListener('pointermove',move);
+      handle.addEventListener('pointerup',up);
+    });
+  });
+}
+attachLatDrag('chart-h',['hit-h','pt-h']);
+attachLatDrag('chart-d',['hit-d','pt-d']);
+attachLatDrag('chart-irr',['hit-irr','pt-irr']);
+
+drawGrid();
+drawRefs();
+update();
+</script>
+</body>
+</html>
