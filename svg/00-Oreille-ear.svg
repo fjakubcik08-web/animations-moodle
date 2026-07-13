@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape by Victor Gasia -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   version="1.1"
+   width="393"
+   height="418"
+   id="Oeil"
+   inkscape:version="0.48.4 r9939"
+   sodipodi:docname="00-Oreille-ear.svg">
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1920"
+     inkscape:window-height="1021"
+     id="namedview12"
+     showgrid="false"
+     inkscape:zoom="0.95462384"
+     inkscape:cx="597.62738"
+     inkscape:cy="9.0729667"
+     inkscape:window-x="0"
+     inkscape:window-y="27"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="Oeil"
+     inkscape:snap-bbox="true"
+     inkscape:bbox-paths="true"
+     inkscape:bbox-nodes="true"
+     inkscape:snap-bbox-edge-midpoints="true"
+     inkscape:snap-bbox-midpoints="true"
+     inkscape:object-paths="true"
+     inkscape:snap-intersection-paths="true"
+     inkscape:object-nodes="true"
+     inkscape:snap-smooth-nodes="true"
+     inkscape:snap-midpoints="true"
+     inkscape:snap-object-midpoints="true"
+     inkscape:snap-center="true"
+     inkscape:snap-global="false" />
+  <title
+     id="titre">Oeil eye</title>
+  <desc
+     id="description">Crée par Victor GASIA 2012 pour Wikimedia Commons</desc>
+  <defs
+     id="defs" />
+  <metadata
+     id="metadata">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>Oeil eye</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <path
+     transform="matrix(2.8043117,0,0,2.8043117,434.51786,-355.0664)"
+     sodipodi:open="true"
+     sodipodi:end="7.8539816"
+     sodipodi:start="1.5707964"
+     d="m -84.875683,256.79364 a 55.651089,55.651089 0 1 1 6e-6,0"
+     sodipodi:ry="55.651089"
+     sodipodi:rx="55.651089"
+     sodipodi:cy="201.14255"
+     sodipodi:cx="-84.875679"
+     id="path3007"
+     style="fill:#98ce21;fill-opacity:1;fill-rule:nonzero;stroke-width:35.43307114000000269;stroke-miterlimit:4;stroke-dasharray:none"
+     sodipodi:type="arc" />
+  <path
+     style="fill:none;stroke:#cbe995;stroke-width:7.44000006000000003;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none"
+     d="m 141.2398,168.7929 c 9.17992,-96.211454 141.46359,-73.261445 126.06301,12.91603 -1.40775,11.07281 -28.92469,72.58631 -34.81277,90.08919 -7.22894,18.3349 -16.34958,25.01579 -29.30328,31.17368 -10.8243,5.14563 -28.9914,8.11906 -40.6387,-1.39927 -7.26327,-5.16996 -8.49159,-17.04233 -14.49983,-38.29267"
+     id="path3797"
+     inkscape:connector-curvature="0"
+     sodipodi:nodetypes="cccscc" />
+  <path
+     inkscape:connector-curvature="0"
+     id="path3011"
+     d="m 186.62691,264.51373 c 5.5,-2.64213 13.6,-6.04175 18,-7.5547 9.3647,-3.22009 14.6316,-7.86325 16.6583,-14.68542 0.7671,-2.58231 1.259,-9.10482 1.2053,-15.9838 -0.91061,-33.64196 -17.78683,-44.925 -35.98553,-47.35878 -10.40452,-0.71906 -14.52758,-0.0541 -21.35213,1.08236 -1.77031,-7.71717 -1.66479,-10.63018 -1.19513,-14.25085 1.99949,-14.96312 10.58919,-26.7871 24.16469,-33.26316 6.8835,-3.28372 8.249,-3.58025 16.5044,-3.58407 11.0685,-0.005 17.2758,1.97286 25.4322,8.10414 3.2473,2.44105 7.4642,6.79029 9.3707,9.66498 3.5976,5.42434 7.6971,16.94563 7.6971,21.63204 0,5.22002 5.279,7.12128 7.0246,2.52996 0.6841,-1.79924 0.5296,-4.70923 -0.5174,-9.75 -5.0169,-24.15341 -24.081,-39.78694 -48.6408,-39.8879 -13.8131,-0.0568 -22.9301,3.58887 -33.3493,13.33552 -5.016,4.69219 -7.53199,8.1107 -10.75189,14.60874 -3.9062,7.88303 -4.2313,9.17286 -4.5952,18.23367 -0.6007,14.95555 3.4578,26.49523 12.68519,36.06852 5.1793,5.37338 6.1869,5.77119 8.5734,3.38472 2.2541,-2.25412 2.0635,-2.80775 -2.885,-8.3795 -8.1791,-9.2092 -8.1587,-10.78368 0.1575,-12.12575 5.6769,-0.91614 10.6248,-0.43342 18.7989,1.83401 8.5365,2.36798 15.5709,9.56742 18.5623,18.99788 4.096,12.91265 3.5396,33.07486 -1.0487,37.99983 -1.0476,1.12445 -5.4167,3.2143 -9.7092,4.6441 -4.2924,1.42976 -12.3044,4.84988 -17.8044,7.60021 -5.5,2.75033 -10.525,5.0006 -11.1667,5.0006 -1.9054,0 -2.1273,-2.2211 -0.6995,-7 2.8009,-9.37424 0.7707,-21.21449 -4.6286,-26.99441 -3.09669,-3.31507 -4.65819,-3.50284 -6.38349,-0.76765 -0.7647,1.21229 -0.3146,3.01545 1.792,7.17914 2.97559,5.881 3.00609,6.61603 1.0004,24.0957 -0.4742,4.13311 -0.2065,5.48139 1.52529,7.68306 3.9102,4.97099 7.6014,4.61263 21.5606,-2.09319 z"
+     style="fill:#cbe995"
+     sodipodi:nodetypes="ccccccccscscssssssssssssssscsscccccc" />
+</svg>
