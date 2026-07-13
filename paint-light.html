@@ -149,7 +149,8 @@ input[type=range]{accent-color:var(--blue);height:4px}
 
 /* ── RULER ── */
 #cvContainer{position:relative;display:inline-block;transform-origin:top left}
-#rulerCanvas{position:absolute;top:0;left:0;pointer-events:none;display:none}
+/* Regle = calque flottant a l'echelle ecran reelle, independant du zoom du dessin */
+#rulerCanvas{position:fixed;top:0;left:0;pointer-events:none;display:none;z-index:50}
 </style>
 </head>
 <body>
@@ -218,10 +219,10 @@ input[type=range]{accent-color:var(--blue);height:4px}
   <div id="canvasWrap">
     <div id="cvContainer">
       <canvas id="canvas" width="1200" height="800"></canvas>
-      <canvas id="rulerCanvas" width="1200" height="800"></canvas>
     </div>
   </div>
 </div>
+<canvas id="rulerCanvas" width="1200" height="800"></canvas>
 
 <!-- COLOR BAR -->
 <div id="colorbar">
@@ -346,8 +347,7 @@ function initCanvas(w, h, bg) {
   ctx.fillStyle=bg||'#ffffff'; ctx.fillRect(0,0,w,h);
   history.length=0; histIdx=-1; saveHistory();
   document.getElementById('stSize').textContent=`${w} × ${h}`;
-  const _rc=document.getElementById('rulerCanvas');
-  if(_rc){_rc.width=w;_rc.height=h;}
+  // La regle est un calque ecran independant (taille du viewport, pas du dessin) -> voir sizeRulerToViewport()
   if(typeof rulerVisible!=='undefined'&&rulerVisible)drawRuler();
 }
 
@@ -571,16 +571,17 @@ function onDown(e){
   if(e.button!==0)return;
   const{x,y}=canvasXY(e);
   if(rulerVisible){
-    if(isOnRulerHandle(x,y)){
+    const{x:rx,y:ry}=rulerXY(e);
+    if(isOnRulerHandle(rx,ry)){
       rulerRotating=true;
       rulerRotStartAngle=rulerAngle;
-      rulerRotMouseAngle=Math.atan2(y-rulerY,x-rulerX);
+      rulerRotMouseAngle=Math.atan2(ry-rulerY,rx-rulerX);
       canvas.style.cursor='crosshair';
       return;
     }
-    if(isOnRulerBody(x,y)){
+    if(isOnRulerBody(rx,ry)){
       rulerDragging=true;
-      rulerDragSX=x;rulerDragSY=y;rulerDragAX=rulerX;rulerDragAY=rulerY;
+      rulerDragSX=rx;rulerDragSY=ry;rulerDragAX=rulerX;rulerDragAY=rulerY;
       canvas.style.cursor='grabbing';
       return;
     }
@@ -602,11 +603,13 @@ function onMove(e){
   const{x,y}=canvasXY(e);
   document.getElementById('stPos').textContent=`${x}, ${y}`;
   if(rulerDragging){
-    rulerX=rulerDragAX+(x-rulerDragSX);rulerY=rulerDragAY+(y-rulerDragSY);
+    const{x:rx,y:ry}=rulerXY(e);
+    rulerX=rulerDragAX+(rx-rulerDragSX);rulerY=rulerDragAY+(ry-rulerDragSY);
     drawRuler();return;
   }
   if(rulerRotating){
-    const ma=Math.atan2(y-rulerY,x-rulerX);
+    const{x:rx,y:ry}=rulerXY(e);
+    const ma=Math.atan2(ry-rulerY,rx-rulerX);
     let a=rulerRotStartAngle+(ma-rulerRotMouseAngle);
     // normalize to [-π, π]
     a=((a+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
@@ -617,8 +620,9 @@ function onMove(e){
     drawRuler();return;
   }
   if(rulerVisible){
-    if(isOnRulerHandle(x,y))canvas.style.cursor='crosshair';
-    else if(isOnRulerBody(x,y))canvas.style.cursor='grab';
+    const{x:rx,y:ry}=rulerXY(e);
+    if(isOnRulerHandle(rx,ry))canvas.style.cursor='crosshair';
+    else if(isOnRulerBody(rx,ry))canvas.style.cursor='grab';
     else canvas.style.cursor=getCursor();
   }
   if(floatDragging&&floatObj){floatObj.offDx=floatDragOX+(x-floatDragSX);floatObj.offDy=floatDragOY+(y-floatDragSY);renderFloat();return;}
@@ -935,6 +939,22 @@ function startText(tx,ty){
 // ═══════════════════════════════════════════════════════════════════
 //  PASTE
 // ═══════════════════════════════════════════════════════════════════
+// Si l'image collee est plus grande que le canevas actuel, on agrandit le canevas
+// pour l'accueillir en entier (sans la tronquer), en gardant le contenu deja present.
+function growCanvasToFit(iw,ih){
+  if(iw<=canvas.width&&ih<=canvas.height)return;
+  const nw=Math.max(canvas.width,iw),nh=Math.max(canvas.height,ih);
+  const prevSnap=ctx.getImageData(0,0,canvas.width,canvas.height);
+  canvas.width=nw;canvas.height=nh;
+  ctx.fillStyle=bgColor;ctx.fillRect(0,0,nw,nh);
+  ctx.putImageData(prevSnap,0,0);
+  document.getElementById('stSize').textContent=`${nw} × ${nh}`;
+}
+function scaledImportSize(img){
+  let iw=img.width,ih=img.height;const big=Math.max(iw,ih);
+  if(big>MAX_IMPORT_DIM){const s=MAX_IMPORT_DIM/big;iw=Math.round(iw*s);ih=Math.round(ih*s);}
+  return{iw,ih};
+}
 document.addEventListener('paste',e=>{
   if(preventNextPaste){preventNextPaste=false;e.preventDefault();return;}
   for(const item of(e.clipboardData||e.originalEvent.clipboardData).items){
@@ -943,11 +963,13 @@ document.addEventListener('paste',e=>{
     const url=URL.createObjectURL(item.getAsFile());const img=new Image();
     img.onload=()=>{
       if(floatObj)commitFloat();if(sel)clearSel();
-      const px=Math.max(0,Math.round((canvas.width-img.width)/2));
-      const py=Math.max(0,Math.round((canvas.height-img.height)/2));
-      const off=mkCanvas(canvas.width,canvas.height);off.getContext('2d').drawImage(img,px,py);
+      const{iw,ih}=scaledImportSize(img);
+      growCanvasToFit(iw,ih);
+      const px=Math.max(0,Math.round((canvas.width-iw)/2));
+      const py=Math.max(0,Math.round((canvas.height-ih)/2));
+      const off=mkCanvas(canvas.width,canvas.height);off.getContext('2d').drawImage(img,px,py,iw,ih);
       URL.revokeObjectURL(url);
-      makeFloat(off,px,py,Math.min(img.width,canvas.width),Math.min(img.height,canvas.height),ctx.getImageData(0,0,canvas.width,canvas.height),false,null);
+      makeFloat(off,px,py,iw,ih,ctx.getImageData(0,0,canvas.width,canvas.height),false,null);
     };img.src=url;return;
   }
 });
@@ -958,7 +980,8 @@ document.addEventListener('paste',e=>{
 function saveJPG(){if(floatObj)commitFloat();const tmp=mkCanvas(canvas.width,canvas.height);const tc=tmp.getContext('2d');tc.fillStyle=bgColor;tc.fillRect(0,0,tmp.width,tmp.height);tc.drawImage(canvas,0,0);dl(tmp,'dessin.jpg','image/jpeg');}
 function savePNG(){if(floatObj)commitFloat();dl(canvas,'dessin.png','image/png');}
 function dl(c,name,type){const a=document.createElement('a');a.download=name;a.href=c.toDataURL(type,.95);a.click();}
-function openFile(){const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{canvas.width=img.width;canvas.height=img.height;rulerCanvas.width=img.width;rulerCanvas.height=img.height;ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0);history.length=0;histIdx=-1;saveHistory();document.getElementById('stSize').textContent=`${img.width} × ${img.height}`;if(rulerVisible)drawRuler();};img.src=ev.target.result;};r.readAsDataURL(f);};inp.click();}
+const MAX_IMPORT_DIM=1400; // au-dela, l'image importee est reduite pour rester maniable
+function openFile(){const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height;const big=Math.max(w,h);if(big>MAX_IMPORT_DIM){const s=MAX_IMPORT_DIM/big;w=Math.round(w*s);h=Math.round(h*s);}canvas.width=w;canvas.height=h;ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,w,h);history.length=0;histIdx=-1;saveHistory();document.getElementById('stSize').textContent=`${w} × ${h}`;if(rulerVisible)drawRuler();};img.src=ev.target.result;};r.readAsDataURL(f);};inp.click();}
 function showNewModal(){document.getElementById('modalOverlay').classList.add('show');}
 function hideNewModal(){document.getElementById('modalOverlay').classList.remove('show');}
 function newCanvas(){const w=+document.getElementById('newW').value,h=+document.getElementById('newH').value;hideNewModal();if(w>0&&h>0)initCanvas(w,h,bgColor);}
@@ -1063,13 +1086,14 @@ async function ctxPaste() {
         const img  = new Image();
         img.onload = () => {
           if (floatObj) commitFloat(); if (sel) clearSel();
-          const px = Math.max(0, Math.round((canvas.width  - img.width)  / 2));
-          const py = Math.max(0, Math.round((canvas.height - img.height) / 2));
+          const {iw, ih} = scaledImportSize(img);
+          growCanvasToFit(iw, ih);
+          const px = Math.max(0, Math.round((canvas.width  - iw)  / 2));
+          const py = Math.max(0, Math.round((canvas.height - ih) / 2));
           const off = mkCanvas(canvas.width, canvas.height);
-          off.getContext('2d').drawImage(img, px, py);
+          off.getContext('2d').drawImage(img, px, py, iw, ih);
           URL.revokeObjectURL(url);
-          makeFloat(off, px, py,
-            Math.min(img.width, canvas.width), Math.min(img.height, canvas.height),
+          makeFloat(off, px, py, iw, ih,
             ctx.getImageData(0,0,canvas.width,canvas.height), false, null);
         };
         img.src = url; return;
@@ -1084,12 +1108,14 @@ function ctxUndo() { hideCtxMenu(); undo(); }
 // ═══════════════════════════════════════════════════════════════════
 //  RULER
 // ═══════════════════════════════════════════════════════════════════
-const RULER_LEN = 600;  // canvas px (=15 cm)
-const RULER_H   = 44;   // canvas px (height of body)
-const CM_PX     = 40;   // canvas px per cm graduation
+// La regle est un calque flottant en pixels ECRAN reels (pas des px du dessin) :
+// elle garde tjrs la meme taille/lisibilite a l'ecran, quel que soit le zoom/la taille du dessin charge.
+const RULER_LEN = 600;  // px ecran
+const RULER_H   = 44;   // px ecran (hauteur du corps)
+const CM_PX     = 40;   // px ecran par graduation
 
 let rulerVisible = false;
-let rulerX = 120, rulerY = 100; // anchor = left-center in canvas coords
+let rulerX = 120, rulerY = 100; // ancre = gauche-centre, en coords ECRAN (viewport de canvasWrap)
 let rulerAngle = 0;
 let rulerDragging = false, rulerRotating = false;
 let rulerDragSX=0,rulerDragSY=0,rulerDragAX=0,rulerDragAY=0;
@@ -1097,9 +1123,23 @@ let rulerRotStartAngle=0, rulerRotMouseAngle=0;
 
 const rulerCanvas = document.getElementById('rulerCanvas');
 const rCtx = rulerCanvas.getContext('2d');
+const canvasWrapEl = document.getElementById('canvasWrap');
+
+// Position/coords de la regle en pixels ECRAN (indep. du zoom du dessin) : suit le viewport visible.
+function rulerXY(e){const r=canvasWrapEl.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
+function sizeRulerToViewport(){
+  const r=canvasWrapEl.getBoundingClientRect();
+  rulerCanvas.width=Math.max(1,Math.round(r.width));
+  rulerCanvas.height=Math.max(1,Math.round(r.height));
+  rulerCanvas.style.left=r.left+'px';
+  rulerCanvas.style.top=r.top+'px';
+  if(rulerVisible)drawRuler();
+}
+window.addEventListener('resize',sizeRulerToViewport);
 
 function toggleRuler(){
   rulerVisible=!rulerVisible;
+  if(rulerVisible)sizeRulerToViewport();
   rulerCanvas.style.display=rulerVisible?'block':'none';
   document.getElementById('t-ruler').classList.toggle('active',rulerVisible);
   if(rulerVisible)drawRuler();
@@ -1180,6 +1220,7 @@ function drawRuler(){
 // ═══════════════════════════════════════════════════════════════════
 initCanvas(1200,800,'#ffffff');
 setTool('pencil');
+sizeRulerToViewport();
 </script>
 </body>
 </html>
