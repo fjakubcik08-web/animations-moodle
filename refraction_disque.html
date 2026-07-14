@@ -375,17 +375,29 @@
   }
 
   /* ---------- Animation des panneaux de zoom (glissement plutôt qu'un saut) ---------- */
+  // choisit haut ou bas selon le coin le plus ÉLOIGNÉ du point (distance réelle,
+  // pas juste un test sur y) : reste correct quelle que soit l'orientation, y
+  // compris H/B où le rayon ne traverse jamais l'axe horizontal cy
+  function panelSideFor(worldPoint, panelX, panelSize){
+    const topY = 14, botY = SIZE - panelSize - 14;
+    const topC = { x: panelX + panelSize/2, y: topY + panelSize/2 };
+    const botC = { x: panelX + panelSize/2, y: botY + panelSize/2 };
+    const dTop = Math.hypot(worldPoint.x-topC.x, worldPoint.y-topC.y);
+    const dBot = Math.hypot(worldPoint.x-botC.x, worldPoint.y-botC.y);
+    return dTop > dBot ? topY : botY;
+  }
+
   function stepAnimation(){
     const panelSize = 220;
 
     const entryWorld = rotatePoint(entryPoint(), orientationRad);
-    const targetInc = (entryWorld.y < cy) ? (SIZE - panelSize - 14) : 14;
+    const targetInc = panelSideFor(entryWorld, 14, panelSize);
 
     const {dt} = computeRays();
     let targetRef = targetInc;
     if(dt){
       const exitWorld = rotatePoint({x: cx+dt.x*R, y: cy+dt.y*R}, orientationRad);
-      targetRef = (exitWorld.y < cy) ? (SIZE - panelSize - 14) : 14;
+      targetRef = panelSideFor(exitWorld, SIZE-panelSize-14, panelSize);
     }
 
     if(panelYIncidentCur === null) panelYIncidentCur = targetInc;
