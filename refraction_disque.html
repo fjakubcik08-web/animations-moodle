@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Réfraction — disque optique</title>
+<style>
+  html,body{margin:0;padding:0;background:#f2f3f5;overflow:hidden;height:100%;font-family:Arial,Helvetica,sans-serif;}
+  #wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100vw;height:100vh;gap:10px;}
+  canvas{touch-action:none;max-width:96vmin;max-height:88vmin;background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.08);}
+  #laserBtn{
+    border:1px solid #b0b4ba;background:#fff;color:#222;padding:7px 18px;border-radius:20px;
+    font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,0.08);
+  }
+  #laserBtn .dot{width:10px;height:10px;border-radius:50%;background:#c62828;transition:background .15s;}
+  #laserBtn.off .dot{background:#9e9e9e;}
+  #laserBtn:active{transform:scale(0.97);}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <button id="laserBtn" class="off"><span class="dot"></span><span id="laserLbl">Laser éteint</span></button>
+</div>
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- Paramètres (n1 = milieu incident, n2 = milieu de réfraction) ----------
+     i1     : angle d'incidence initial (degrés, décimales autorisées)
+     n1, n2 : indices des deux milieux (décimales autorisées)
+     upper  : source au-dessus (true) ou en dessous (false) de la normale
+     move   : 1 = la source est déplaçable, 0 = figée (image fixe pour un devoir)
+     laser  : 1 = laser allumé à l'ouverture, 0 = éteint (défaut)
+     zoom   : 1 = fenêtres de lecture affichées (défaut), 0 = masquées
+     orient : orientation du dioptre : D=droite, G=gauche, H=haut, B=bas
+     hue    : teinte (0-360) du milieu 2, sinon tirée aléatoirement
+  ---------------------------------------------------------------------------------- */
+  const DEFAULTS = { n1: 1, n2: 1.5, i1: 40, upper: true, hue: null, move: 1, laser: 0, zoom: 1, orient: "D" };
+
+  const XOR_KEY = "FJ-refraction-disque";
+  function xorCipher(str, key){
+    let out = "";
+    for(let i=0;i<str.length;i++) out += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    return out;
+  }
+  function encodeParams(obj){
+    const xored = xorCipher(JSON.stringify(obj), XOR_KEY);
+    return btoa(unescape(encodeURIComponent(xored))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  }
+  function decodeParams(enc){
+    try{
+      let b64 = enc.replace(/-/g,"+").replace(/_/g,"/");
+      while(b64.length % 4) b64 += "=";
+      const xored = decodeURIComponent(escape(atob(b64)));
+      return JSON.parse(xorCipher(xored, XOR_KEY));
+    }catch(e){ return null; }
+  }
+  window.encodeSimParams = encodeParams; // pratique en console pour générer un ?p=...
+
+  const qs = new URLSearchParams(location.search);
+  let params = Object.assign({}, DEFAULTS);
+  if(qs.has("p")){
+    const dec = decodeParams(qs.get("p"));
+    if(dec) params = Object.assign(params, dec);
+  } else {
+    if(qs.has("n1")) params.n1 = parseFloat(qs.get("n1"));
+    if(qs.has("n2")) params.n2 = parseFloat(qs.get("n2"));
+    if(qs.has("i1")) params.i1 = parseFloat(qs.get("i1"));
+    if(qs.has("hue")) params.hue = parseFloat(qs.get("hue"));
+    if(qs.has("move")) params.move = parseInt(qs.get("move"),10);
+    if(qs.has("laser")) params.laser = parseInt(qs.get("laser"),10);
+    if(qs.has("zoom")) params.zoom = parseInt(qs.get("zoom"),10);
+    if(qs.has("upper")) params.upper = (qs.get("upper") === "1" || qs.get("upper") === "true");
+    if(qs.has("orient")) params.orient = qs.get("orient");
+  }
+  const n1 = params.n1, n2 = params.n2;
+  const hue = (params.hue === null || isNaN(params.hue)) ? Math.floor(Math.random()*360) : params.hue;
+  const canMove = !(params.move === 0 || params.move === "0" || params.move === false);
+  const zoomEnabled = !(params.zoom === 0 || params.zoom === "0" || params.zoom === false);
+
+  const ORIENT_MAP = { D:0, G:180, H:-90, B:90 };
+  const orientKey = String(params.orient || "D").toUpperCase();
+  const orientationRad = (ORIENT_MAP.hasOwnProperty(orientKey) ? ORIENT_MAP[orientKey] : 0) * Math.PI/180;
+
+  /* ---------- Canvas ---------- */
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const SIZE = 720;
+  const DPR = window.devicePixelRatio || 1;
+  canvas.width = SIZE * DPR;
+  canvas.height = SIZE * DPR;
+  canvas.style.width = SIZE + "px";
+  canvas.style.height = SIZE + "px";
+  ctx.scale(DPR, DPR);
+
+  const cx = SIZE/2, cy = SIZE/2;
+  const R = SIZE*0.36;              // rayon du disque gradué
+  const R_TICK_OUT = R + 14;
+  const R_TICK_MAJ_IN = R + 2;
+  const R_TICK_SEC_IN = R + 6;
+  const R_TICK_MIN_IN = R + 9;
+  const R_LABEL = R + 30;
+  const R_PROP = R_LABEL + 42;      // position visuelle du laser, au-delà des graduations
+
+  const LASER_COLOR = "#e53935";
+
+  function clampAngle(a){ return Math.max(0, Math.min(89, a)); }
+  function rotatePoint(p, rad){
+    const c = Math.cos(rad), s = Math.sin(rad);
+    const dx = p.x-cx, dy = p.y-cy;
+    return { x: cx + dx*c - dy*s, y: cy + dx*s + dy*c };
+  }
+
+  /* ---------- État ---------- */
+  let theta1 = clampAngle(isFinite(Number(params.i1)) ? Number(params.i1) : 40);
+  let upper  = !!params.upper;
+  let dragging = false;
+  let laserOn = (params.laser === 1 || params.laser === "1" || params.laser === true);
+  let panelYIncidentCur = null, panelYRefracteCur = null;
+  let animFrameId = null;
+
+  /* ---------- Géométrie ---------- */
+  function entryPoint(){
+    const a = theta1*Math.PI/180;
+    const x = cx - R*Math.cos(a);
+    const y = upper ? cy - R*Math.sin(a) : cy + R*Math.sin(a);
+    return {x,y};
+  }
+  function propPos(){
+    const a = theta1*Math.PI/180;
+    const x = cx - R_PROP*Math.cos(a);
+    const y = upper ? cy - R_PROP*Math.sin(a) : cy + R_PROP*Math.sin(a);
+    return {x,y};
+  }
+
+  function computeRays(){
+    const sign = upper ? 1 : -1;
+    const a1 = theta1*Math.PI/180;
+    const d  = {x: Math.cos(a1), y: sign*Math.sin(a1)};
+    const dr = {x: -Math.cos(a1), y: sign*Math.sin(a1)};
+    const s2 = n1*Math.sin(a1)/n2;
+    let dt = null, tir = false;
+    if(s2 <= 1){
+      const a2 = Math.asin(s2);
+      dt = {x: Math.cos(a2), y: sign*Math.sin(a2)};
+    } else {
+      tir = true;
+    }
+    return {d, dr, dt, tir};
+  }
+
+  /* ---------- Utilitaires dessin ---------- */
+  function roundRectPath(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+  function labelForAngle(deg){
+    const m = ((deg % 180) + 180) % 180;
+    return Math.round(Math.min(m, 180-m));
+  }
+
+  function fillMedium2(){
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx,cy,R,-Math.PI/2,Math.PI/2);
+    ctx.closePath();
+    ctx.clip();
+    const grad = ctx.createLinearGradient(cx,0,cx+R,0);
+    grad.addColorStop(0, `hsl(${hue},50%,88%)`);
+    grad.addColorStop(1, `hsl(${hue},50%,70%)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx,cy-R,R,2*R);
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(cx,cy,R,-Math.PI/2,Math.PI/2);
+    ctx.strokeStyle = `hsl(${hue},45%,55%)`;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+
+  /* lwScale : facteur pour compenser l'épaisseur de trait / taille de police
+     quand la scène est redessinée à un zoom donné (panneaux de lecture). */
+  function drawProtractor(lwScale){
+    ctx.beginPath();
+    ctx.arc(cx,cy,R,0,2*Math.PI);
+    ctx.strokeStyle = "#2b2b2b";
+    ctx.lineWidth = 1.6/lwScale;
+    ctx.stroke();
+
+    for(let deg=0; deg<360; deg+=1){
+      const rad = deg*Math.PI/180;
+      const isMajor = (deg % 10 === 0);
+      const isSecondary = (deg % 5 === 0);
+      const rIn = isMajor ? R_TICK_MAJ_IN : (isSecondary ? R_TICK_SEC_IN : R_TICK_MIN_IN);
+      const x1 = cx + rIn*Math.cos(rad), y1 = cy + rIn*Math.sin(rad);
+      const x2 = cx + R_TICK_OUT*Math.cos(rad), y2 = cy + R_TICK_OUT*Math.sin(rad);
+      ctx.beginPath();
+      ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+      ctx.strokeStyle = isMajor ? "#1a1a1a" : (isSecondary ? "#555" : "#aaa");
+      ctx.lineWidth = (isMajor ? 1.5 : (isSecondary ? 1.0 : 0.6))/lwScale;
+      ctx.stroke();
+
+      if(isMajor){
+        const val = labelForAngle(deg);
+        const lx = cx + R_LABEL*Math.cos(rad);
+        const ly = cy + R_LABEL*Math.sin(rad);
+        ctx.save();
+        ctx.translate(lx,ly);
+        // les chiffres restent toujours lisibles (jamais à l'envers), quelle
+        // que soit l'orientation choisie pour le disque
+        let localRot = rad + Math.PI/2;
+        const totalRot = localRot + orientationRad;
+        const norm = Math.atan2(Math.sin(totalRot), Math.cos(totalRot));
+        if(norm > Math.PI/2 || norm < -Math.PI/2){ localRot += Math.PI; }
+        ctx.rotate(localRot);
+        ctx.fillStyle = "#1a1a1a";
+        ctx.font = (13/lwScale)+"px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(val), 0, 0);
+        ctx.restore();
+      }
+    }
+
+    ctx.save();
+    ctx.setLineDash([5/lwScale,5/lwScale]);
+    ctx.strokeStyle = "#8a8a8a";
+    ctx.lineWidth = 1.2/lwScale;
+    ctx.beginPath();
+    ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R);
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 1.6/lwScale;
+    ctx.stroke();
+
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 1.2/lwScale;
+    ctx.strokeRect(cx+2, cy-14, 12, 12);
+
+    ctx.fillStyle = "#1a1a1a";
+    ctx.font = `bold ${13/lwScale}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText("I", cx-2, cy+4);
+  }
+
+  function drawRayLines(lwScale){
+    if(!laserOn) return;
+    const entry = entryPoint();
+    const prop = propPos();
+    const {dr, dt, tir} = computeRays();
+    const L = R*1.35;
+
+    ctx.beginPath();
+    ctx.moveTo(prop.x,prop.y);
+    ctx.lineTo(cx,cy);
+    ctx.strokeStyle = LASER_COLOR;
+    ctx.lineWidth = 2.4/lwScale;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.lineTo(cx+dr.x*L, cy+dr.y*L);
+    ctx.strokeStyle = tir ? LASER_COLOR : "rgba(229,57,53,0.4)";
+    ctx.lineWidth = (tir ? 2.4 : 1.4)/lwScale;
+    ctx.stroke();
+
+    if(dt){
+      ctx.beginPath();
+      ctx.moveTo(cx,cy);
+      ctx.lineTo(cx+dt.x*L, cy+dt.y*L);
+      ctx.strokeStyle = LASER_COLOR;
+      ctx.lineWidth = 2.4/lwScale;
+      ctx.stroke();
+    }
+  }
+
+  function drawSourceProp(){
+    const prop = propPos();
+    const angleToCenter = Math.atan2(cy-prop.y, cx-prop.x);
+    ctx.save();
+    ctx.translate(prop.x,prop.y);
+    ctx.rotate(angleToCenter);
+    ctx.fillStyle = laserOn ? "#3a3a3a" : "#c9c9c9";
+    roundRectPath(ctx,-10,-16,20,32,5);
+    ctx.fill();
+    ctx.fillStyle = laserOn ? LASER_COLOR : "#dcdcdc";
+    roundRectPath(ctx,-7,-19,14,7,3);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /* ---------- Panneaux de zoom (lecture précise) ---------- */
+  function drawZoomPanel(px, py, size, focusAngleRad){
+    ctx.save();
+    roundRectPath(ctx, px, py, size, size, 8);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+
+    ctx.save();
+    roundRectPath(ctx, px, py, size, size, 8);
+    ctx.clip();
+
+    const zoom = 2.2; // assez large pour garder plusieurs graduations chiffrées visibles
+    const focusCanon = { x: cx + R*Math.cos(focusAngleRad), y: cy + R*Math.sin(focusAngleRad) };
+    const focusWorld = rotatePoint(focusCanon, orientationRad);
+
+    ctx.translate(px+size/2, py+size/2);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-focusWorld.x, -focusWorld.y);
+    ctx.translate(cx,cy);
+    ctx.rotate(orientationRad);
+    ctx.translate(-cx,-cy);
+
+    fillMedium2();
+    drawProtractor(zoom);
+    drawRayLines(zoom);
+
+    // repère fin au centre du panneau (perpendiculaire au rayon) pour aider la lecture
+    ctx.restore(); // fin clip/zoom
+    ctx.strokeStyle = "#c62828";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px+size/2-6, py+size/2);
+    ctx.lineTo(px+size/2+6, py+size/2);
+    ctx.moveTo(px+size/2, py+size/2-6);
+    ctx.lineTo(px+size/2, py+size/2+6);
+    ctx.stroke();
+
+    ctx.restore();
+    roundRectPath(ctx, px, py, size, size, 8);
+    ctx.strokeStyle = "#c9ccd1";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  function render(){
+    ctx.clearRect(0,0,SIZE,SIZE);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0,0,SIZE,SIZE);
+
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(orientationRad);
+    ctx.translate(-cx,-cy);
+    fillMedium2();
+    drawProtractor(1);
+    drawRayLines(1);
+    drawSourceProp();
+    ctx.restore();
+
+    if(laserOn && zoomEnabled){
+      const panelSize = 220;
+      const entry = entryPoint();
+      const entryAngleRad = Math.atan2(entry.y-cy, entry.x-cx);
+      drawZoomPanel(14, panelYIncidentCur ?? 14, panelSize, entryAngleRad);
+
+      const {dt} = computeRays();
+      if(dt){
+        const exitAngleRad = Math.atan2(dt.y, dt.x);
+        drawZoomPanel(SIZE-panelSize-14, panelYRefracteCur ?? 14, panelSize, exitAngleRad);
+      }
+    }
+  }
+
+  /* ---------- Animation des panneaux de zoom (glissement plutôt qu'un saut) ---------- */
+  function stepAnimation(){
+    const panelSize = 220;
+
+    const entryWorld = rotatePoint(entryPoint(), orientationRad);
+    const targetInc = (entryWorld.y < cy) ? (SIZE - panelSize - 14) : 14;
+
+    const {dt} = computeRays();
+    let targetRef = targetInc;
+    if(dt){
+      const exitWorld = rotatePoint({x: cx+dt.x*R, y: cy+dt.y*R}, orientationRad);
+      targetRef = (exitWorld.y < cy) ? (SIZE - panelSize - 14) : 14;
+    }
+
+    if(panelYIncidentCur === null) panelYIncidentCur = targetInc;
+    if(panelYRefracteCur === null) panelYRefracteCur = targetRef;
+
+    const speed = 0.22;
+    panelYIncidentCur += (targetInc - panelYIncidentCur)*speed;
+    panelYRefracteCur += (targetRef - panelYRefracteCur)*speed;
+
+    render();
+
+    const settled = Math.abs(targetInc-panelYIncidentCur) < 0.5 && Math.abs(targetRef-panelYRefracteCur) < 0.5;
+    if(!settled){
+      animFrameId = requestAnimationFrame(stepAnimation);
+    } else {
+      panelYIncidentCur = targetInc;
+      panelYRefracteCur = targetRef;
+      render();
+      animFrameId = null;
+    }
+  }
+  function requestUpdate(){
+    if(!laserOn || !zoomEnabled){
+      if(animFrameId){ cancelAnimationFrame(animFrameId); animFrameId = null; }
+      render();
+      return;
+    }
+    if(animFrameId === null){
+      animFrameId = requestAnimationFrame(stepAnimation);
+    }
+  }
+
+  /* ---------- Interaction (souris + tactile) ---------- */
+  function angleFromPointer(px,py){
+    const dx = px-cx, dy = py-cy;
+    // on reste toujours dans le demi-plan gauche (milieu 1) : si le pointeur
+    // dérive à droite, on se bloque à la limite la plus proche (0° ou 90°
+    // selon la hauteur), sans jamais sauter d'une limite à l'autre
+    const nx = Math.max(-dx, 0);
+    const a = Math.atan2(Math.abs(dy), nx);
+    return { theta: clampAngle(a*180/Math.PI), up: dy < 0 };
+  }
+  function getPointerPos(evt){
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = SIZE/rect.width, scaleY = SIZE/rect.height;
+    return { x:(evt.clientX-rect.left)*scaleX, y:(evt.clientY-rect.top)*scaleY };
+  }
+  function hitSource(px,py){
+    if(!canMove) return false;
+    const worldProp = rotatePoint(propPos(), orientationRad);
+    return Math.hypot(px-worldProp.x, py-worldProp.y) < 28;
+  }
+
+  canvas.addEventListener("pointerdown", (e)=>{
+    if(!canMove) return;
+    const p = getPointerPos(e);
+    if(hitSource(p.x,p.y)){
+      dragging = true;
+      canvas.setPointerCapture(e.pointerId);
+      canvas.style.cursor = "grabbing";
+    }
+  });
+  canvas.addEventListener("pointermove", (e)=>{
+    const p = getPointerPos(e);
+    if(dragging){
+      const canon = rotatePoint(p, -orientationRad);
+      const {theta, up} = angleFromPointer(canon.x, canon.y);
+      theta1 = theta; upper = up;
+      requestUpdate();
+    } else {
+      canvas.style.cursor = hitSource(p.x,p.y) ? "grab" : "default";
+    }
+  });
+  function endDrag(){ if(dragging){ dragging=false; canvas.style.cursor="grab"; } }
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("pointerleave", endDrag);
+
+  const laserBtn = document.getElementById("laserBtn");
+  const laserLbl = document.getElementById("laserLbl");
+  laserBtn.classList.toggle("off", !laserOn);
+  laserLbl.textContent = laserOn ? "Laser allumé" : "Laser éteint";
+  laserBtn.addEventListener("click", ()=>{
+    laserOn = !laserOn;
+    laserBtn.classList.toggle("off", !laserOn);
+    laserLbl.textContent = laserOn ? "Laser allumé" : "Laser éteint";
+    requestUpdate();
+  });
+
+  requestUpdate();
+})();
+</script>
+</body>
+</html>
