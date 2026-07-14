@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Créateur d'affiche</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; font-family: Arial, Helvetica, sans-serif; background:#e9edf1; overflow:hidden; }
+  #app { display:flex; height:100%; }
+
+  /* -------- Barre d'outils gauche -------- */
+  #toolbar { width:150px; background:#2c3e50; color:#fff; padding:10px; overflow-y:auto; flex-shrink:0; }
+  #toolbar h3 { font-size:13px; text-transform:uppercase; letter-spacing:.5px; color:#9fb3c8; margin:14px 0 6px; }
+  #toolbar button, #toolbar label.filebtn {
+    display:block; width:100%; margin:4px 0; padding:8px 6px; border:none; border-radius:5px;
+    background:#3d566e; color:#fff; font-size:12px; cursor:pointer; text-align:center;
+  }
+  #toolbar button:hover, #toolbar label.filebtn:hover { background:#4d6a85; }
+  #toolbar input[type=file] { display:none; }
+  #toolbar input[type=color] { width:100%; height:28px; border:none; border-radius:5px; margin:4px 0; cursor:pointer; }
+  .fmt-btn.active { background:#e67e22 !important; }
+  #shapesPopup { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; background:#1e2b38; padding:8px; border-radius:6px; margin:4px 0; }
+  #shapesPopup.hidden { display:none; }
+  .shape-opt { background:#3d566e; border-radius:5px; padding:6px; cursor:pointer; }
+  .shape-opt:hover { background:#4d6a85; }
+  .shape-opt svg { width:100%; height:22px; fill:#fff; display:block; }
+
+  /* -------- Zone centrale -------- */
+  #stage-wrap { flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:20px; }
+  #stage { position:relative; background:#ffffff; box-shadow:0 4px 18px rgba(0,0,0,.25); overflow:hidden; }
+
+  /* -------- Panneau propriétés droite -------- */
+  #props { width:170px; background:#f4f6f8; padding:10px; flex-shrink:0; border-left:1px solid #d3d9df; overflow-y:auto; }
+  #props h3 { font-size:13px; text-transform:uppercase; color:#7a8a99; margin:10px 0 6px; }
+  #props .row { display:flex; align-items:center; gap:6px; margin:6px 0; }
+  #props select, #props input[type=range] { width:100%; }
+  #props button { width:100%; padding:7px; margin:4px 0; border:none; border-radius:5px; background:#c0392b; color:#fff; font-size:12px; cursor:pointer; }
+  #props button.secondary { background:#7f8c8d; }
+  #props .hidden { display:none; }
+  #props input[type=color] { width:100%; height:26px; border:none; cursor:pointer; }
+
+  /* -------- Éléments sur l'affiche -------- */
+  .el {
+    position:absolute; cursor:move; user-select:none;
+  }
+  .el.selected { outline:2px dashed #2980b9; }
+  .el .handle {
+    position:absolute; right:-7px; bottom:-7px; width:14px; height:14px;
+    background:#2980b9; border-radius:50%; cursor:nwse-resize;
+  }
+  .el-text { padding:4px; min-width:30px; min-height:20px; outline:none; overflow:hidden; }
+  .el-text:focus { cursor:text; }
+  .el-shape { width:100%; height:100%; }
+  .el-image-wrap img { width:100%; height:100%; object-fit:contain; pointer-events:none; display:block; }
+
+  /* -------- Galerie clipart SVG -------- */
+  #clipartPanel { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:1000; }
+  #clipartPanel.hidden { display:none; }
+  #clipartBox { background:#fff; border-radius:8px; width:520px; max-width:90vw; max-height:80vh; overflow:hidden; display:flex; flex-direction:column; }
+  .clipart-header { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#2c3e50; color:#fff; }
+  .clipart-header button { background:none; border:none; color:#fff; font-size:16px; cursor:pointer; }
+  #clipartGrid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:14px; overflow-y:auto; }
+  .clipart-item { border:1px solid #e0e0e0; border-radius:6px; padding:8px; text-align:center; cursor:pointer; }
+  .clipart-item:hover { border-color:#2980b9; background:#f0f7fc; }
+  .clipart-item img { width:100%; height:60px; object-fit:contain; }
+  .clipart-item span { display:block; font-size:11px; color:#555; margin-top:4px; }
+  .clipart-msg { grid-column:1/-1; text-align:center; color:#7a8a99; font-size:13px; padding:20px; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ OUTILS ============ -->
+  <div id="toolbar">
+    <h3>Format</h3>
+    <button class="fmt-btn active" data-fmt="portrait">Affiche A4 portrait</button>
+    <button class="fmt-btn" data-fmt="paysage">Affiche A4 paysage</button>
+    <button class="fmt-btn" data-fmt="carre">Carré (réseaux)</button>
+
+    <h3>Ajouter</h3>
+    <button id="btnText">+ Texte</button>
+    <label class="filebtn">+ Image
+      <input type="file" id="fileInput" accept="image/*">
+    </label>
+    <button id="btnShapes">+ Figure ▾</button>
+    <div id="shapesPopup" class="hidden">
+      <div class="shape-opt" data-shape="rect" title="Rectangle"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14"/></svg></div>
+      <div class="shape-opt" data-shape="circle" title="Cercle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg></div>
+      <div class="shape-opt" data-shape="triangle" title="Triangle"><svg viewBox="0 0 24 24"><polygon points="12,4 21,20 3,20"/></svg></div>
+      <div class="shape-opt" data-shape="arrow" title="Flèche"><svg viewBox="0 0 24 24"><path d="M2,10 L15,10 L15,6 L22,12 L15,18 L15,14 L2,14 Z"/></svg></div>
+      <div class="shape-opt" data-shape="arrow2" title="Double flèche"><svg viewBox="0 0 24 24"><path d="M2,12 L7,7 L7,10.5 L17,10.5 L17,7 L22,12 L17,17 L17,13.5 L7,13.5 L7,17 Z"/></svg></div>
+    </div>
+    <button id="btnClipart">+ Clipart (SVG)</button>
+
+    <h3>Fond de l'affiche</h3>
+    <input type="color" id="bgColor" value="#ffffff">
+
+    <h3>Fichier</h3>
+    <button id="btnSave">💾 Sauver (brouillon)</button>
+    <button id="btnLoad">📂 Reprendre brouillon</button>
+    <button id="btnClear">🗑 Tout effacer</button>
+
+    <h3>Export</h3>
+    <button id="btnPng">Exporter en PNG</button>
+    <button id="btnPdf">Exporter en PDF</button>
+  </div>
+
+  <!-- ============ ZONE DE TRAVAIL ============ -->
+  <div id="stage-wrap">
+    <div id="stage"></div>
+  </div>
+
+  <!-- ============ GALERIE CLIPART SVG ============ -->
+  <div id="clipartPanel" class="hidden">
+    <div id="clipartBox">
+      <div class="clipart-header">
+        <span>Clipart (SVG)</span>
+        <div>
+          <button id="refreshClipart" title="Actualiser">⟳</button>
+          <button id="closeClipart" title="Fermer">✕</button>
+        </div>
+      </div>
+      <div id="clipartGrid"></div>
+    </div>
+  </div>
+
+  <!-- ============ PROPRIÉTÉS ============ -->
+  <div id="props">
+    <p style="font-size:12px;color:#7a8a99;">Cliquez un élément pour le modifier.</p>
+
+    <div id="prop-text" class="hidden">
+      <h3>Texte</h3>
+      <div class="row"><select id="fontFamily">
+        <option value="Arial">Arial</option>
+        <option value="Georgia">Georgia</option>
+        <option value="'Comic Sans MS'">Comic Sans</option>
+        <option value="Impact">Impact</option>
+        <option value="'Courier New'">Courier</option>
+      </select></div>
+      <div class="row"><input type="range" id="fontSize" min="10" max="120" value="24"></div>
+      <div class="row">
+        <button id="btnBold" class="secondary" style="width:auto;flex:1;">G</button>
+        <button id="btnItalic" class="secondary" style="width:auto;flex:1;">I</button>
+      </div>
+      <div class="row"><input type="color" id="textColor" value="#000000"></div>
+    </div>
+
+    <div id="prop-shape" class="hidden">
+      <h3>Forme</h3>
+      <div class="row"><input type="color" id="shapeColor" value="#3498db"></div>
+    </div>
+
+    <h3>Élément</h3>
+    <button id="btnFront" class="secondary">Passer devant</button>
+    <button id="btnDelete">Supprimer</button>
+  </div>
+
+</div>
+
+<script>
+const stage = document.getElementById('stage');
+const props = document.getElementById('props');
+let selected = null;
+let zTop = 1;
+let clipboardEl = null;
+
+/* ---------- Bibliothèque de clipart SVG (dossier /clipart/ sur GitHub) ----------
+   Le dossier est lu automatiquement via jsDelivr (CDN + API qui reflète ton repo GitHub).
+   Ajoute/supprime des .svg dans /clipart/ sur ton repo, ils apparaissent ici sans
+   toucher à ce fichier. Change juste REPO_BRANCH si ta branche n'est pas "main". */
+const REPO_USER   = 'fjakubcik08-web';
+const REPO_NAME   = 'animations-moodle';
+const REPO_BRANCH = 'main';
+const CLIPART_FOLDER = 'svg';
+
+/* ---------- Formats d'affiche (en px, ratio conservé pour l'écran) ---------- */
+const FORMATS = {
+  portrait: {w:595, h:842},   // A4 portrait
+  paysage:  {w:842, h:595},   // A4 paysage
+  carre:    {w:700, h:700}    // carré réseaux sociaux
+};
+function setFormat(fmt){
+  stage.style.width = FORMATS[fmt].w+'px';
+  stage.style.height = FORMATS[fmt].h+'px';
+  document.querySelectorAll('.fmt-btn').forEach(b=>b.classList.toggle('active', b.dataset.fmt===fmt));
+}
+setFormat('portrait');
+document.querySelectorAll('.fmt-btn').forEach(b=>{
+  b.addEventListener('click', ()=>setFormat(b.dataset.fmt));
+});
+
+document.getElementById('bgColor').addEventListener('input', e=>{
+  stage.style.background = e.target.value;
+});
+
+/* ---------- Sélection ---------- */
+function selectEl(el){
+  if(selected) selected.classList.remove('selected');
+  selected = el;
+  if(el) el.classList.add('selected');
+  updatePropsPanel();
+}
+function updatePropsPanel(){
+  document.getElementById('prop-text').classList.add('hidden');
+  document.getElementById('prop-shape').classList.add('hidden');
+  if(!selected) return;
+  if(selected.classList.contains('el-text-wrap')){
+    document.getElementById('prop-text').classList.remove('hidden');
+    const txt = selected.querySelector('.el-text');
+    document.getElementById('fontFamily').value = txt.style.fontFamily || 'Arial';
+    document.getElementById('fontSize').value = parseInt(txt.style.fontSize)||24;
+    document.getElementById('textColor').value = rgbToHex(txt.style.color) || '#000000';
+  } else if(selected.classList.contains('el-shape-wrap')){
+    document.getElementById('prop-shape').classList.remove('hidden');
+    const shp = selected.querySelector('.el-shape');
+    let col;
+    if(shp.tagName.toLowerCase() === 'svg'){
+      col = shp.querySelector('path').getAttribute('fill');
+    } else {
+      col = rgbToHex(shp.style.background);
+    }
+    document.getElementById('shapeColor').value = col || '#3498db';
+  }
+}
+function rgbToHex(rgb){
+  if(!rgb) return null;
+  if(rgb.startsWith('#')) return rgb;
+  const m = rgb.match(/\d+/g);
+  if(!m) return null;
+  return '#' + m.slice(0,3).map(x=>(+x).toString(16).padStart(2,'0')).join('');
+}
+
+/* ---------- Création d'éléments génériques (drag + resize) ---------- */
+function makeDraggable(wrap){
+  let dragging=false, resizing=false, startX, startY, startL, startT, startW, startH;
+
+  wrap.addEventListener('pointerdown', e=>{
+    if(e.target.classList.contains('handle')){
+      resizing = true;
+      startX = e.clientX; startY = e.clientY;
+      startW = wrap.offsetWidth; startH = wrap.offsetHeight;
+    } else if(!e.target.isContentEditable) {
+      dragging = true;
+      startX = e.clientX; startY = e.clientY;
+      startL = wrap.offsetLeft; startT = wrap.offsetTop;
+    }
+    selectEl(wrap);
+    wrap.style.zIndex = ++zTop;
+    e.stopPropagation();
+    wrap.setPointerCapture(e.pointerId);
+  });
+  wrap.addEventListener('pointermove', e=>{
+    if(dragging){
+      wrap.style.left = (startL + e.clientX - startX) + 'px';
+      wrap.style.top  = (startT + e.clientY - startY) + 'px';
+    } else if(resizing){
+      wrap.style.width  = Math.max(24, startW + e.clientX - startX) + 'px';
+      wrap.style.height = Math.max(20, startH + e.clientY - startY) + 'px';
+    }
+  });
+  wrap.addEventListener('pointerup', ()=>{ dragging=false; resizing=false; });
+}
+
+function addHandle(wrap){
+  const h = document.createElement('div');
+  h.className='handle';
+  wrap.appendChild(h);
+}
+
+/* ---------- Texte ---------- */
+document.getElementById('btnText').addEventListener('click', ()=>{
+  const wrap = document.createElement('div');
+  wrap.className = 'el el-text-wrap';
+  wrap.style.left='40px'; wrap.style.top='40px'; wrap.style.width='200px'; wrap.style.height='40px';
+  const txt = document.createElement('div');
+  txt.className='el-text';
+  txt.contentEditable = true;
+  txt.style.fontFamily='Arial'; txt.style.fontSize='24px'; txt.style.color='#000000';
+  txt.innerText = 'Votre texte';
+  wrap.appendChild(txt);
+  addHandle(wrap);
+  stage.appendChild(wrap);
+  makeDraggable(wrap);
+  selectEl(wrap);
+});
+document.getElementById('fontFamily').addEventListener('change', e=>{
+  if(selected) selected.querySelector('.el-text').style.fontFamily = e.target.value;
+});
+document.getElementById('fontSize').addEventListener('input', e=>{
+  if(selected) selected.querySelector('.el-text').style.fontSize = e.target.value+'px';
+});
+document.getElementById('textColor').addEventListener('input', e=>{
+  if(selected) selected.querySelector('.el-text').style.color = e.target.value;
+});
+document.getElementById('btnBold').addEventListener('click', ()=>{
+  if(selected){ const t=selected.querySelector('.el-text'); t.style.fontWeight = t.style.fontWeight==='bold'?'normal':'bold'; }
+});
+document.getElementById('btnItalic').addEventListener('click', ()=>{
+  if(selected){ const t=selected.querySelector('.el-text'); t.style.fontStyle = t.style.fontStyle==='italic'?'normal':'italic'; }
+});
+
+/* ---------- Formes (rectangle, cercle, triangle, flèche, double-flèche) ---------- */
+const SHAPE_PATHS = {
+  triangle: 'M50,5 L95,95 L5,95 Z',
+  arrow:    'M0,35 L60,35 L60,15 L100,50 L60,85 L60,65 L0,65 Z',
+  arrow2:   'M0,50 L20,25 L20,40 L80,40 L80,25 L100,50 L80,75 L80,60 L20,60 L20,75 Z'
+};
+function addShape(kind){
+  const wrap = document.createElement('div');
+  wrap.className = 'el el-shape-wrap';
+  wrap.style.left='60px'; wrap.style.top='60px';
+  let shp;
+  if(kind === 'rect' || kind === 'circle'){
+    wrap.style.width='120px'; wrap.style.height='120px';
+    shp = document.createElement('div');
+    shp.className = 'el-shape';
+    shp.style.background = '#3498db';
+    if(kind === 'circle') shp.style.borderRadius = '50%';
+  } else {
+    wrap.style.width = '140px';
+    wrap.style.height = kind === 'triangle' ? '120px' : '70px';
+    shp = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    shp.setAttribute('viewBox', '0 0 100 100');
+    shp.setAttribute('preserveAspectRatio', 'none');
+    shp.classList.add('el-shape');
+    shp.style.width = '100%'; shp.style.height = '100%'; shp.style.display = 'block';
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', SHAPE_PATHS[kind]);
+    path.setAttribute('fill', '#3498db');
+    shp.appendChild(path);
+  }
+  wrap.appendChild(shp);
+  addHandle(wrap);
+  stage.appendChild(wrap);
+  makeDraggable(wrap);
+  selectEl(wrap);
+}
+const shapesPopup = document.getElementById('shapesPopup');
+document.getElementById('btnShapes').addEventListener('click', ()=>{
+  shapesPopup.classList.toggle('hidden');
+});
+shapesPopup.querySelectorAll('.shape-opt').forEach(opt=>{
+  opt.addEventListener('click', ()=>{
+    addShape(opt.dataset.shape);
+    shapesPopup.classList.add('hidden');
+  });
+});
+document.getElementById('shapeColor').addEventListener('input', e=>{
+  if(!selected) return;
+  const shp = selected.querySelector('.el-shape');
+  if(!shp) return;
+  if(shp.tagName.toLowerCase() === 'svg'){
+    shp.querySelector('path').setAttribute('fill', e.target.value);
+  } else {
+    shp.style.background = e.target.value;
+  }
+});
+
+/* ---------- Images (fonction commune : upload, clipart SVG, coller) ---------- */
+function addImageElement(src, w, h){
+  const wrap = document.createElement('div');
+  wrap.className = 'el el-image-wrap';
+  wrap.style.left='50px'; wrap.style.top='50px';
+  wrap.style.width=(w||220)+'px'; wrap.style.height=(h||160)+'px';
+  const img = document.createElement('img');
+  img.crossOrigin = 'anonymous'; // nécessaire pour l'export si l'image vient de GitHub
+  img.src = src;
+  wrap.appendChild(img);
+  addHandle(wrap);
+  stage.appendChild(wrap);
+  makeDraggable(wrap);
+  selectEl(wrap);
+  wrap.style.zIndex = ++zTop;
+  return wrap;
+}
+
+document.getElementById('fileInput').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev=> addImageElement(ev.target.result, 220, 160);
+  reader.readAsDataURL(file);
+  e.target.value = '';
+});
+
+/* ---------- Clipart SVG (façon "Word") : lu dynamiquement depuis /clipart/ sur GitHub ---------- */
+const clipartPanel = document.getElementById('clipartPanel');
+const clipartGrid = document.getElementById('clipartGrid');
+
+document.getElementById('btnClipart').addEventListener('click', ()=>{
+  clipartPanel.classList.remove('hidden');
+  loadClipartLibrary();
+});
+document.getElementById('closeClipart').addEventListener('click', ()=>{
+  clipartPanel.classList.add('hidden');
+});
+document.getElementById('refreshClipart').addEventListener('click', loadClipartLibrary);
+
+async function loadClipartLibrary(){
+  clipartGrid.innerHTML = '<p class="clipart-msg">Chargement de la bibliothèque…</p>';
+  try {
+    // API GitHub directe : reflète le repo en temps réel, sans cache CDN
+    const apiUrl = `https://api.github.com/repos/${REPO_USER}/${REPO_NAME}/contents/${CLIPART_FOLDER}?ref=${REPO_BRANCH}`;
+    const res = await fetch(apiUrl, { cache:'no-store', headers:{ 'Accept':'application/vnd.github+json' } });
+    if(!res.ok) throw new Error('dossier introuvable ('+res.status+')');
+    const data = await res.json();
+    const files = (Array.isArray(data) ? data : []).filter(f =>
+      f.type === 'file' && f.name.toLowerCase().endsWith('.svg')
+    );
+    clipartGrid.innerHTML = '';
+    if(files.length === 0){
+      clipartGrid.innerHTML = `<p class="clipart-msg">Aucun SVG dans /${CLIPART_FOLDER}/ pour l'instant.<br>Ajoute des fichiers .svg sur GitHub, puis clique "Actualiser".</p>`;
+      return;
+    }
+    files.forEach(f=>{
+      const rawUrl = f.download_url; // raw.githubusercontent.com, CORS ok, temps réel
+      const nom = f.name.replace(/\.svg$/i, '');
+      const item = document.createElement('div');
+      item.className = 'clipart-item';
+      item.title = nom;
+      item.innerHTML = `<img src="${rawUrl}" alt="${nom}"><span>${nom}</span>`;
+      item.addEventListener('click', ()=>{
+        addImageElement(rawUrl, 140, 140);
+        clipartPanel.classList.add('hidden');
+      });
+      clipartGrid.appendChild(item);
+    });
+  } catch(err){
+    clipartGrid.innerHTML = `<p class="clipart-msg">Impossible de charger la bibliothèque.<br>Vérifie le nom du dépôt / la branche (${REPO_BRANCH}) en haut du script, ou ta connexion.</p>`;
+  }
+}
+
+/* ---------- Élément : devant / supprimer ---------- */
+document.getElementById('btnFront').addEventListener('click', ()=>{
+  if(selected) selected.style.zIndex = ++zTop;
+});
+document.getElementById('btnDelete').addEventListener('click', ()=>{
+  if(selected){ selected.remove(); selected=null; updatePropsPanel(); }
+});
+document.addEventListener('keydown', e=>{
+  if(e.key === 'Delete' && selected && !selected.querySelector('.el-text:focus')){
+    selected.remove(); selected=null; updatePropsPanel();
+  }
+});
+
+/* ---------- Copier / dupliquer un élément (Ctrl+C puis Ctrl+V) ---------- */
+document.addEventListener('keydown', e=>{
+  const ctrl = e.ctrlKey || e.metaKey;
+  if(!ctrl) return;
+  const key = e.key.toLowerCase();
+  const hasTextSelection = window.getSelection().toString().length > 0;
+  if(key === 'c' && selected && !hasTextSelection){
+    clipboardEl = selected.cloneNode(true);
+    e.preventDefault();
+  }
+  if(key === 'v' && clipboardEl && !hasTextSelection && !document.activeElement.isContentEditable){
+    duplicateClipboardEl();
+    e.preventDefault();
+  }
+});
+function duplicateClipboardEl(){
+  const clone = clipboardEl.cloneNode(true);
+  clone.classList.remove('selected');
+  const left = parseInt(clone.style.left)||0;
+  const top  = parseInt(clone.style.top)||0;
+  clone.style.left = (left+20)+'px';
+  clone.style.top  = (top+20)+'px';
+  stage.appendChild(clone);
+  makeDraggable(clone);
+  selectEl(clone);
+  clone.style.zIndex = ++zTop;
+}
+/* ---------- Coller une image depuis le presse-papier (capture d'écran, image copiée) ---------- */
+document.addEventListener('paste', e=>{
+  const target = e.target;
+  const editingText = target.closest && target.closest('.el-text');
+  const items = (e.clipboardData || window.clipboardData) ? (e.clipboardData || window.clipboardData).items : null;
+  let imageItem = null;
+  if(items){
+    for(const it of items){ if(it.type.indexOf('image') !== -1){ imageItem = it; break; } }
+  }
+  if(imageItem){
+    e.preventDefault();
+    const blob = imageItem.getAsFile();
+    const reader = new FileReader();
+    reader.onload = ev => addImageElement(ev.target.result, 220, 160);
+    reader.readAsDataURL(blob);
+  } else if(!editingText && clipboardEl){
+    e.preventDefault();
+    duplicateClipboardEl();
+  }
+});
+stage.addEventListener('pointerdown', e=>{
+  if(e.target === stage) selectEl(null);
+});
+
+/* ---------- Sauvegarde locale (brouillon) ---------- */
+document.getElementById('btnSave').addEventListener('click', ()=>{
+  localStorage.setItem('affiche_brouillon', stage.innerHTML);
+  localStorage.setItem('affiche_bg', stage.style.background);
+  localStorage.setItem('affiche_fmt', document.querySelector('.fmt-btn.active').dataset.fmt);
+  alert('Brouillon sauvegardé sur cet appareil.');
+});
+document.getElementById('btnLoad').addEventListener('click', ()=>{
+  const html = localStorage.getItem('affiche_brouillon');
+  if(!html){ alert('Aucun brouillon trouvé sur cet appareil.'); return; }
+  stage.innerHTML = html;
+  stage.style.background = localStorage.getItem('affiche_bg') || '#ffffff';
+  setFormat(localStorage.getItem('affiche_fmt') || 'portrait');
+  stage.querySelectorAll('.el').forEach(wrap=>{ makeDraggable(wrap); });
+  selectEl(null);
+});
+document.getElementById('btnClear').addEventListener('click', ()=>{
+  if(confirm('Tout effacer ?')){ stage.innerHTML=''; selected=null; updatePropsPanel(); }
+});
+
+/* ---------- Export ---------- */
+function prepareExport(cb){
+  if(selected) selectEl(null);
+  document.querySelectorAll('.handle').forEach(h=>h.style.display='none');
+  html2canvas(stage, {scale:2, useCORS:true}).then(canvas=>{
+    document.querySelectorAll('.handle').forEach(h=>h.style.display='block');
+    cb(canvas);
+  });
+}
+document.getElementById('btnPng').addEventListener('click', ()=>{
+  prepareExport(canvas=>{
+    const link = document.createElement('a');
+    link.download = 'affiche.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+});
+document.getElementById('btnPdf').addEventListener('click', ()=>{
+  prepareExport(canvas=>{
+    const { jsPDF } = window.jspdf;
+    const w = stage.offsetWidth, h = stage.offsetHeight;
+    const pdf = new jsPDF({ orientation: w>h?'landscape':'portrait', unit:'px', format:[w,h] });
+    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, w, h);
+    pdf.save('affiche.pdf');
+  });
+});
+</script>
+
+</body>
+</html>
