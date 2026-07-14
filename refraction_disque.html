@@ -63,17 +63,18 @@
   if(qs.has("p")){
     const dec = decodeParams(qs.get("p"));
     if(dec) params = Object.assign(params, dec);
-  } else {
-    if(qs.has("n1")) params.n1 = parseFloat(qs.get("n1"));
-    if(qs.has("n2")) params.n2 = parseFloat(qs.get("n2"));
-    if(qs.has("i1")) params.i1 = parseFloat(qs.get("i1"));
-    if(qs.has("hue")) params.hue = parseFloat(qs.get("hue"));
-    if(qs.has("move")) params.move = parseInt(qs.get("move"),10);
-    if(qs.has("laser")) params.laser = parseInt(qs.get("laser"),10);
-    if(qs.has("zoom")) params.zoom = parseInt(qs.get("zoom"),10);
-    if(qs.has("upper")) params.upper = (qs.get("upper") === "1" || qs.get("upper") === "true");
-    if(qs.has("orient")) params.orient = qs.get("orient");
   }
+  // les paramètres en clair (utiles pour tester vite) écrasent toujours ce qui
+  // vient de "p", même si "p" est présent dans l'URL
+  if(qs.has("n1")) params.n1 = parseFloat(qs.get("n1"));
+  if(qs.has("n2")) params.n2 = parseFloat(qs.get("n2"));
+  if(qs.has("i1")) params.i1 = parseFloat(qs.get("i1"));
+  if(qs.has("hue")) params.hue = parseFloat(qs.get("hue"));
+  if(qs.has("move")) params.move = parseInt(qs.get("move"),10);
+  if(qs.has("laser")) params.laser = parseInt(qs.get("laser"),10);
+  if(qs.has("zoom")) params.zoom = parseInt(qs.get("zoom"),10);
+  if(qs.has("upper")) params.upper = (qs.get("upper") === "1" || qs.get("upper") === "true");
+  if(qs.has("orient")) params.orient = qs.get("orient");
   const n1 = params.n1, n2 = params.n2;
   const hue = (params.hue === null || isNaN(params.hue)) ? Math.floor(Math.random()*360) : params.hue;
   const canMove = !(params.move === 0 || params.move === "0" || params.move === false);
@@ -117,8 +118,6 @@
   let upper  = !!params.upper;
   let dragging = false;
   let laserOn = (params.laser === 1 || params.laser === "1" || params.laser === true);
-  let panelYIncidentCur = null, panelYRefracteCur = null;
-  let animFrameId = null;
 
   /* ---------- Géométrie ---------- */
   function entryPoint(){
@@ -287,7 +286,9 @@
   }
 
   function drawSourceProp(){
-    const prop = propPos();
+    // calcule sa propre position "monde" (avec orientation) pour pouvoir être
+    // dessiné hors du bloc tourné, par-dessus les panneaux de zoom
+    const prop = rotatePoint(propPos(), orientationRad);
     const angleToCenter = Math.atan2(cy-prop.y, cx-prop.x);
     ctx.save();
     ctx.translate(prop.x,prop.y);
@@ -345,6 +346,26 @@
     ctx.stroke();
   }
 
+  // Table de correspondance (orient, upper) -> coins des panneaux de zoom.
+  // Établie par F. Jakubcik à partir d'une table de vérité complète couvrant
+  // les 4 orientations x 2 positions de source, garantissant qu'aucun panneau
+  // ne masque jamais un rayon.
+  const ZOOM_CORNER_TABLE = {
+    "D_1": { inc:"G,B", ref:"D,H" },
+    "D_0": { inc:"G,H", ref:"D,B" },
+    "G_1": { inc:"D,H", ref:"G,B" },
+    "G_0": { inc:"D,B", ref:"G,H" },
+    "H_1": { inc:"D,B", ref:"G,H" },
+    "H_0": { inc:"G,B", ref:"D,H" },
+    "B_1": { inc:"G,H", ref:"D,B" },
+    "B_0": { inc:"D,H", ref:"G,B" }
+  };
+  function cornerFromLabel(label, panelSize){
+    const [xl, yl] = label.split(",");
+    const near = 14, far = SIZE-panelSize-14;
+    return { x: xl === "G" ? near : far, y: yl === "H" ? near : far };
+  }
+
   function render(){
     ctx.clearRect(0,0,SIZE,SIZE);
     ctx.fillStyle = "#ffffff";
@@ -357,77 +378,33 @@
     fillMedium2();
     drawProtractor(1);
     drawRayLines(1);
-    drawSourceProp();
     ctx.restore();
 
     if(laserOn && zoomEnabled){
       const panelSize = 220;
+      const key = orientKey + "_" + (upper ? 1 : 0);
+      const corners = ZOOM_CORNER_TABLE[key] || ZOOM_CORNER_TABLE["D_1"];
+
       const entry = entryPoint();
       const entryAngleRad = Math.atan2(entry.y-cy, entry.x-cx);
-      drawZoomPanel(14, panelYIncidentCur ?? 14, panelSize, entryAngleRad);
+      const incCorner = cornerFromLabel(corners.inc, panelSize);
+      drawZoomPanel(incCorner.x, incCorner.y, panelSize, entryAngleRad);
 
       const {dt} = computeRays();
       if(dt){
         const exitAngleRad = Math.atan2(dt.y, dt.x);
-        drawZoomPanel(SIZE-panelSize-14, panelYRefracteCur ?? 14, panelSize, exitAngleRad);
+        const refCorner = cornerFromLabel(corners.ref, panelSize);
+        drawZoomPanel(refCorner.x, refCorner.y, panelSize, exitAngleRad);
       }
     }
+
+    // dessinée en dernier : toujours visible et cliquable, jamais recouverte
+    // par un panneau de zoom
+    drawSourceProp();
   }
 
-  /* ---------- Animation des panneaux de zoom (glissement plutôt qu'un saut) ---------- */
-  // choisit haut ou bas selon le coin le plus ÉLOIGNÉ du point (distance réelle,
-  // pas juste un test sur y) : reste correct quelle que soit l'orientation, y
-  // compris H/B où le rayon ne traverse jamais l'axe horizontal cy
-  function panelSideFor(worldPoint, panelX, panelSize){
-    const topY = 14, botY = SIZE - panelSize - 14;
-    const topC = { x: panelX + panelSize/2, y: topY + panelSize/2 };
-    const botC = { x: panelX + panelSize/2, y: botY + panelSize/2 };
-    const dTop = Math.hypot(worldPoint.x-topC.x, worldPoint.y-topC.y);
-    const dBot = Math.hypot(worldPoint.x-botC.x, worldPoint.y-botC.y);
-    return dTop > dBot ? topY : botY;
-  }
-
-  function stepAnimation(){
-    const panelSize = 220;
-
-    const entryWorld = rotatePoint(entryPoint(), orientationRad);
-    const targetInc = panelSideFor(entryWorld, 14, panelSize);
-
-    const {dt} = computeRays();
-    let targetRef = targetInc;
-    if(dt){
-      const exitWorld = rotatePoint({x: cx+dt.x*R, y: cy+dt.y*R}, orientationRad);
-      targetRef = panelSideFor(exitWorld, SIZE-panelSize-14, panelSize);
-    }
-
-    if(panelYIncidentCur === null) panelYIncidentCur = targetInc;
-    if(panelYRefracteCur === null) panelYRefracteCur = targetRef;
-
-    const speed = 0.22;
-    panelYIncidentCur += (targetInc - panelYIncidentCur)*speed;
-    panelYRefracteCur += (targetRef - panelYRefracteCur)*speed;
-
-    render();
-
-    const settled = Math.abs(targetInc-panelYIncidentCur) < 0.5 && Math.abs(targetRef-panelYRefracteCur) < 0.5;
-    if(!settled){
-      animFrameId = requestAnimationFrame(stepAnimation);
-    } else {
-      panelYIncidentCur = targetInc;
-      panelYRefracteCur = targetRef;
-      render();
-      animFrameId = null;
-    }
-  }
   function requestUpdate(){
-    if(!laserOn || !zoomEnabled){
-      if(animFrameId){ cancelAnimationFrame(animFrameId); animFrameId = null; }
-      render();
-      return;
-    }
-    if(animFrameId === null){
-      animFrameId = requestAnimationFrame(stepAnimation);
-    }
+    render();
   }
 
   /* ---------- Interaction (souris + tactile) ---------- */
