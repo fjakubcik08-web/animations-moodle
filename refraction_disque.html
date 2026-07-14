@@ -33,10 +33,12 @@
      move   : 1 = la source est déplaçable, 0 = figée (image fixe pour un devoir)
      laser  : 1 = laser allumé à l'ouverture, 0 = éteint (défaut)
      zoom   : 1 = fenêtres de lecture affichées (défaut), 0 = masquées
+     see_i2 : 1 = rayon réfracté + son zoom affichés (défaut), 0 = masqués
+              (pour faire chercher i2 aux élèves)
      orient : orientation du dioptre : D=droite, G=gauche, H=haut, B=bas
      hue    : teinte (0-360) du milieu 2, sinon tirée aléatoirement
   ---------------------------------------------------------------------------------- */
-  const DEFAULTS = { n1: 1, n2: 1.5, i1: 40, upper: true, hue: null, move: 1, laser: 0, zoom: 1, orient: "D" };
+  const DEFAULTS = { n1: 1, n2: 1.5, i1: 40, upper: true, hue: null, move: 1, laser: 0, zoom: 1, see_i2: 1, orient: "D" };
 
   const XOR_KEY = "FJ-refraction-disque";
   function xorCipher(str, key){
@@ -73,12 +75,14 @@
   if(qs.has("move")) params.move = parseInt(qs.get("move"),10);
   if(qs.has("laser")) params.laser = parseInt(qs.get("laser"),10);
   if(qs.has("zoom")) params.zoom = parseInt(qs.get("zoom"),10);
+  if(qs.has("see_i2")) params.see_i2 = parseInt(qs.get("see_i2"),10);
   if(qs.has("upper")) params.upper = (qs.get("upper") === "1" || qs.get("upper") === "true");
   if(qs.has("orient")) params.orient = qs.get("orient");
   const n1 = params.n1, n2 = params.n2;
   const hue = (params.hue === null || isNaN(params.hue)) ? Math.floor(Math.random()*360) : params.hue;
   const canMove = !(params.move === 0 || params.move === "0" || params.move === false);
   const zoomEnabled = !(params.zoom === 0 || params.zoom === "0" || params.zoom === false);
+  const seeI2 = !(params.see_i2 === 0 || params.see_i2 === "0" || params.see_i2 === false);
 
   const ORIENT_MAP = { D:0, G:180, H:-90, B:90 };
   const orientKey = String(params.orient || "D").toUpperCase();
@@ -275,7 +279,7 @@
     ctx.lineWidth = (tir ? 2.4 : 1.4)/lwScale;
     ctx.stroke();
 
-    if(dt){
+    if(dt && seeI2){
       ctx.beginPath();
       ctx.moveTo(cx,cy);
       ctx.lineTo(cx+dt.x*L, cy+dt.y*L);
@@ -391,7 +395,7 @@
       drawZoomPanel(incCorner.x, incCorner.y, panelSize, entryAngleRad);
 
       const {dt} = computeRays();
-      if(dt){
+      if(dt && seeI2){
         const exitAngleRad = Math.atan2(dt.y, dt.x);
         const refCorner = cornerFromLabel(corners.ref, panelSize);
         drawZoomPanel(refCorner.x, refCorner.y, panelSize, exitAngleRad);
