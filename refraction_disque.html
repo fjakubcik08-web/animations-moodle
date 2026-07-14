@@ -120,6 +120,7 @@
   /* ---------- État ---------- */
   let theta1 = clampAngle(isFinite(Number(params.i1)) ? Number(params.i1) : 40);
   let upper  = !!params.upper;
+  let animPhase = 0; // phase de l'ondulation du rayon "mystère" (see_i2=0)
   let dragging = false;
   let laserOn = (params.laser === 1 || params.laser === "1" || params.laser === true);
 
@@ -287,6 +288,116 @@
       ctx.lineWidth = 2.4/lwScale;
       ctx.stroke();
     }
+
+    if(dt && !seeI2){
+      drawMysteryRefraction(lwScale, dt);
+    }
+  }
+
+  // petite étoile scintillante (glyphe à 4 branches)
+  function drawSparkle(x, y, r, alpha, color){
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    for(let i=0;i<4;i++){
+      const a1 = i*Math.PI/2;
+      const a2 = a1 + Math.PI/4;
+      ctx.lineTo(Math.cos(a1)*r, Math.sin(a1)*r);
+      ctx.lineTo(Math.cos(a2)*r*0.32, Math.sin(a2)*r*0.32);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // effet "mystère" : gros rayon flou, ondulant, scintillant ET dont la
+  // direction elle-même dérive aléatoirement dans le temps (bruit lissé,
+  // indépendant du vrai i2) : impossible d'en tirer ne serait-ce qu'un
+  // intervalle de confiance en observant l'anim
+  function drawMysteryRefraction(lwScale, dt){
+    const sign = dt.y >= 0 ? 1 : -1; // reste du même côté que l'incidence
+    const t = animPhase*0.35;
+    const noise = Math.sin(t)*0.42 + Math.sin(t*1.9+2.1)*0.33 + Math.sin(t*3.7+4.7)*0.25;
+    const fakeDeg = 45 + noise*38; // dérive lissée mais large, ~7° à ~83°
+    const angle = Math.atan2(sign*Math.sin(fakeDeg*Math.PI/180), Math.cos(fakeDeg*Math.PI/180));
+
+    const len = R*1.15;
+    const amp = 34/lwScale;      // amplitude (croît avec la distance) : assez
+                                  // grande pour rendre l'angle illisible
+    const waves = 3;             // nombre d'ondulations sur la longueur
+    const steps = 60;
+    const nx = -Math.sin(angle), ny = Math.cos(angle); // normale au rayon
+
+    function pointAt(f, offsetPhase){
+      const d = f*len;
+      const wobble = Math.sin(f*waves*Math.PI*2 + animPhase + offsetPhase) * amp * f;
+      return { x: cx + Math.cos(angle)*d + nx*wobble, y: cy + Math.sin(angle)*d + ny*wobble };
+    }
+    function pathAt(offsetPhase){
+      ctx.beginPath();
+      for(let i=0;i<=steps;i++){
+        const f = i/steps;
+        const p = pointAt(f, offsetPhase);
+        if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+      }
+    }
+
+    // halo réellement flouté (filtre canvas), sous le trait central
+    ctx.save();
+    ctx.filter = `blur(${13/lwScale}px)`;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    pathAt(0);
+    ctx.strokeStyle = "rgba(229,57,53,0.55)";
+    ctx.lineWidth = 34/lwScale;
+    ctx.stroke();
+    ctx.filter = `blur(${24/lwScale}px)`;
+    ctx.strokeStyle = "rgba(229,57,53,0.32)";
+    ctx.lineWidth = 52/lwScale;
+    ctx.stroke();
+    ctx.restore();
+
+    // trait central ondulant, légèrement flouté aussi (jamais net)
+    ctx.save();
+    ctx.filter = `blur(${3.2/lwScale}px)`;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    pathAt(0);
+    ctx.strokeStyle = "rgba(229,57,53,0.78)";
+    ctx.lineWidth = 9/lwScale;
+    ctx.stroke();
+    ctx.restore();
+
+    // étoiles scintillantes le long du ruban
+    const sparkleFs = [0.24, 0.42, 0.6, 0.78, 0.94];
+    ctx.save();
+    for(let i=0;i<sparkleFs.length;i++){
+      const f = sparkleFs[i];
+      const p = pointAt(f, i*1.3);
+      const twinkle = 0.35 + 0.55*Math.abs(Math.sin(animPhase*1.8 + i*2.1));
+      const r = (8 + 3*Math.sin(animPhase*1.3 + i))/lwScale;
+      drawSparkle(p.x, p.y, r, twinkle, "#ffb3ad");
+    }
+    ctx.restore();
+
+    // gros "?" pulsant au centre du milieu 2 : le message est sans ambiguïté
+    const qPos = pointAt(0.5, 0);
+    const pulse = 1 + 0.10*Math.sin(animPhase*1.1);
+    ctx.save();
+    ctx.filter = `blur(${1.2/lwScale}px)`;
+    ctx.translate(qPos.x, qPos.y);
+    ctx.scale(pulse, pulse);
+    ctx.fillStyle = "#c62828";
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 3/lwScale;
+    ctx.font = `bold ${46/lwScale}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.strokeText("?", 0, 0);
+    ctx.fillText("?", 0, 0);
+    ctx.restore();
   }
 
   function drawSourceProp(){
@@ -407,8 +518,27 @@
     drawSourceProp();
   }
 
+  let animRunning = false;
+  function shouldAnimate(){
+    if(!laserOn || seeI2) return false;
+    const {dt} = computeRays();
+    return !!dt;
+  }
+  function animFrame(ts){
+    animPhase = ts/260;
+    render();
+    if(shouldAnimate()){
+      requestAnimationFrame(animFrame);
+    } else {
+      animRunning = false;
+    }
+  }
   function requestUpdate(){
     render();
+    if(shouldAnimate() && !animRunning){
+      animRunning = true;
+      requestAnimationFrame(animFrame);
+    }
   }
 
   /* ---------- Interaction (souris + tactile) ---------- */
