@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Course de lumière</title>
+<style>
+  :root{
+    --bg:#eef1f8; --panel:#ffffff; --line:#d7deee; --text:#1c2438; --sub:#6b7488;
+    --vide:#f4f7ff; --m1:#2f8fe0; --m2:#e0642f; --accent:#f5a623;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Segoe UI',Arial,sans-serif;padding:14px;}
+  .wrap{max-width:900px;margin:0 auto;}
+  h2{margin:0 0 10px 2px;font-size:18px;font-weight:600;color:var(--accent);}
+  .lane{
+    position:relative;border:1px solid var(--line);
+    border-radius:8px;margin-bottom:10px;height:84px;overflow:hidden;
+  }
+  .lane.hidden{display:none;}
+  .laneVide{background:radial-gradient(1200px 200px at 20% 30%, #241a45 0%, #0a0e2a 55%, #05060f 100%);}
+  /* .laneM1 / .laneM2 : fond posé dynamiquement en JS selon le thème généré */
+
+  .track{position:absolute;inset:0;overflow:hidden;}
+  .world{position:absolute;top:0;bottom:0;left:0;will-change:transform;}
+
+  /* étoiles piste vide (fixe) */
+  .laneVide .world{
+    background-image:
+      radial-gradient(1.5px 1.5px at 15px 12px, #fff 100%, transparent),
+      radial-gradient(1.5px 1.5px at 65px 40px, #cfe0ff 100%, transparent),
+      radial-gradient(1px 1px at 110px 20px, #fff 100%, transparent),
+      radial-gradient(1.5px 1.5px at 150px 55px, #cfe0ff 100%, transparent),
+      radial-gradient(1px 1px at 190px 15px, #fff 100%, transparent);
+    background-repeat:repeat-x;background-size:210px 100%;
+  }
+  /* motifs génériques piochés par le générateur de décor */
+  .world.worldWave{
+    background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.10) 0 8px, transparent 8px 46px);
+  }
+  .world.worldFacet{
+    background-image:repeating-linear-gradient(65deg, rgba(255,255,255,.09) 0 10px, transparent 10px 50px),
+                      repeating-linear-gradient(-65deg, rgba(255,255,255,.06) 0 10px, transparent 10px 60px);
+  }
+  .world.worldGrid{
+    background-image:repeating-linear-gradient(0deg, rgba(255,255,255,.09) 0 2px, transparent 2px 34px),
+                      repeating-linear-gradient(90deg, rgba(255,255,255,.09) 0 2px, transparent 2px 34px);
+  }
+  .world.worldBubbles{
+    background-image:
+      radial-gradient(3px 3px at 20px 15px, rgba(255,255,255,.5) 100%, transparent),
+      radial-gradient(2px 2px at 60px 45px, rgba(255,255,255,.4) 100%, transparent),
+      radial-gradient(4px 4px at 100px 20px, rgba(255,255,255,.35) 100%, transparent),
+      radial-gradient(2px 2px at 150px 50px, rgba(255,255,255,.5) 100%, transparent);
+    background-repeat:repeat-x;background-size:190px 100%;
+  }
+
+  .kerb{position:absolute;left:0;right:0;height:9px;
+    background-repeat:repeat-x;background-size:44px 100%;
+    background-image:repeating-linear-gradient(90deg,var(--kerbA,#fff) 0 22px,var(--kerbB,#333) 22px 44px);}
+  .kerb.top{top:0;} .kerb.bottom{bottom:0;}
+  .laneVide .kerb{background-image:repeating-linear-gradient(90deg,#6f5fd8 0 22px,#2a2260 22px 44px);}
+
+  .pylon{position:absolute;width:10px;height:10px;transform:translate(-50%,-50%);opacity:.9;
+    background:var(--pylonBg,#fff);}
+  .pylon.shapeCircle{border-radius:50%;}
+  .pylon.shapeDiamond{transform:translate(-50%,-50%) rotate(45deg);border-radius:2px;}
+  .pylon.shapePrism{clip-path:polygon(50% 0%,0% 100%,100% 100%);}
+  .laneVide .pylon{background:radial-gradient(circle,#aef 0%,transparent 70%);box-shadow:0 0 6px 2px #9df;border-radius:50%;}
+
+  .startFlag{position:absolute;top:9px;bottom:9px;width:12px;
+    background-image:repeating-conic-gradient(#fff 0 25%, #222 0 50%);
+    background-size:8px 8px;border-radius:2px;z-index:2;}
+
+  .lane .label{
+    position:absolute;top:6px;left:10px;font-size:13px;color:var(--sub);z-index:5;
+    text-shadow:0 1px 3px #000;
+  }
+  .lane .chrono{
+    position:absolute;top:6px;right:10px;background:#0c1220cc;border:1px solid var(--line);
+    border-radius:5px;padding:4px 11px;font-variant-numeric:tabular-nums;font-size:16px;
+    font-weight:700;color:#fff;z-index:5;min-width:104px;text-align:center;backdrop-filter:blur(2px);
+  }
+  .lane.running .chrono{
+    animation:chronoPulse .5s ease-in-out infinite;
+    border-color:var(--accent);
+  }
+  @keyframes chronoPulse{
+    0%,100%{transform:scale(1);}
+    50%{transform:scale(1.08);}
+  }
+  .finishFlag{
+    position:absolute;top:9px;bottom:9px;width:12px;
+    background-image:repeating-conic-gradient(#fff 0 25%, #111 0 50%);
+    background-size:8px 8px;border-radius:2px;
+    z-index:2;box-shadow:0 0 8px 1px rgba(255,255,255,.5);
+  }
+  .lane .bar{
+    position:absolute;top:50%;height:9px;border-radius:4px;
+    transform:translateY(-50%);z-index:3;
+  }
+  .lane .bar::after{
+    content:'';position:absolute;right:-4px;top:-4px;width:17px;height:17px;border-radius:50%;
+    box-shadow:0 0 12px 4px currentColor;opacity:.8;
+  }
+  .laneVide .bar{background:var(--vide);color:var(--vide);}
+  .laneM1 .bar{background:var(--m1);color:var(--m1);}
+  .laneM2 .bar{background:var(--m2);color:var(--m2);}
+  .controls{display:flex;align-items:stretch;gap:10px;margin-top:4px;}
+  .box{
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:12px 16px;font-size:14px;flex:1;display:flex;justify-content:space-between;align-items:center;
+  }
+  button{
+    background:var(--accent);color:#1a1400;border:none;border-radius:8px;
+    padding:0 26px;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.3px;
+    white-space:nowrap;display:flex;align-items:center;justify-content:center;min-width:140px;
+  }
+  button:disabled{opacity:.4;cursor:default;}
+  button:hover:not(:disabled){filter:brightness(1.08);}
+  .distVal{color:var(--accent);font-weight:700;}
+  .fxLayer{position:absolute;inset:0;pointer-events:none;z-index:8;overflow:visible;}
+  .fxFlash{
+    position:absolute;top:50%;left:0;width:220px;height:220px;
+    transform:translate(-50%,-50%);border-radius:50%;
+    background:radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,240,150,.55) 35%, rgba(255,240,150,0) 70%);
+    animation:fxFlashPop .5s ease-out forwards;
+  }
+  @keyframes fxFlashPop{0%{opacity:0;transform:translate(-50%,-50%) scale(.1);}
+    25%{opacity:1;}100%{opacity:0;transform:translate(-50%,-50%) scale(1.6);}}
+
+  .fxStar{
+    position:absolute;top:50%;left:0;width:var(--s);height:var(--s);
+    background:var(--c);
+    clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
+    filter:drop-shadow(0 0 4px var(--c));
+    animation:fxStarFly var(--dur) cubic-bezier(.15,.6,.35,1) forwards;
+  }
+  @keyframes fxStarFly{
+    0%{transform:translate(-50%,-50%) rotate(0deg) scale(0.3);opacity:1;}
+    70%{opacity:1;}
+    100%{transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(var(--rot)) scale(1);opacity:0;}
+  }
+
+  .fxText{
+    position:absolute;top:50%;left:0;transform:translate(-50%,-50%) scale(0);
+    font-size:15px;font-weight:800;color:#fff;white-space:nowrap;letter-spacing:.5px;
+    text-shadow:0 0 6px var(--c), 0 0 14px var(--c), 0 2px 3px #000;
+    animation:fxTextPop .9s cubic-bezier(.2,1.4,.4,1) forwards;
+  }
+  @keyframes fxTextPop{
+    0%{transform:translate(-50%,-50%) scale(0) rotate(-8deg);opacity:0;}
+    35%{transform:translate(-50%,-50%) scale(1.35) rotate(4deg);opacity:1;}
+    55%{transform:translate(-50%,-50%) scale(1) rotate(0deg);}
+    100%{transform:translate(-70%,-160%) scale(1) rotate(0deg);opacity:0;}
+  }
+
+  @keyframes laneShake{
+    0%,100%{transform:translateX(0);}
+    20%{transform:translateX(-4px);}
+    40%{transform:translateX(5px);}
+    60%{transform:translateX(-3px);}
+    80%{transform:translateX(3px);}
+  }
+  .lane.shake{animation:laneShake .35s ease-out;}
+  .arrived .chrono{border-color:var(--accent);color:var(--accent);font-weight:700;}
+  .hint{font-size:12px;color:var(--sub);margin:8px 2px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2>🏁 Course de la lumière</h2>
+
+  <div class="lane laneVide" id="laneVide">
+    <div class="kerb top"></div><div class="kerb bottom"></div>
+    <div class="track"><div class="world" id="worldVide"></div></div>
+    <div class="label">Lumière dans le vide</div>
+    <div class="chrono" id="chronoVide">0.0 fs</div>
+    <div class="bar" id="barVide"></div>
+  </div>
+
+  <div class="lane laneM1" id="laneM1">
+    <div class="kerb top"></div><div class="kerb bottom"></div>
+    <div class="track"><div class="world" id="worldM1"></div></div>
+    <div class="label" id="labelM1">Lumière dans un milieu 1</div>
+    <div class="chrono" id="chronoM1">0.0 fs</div>
+    <div class="bar" id="barM1"></div>
+  </div>
+
+  <div class="lane laneM2" id="laneM2">
+    <div class="kerb top"></div><div class="kerb bottom"></div>
+    <div class="track"><div class="world" id="worldM2"></div></div>
+    <div class="label" id="labelM2">Lumière dans un milieu 2</div>
+    <div class="chrono" id="chronoM2">0.0 fs</div>
+    <div class="bar" id="barM2"></div>
+  </div>
+
+  <div class="controls">
+    <button id="btnStart">DÉPART</button>
+    <div class="box">
+      <span>Distance à parcourir</span>
+      <span class="distVal" id="distVal">– µm</span>
+    </div>
+  </div>
+  <div class="hint">Chronomètre en femtosecondes (1 fs = 10⁻¹⁵ s). Calcule v = d / t pour chaque milieu.</div>
+</div>
+
+<script>
+// ── Décodage des paramètres (clé XOR partagée avec les autres animations) ──
+const _ANIM_KEY = [83,17,204,61,128,42,75,199,33,91,156,47,113,8,240,66];
+function decodeParams(){
+  try{
+    const raw = new URLSearchParams(location.search).get('param');
+    if(!raw) return {};
+    let b64 = raw.replace(/-/g,'+').replace(/_/g,'/');
+    while(b64.length % 4) b64 += '=';
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    const dec = new Uint8Array(bytes.length);
+    for(let i=0;i<bytes.length;i++) dec[i] = bytes[i] ^ _ANIM_KEY[i % _ANIM_KEY.length];
+    return JSON.parse(new TextDecoder().decode(dec));
+  }catch(e){ return {}; }
+}
+const P = decodeParams();
+const n1   = P.n1   !== undefined ? Number(P.n1)   : 1.33;
+const n2   = P.n2   !== undefined ? Number(P.n2)   : 1.50;
+const dUm  = P.d    !== undefined ? Number(P.d)    : 200;     // distance en µm
+const cVal = P.c    !== undefined ? Number(P.c)    : 299792458; // vitesse de la lumière dans le vide, m/s
+const label1 = P.nom1 || P.label1 || 'Lumière dans l\'eau';
+const label2 = P.nom2 || P.label2 || 'Lumière dans le verre';
+const showM2 = P.showM2 !== undefined ? !!P.showM2 : true;
+
+document.getElementById('labelM1').textContent = label1;
+document.getElementById('labelM2').textContent = label2;
+document.getElementById('distVal').textContent = dUm + ' µm';
+if(!showM2) document.getElementById('laneM2').classList.add('hidden');
+
+// ── Physique ──
+const c = cVal; // m/s (paramétrable via ?c=...)
+const d_m = dUm * 1e-6;
+const v_vide = c;
+const v1 = c / n1;
+const v2 = c / n2;
+const t_vide_fs = (d_m / v_vide) * 1e15;
+const t1_fs     = (d_m / v1) * 1e15;
+const t2_fs     = (d_m / v2) * 1e15;
+
+// ── Timing d'animation (visuel) : proportionnel à l'indice, base réglable ──
+const BASE_MS = 3000; // durée du rayon dans le vide (assez long pour bien voir le chrono compter)
+const durVide = BASE_MS;
+const dur1    = BASE_MS * n1;
+const dur2    = BASE_MS * n2;
+
+// ── Générateur de décors pour les milieux (le vide garde son thème spatial fixe) ──
+const THEME_KITS = [
+  {match:['eau','water','liquide','h2o'],
+    bgFrom:'#0a3d5c', bgVia:'#0b5b82', bgTo:'#083049', world:'worldBubbles',
+    kerbA:'#ffffff', kerbB:'#0d6a94', pylonShape:'circle', pylonBg:'radial-gradient(circle,#eaffff 0%,rgba(255,255,255,.1) 70%)',
+    fxColors:['#8fe3ff','#4fa8ff','#c9f7ff','#2b7fd6'], fxText:'💧 SPLASH !'},
+  {match:['verre','glass','cristal','crystal'],
+    bgFrom:'#3a1a4d', bgVia:'#5c2166', bgTo:'#241033', world:'worldFacet',
+    kerbA:'#ff8a4f', kerbB:'#4b1a5e', pylonShape:'prism', pylonBg:'conic-gradient(from 0deg,#ff4f4f,#ffd24f,#4fff8a,#4fa8ff,#b04fff,#ff4f4f)',
+    fxColors:['#ff8a4f','#ffd24f','#b04fff','#4fff8a','#4fa8ff'], fxText:'💎 PRISME !'},
+  {match:['huile','oil'],
+    bgFrom:'#3a2a0a', bgVia:'#6e4a0c', bgTo:'#241a05', world:'worldWave',
+    kerbA:'#ffd24f', kerbB:'#6e4a0c', pylonShape:'circle', pylonBg:'radial-gradient(circle,#ffe9b8 0%,rgba(255,210,79,.15) 70%)',
+    fxColors:['#ffd24f','#ff9e2c','#fff2c9','#c97b1c'], fxText:'🛢️ GLOUP !'},
+  {match:['diamant','diamond'],
+    bgFrom:'#1a1a2e', bgVia:'#2c2c54', bgTo:'#0f0f1e', world:'worldFacet',
+    kerbA:'#aeeeff', kerbB:'#2c2c54', pylonShape:'prism', pylonBg:'conic-gradient(from 0deg,#fff,#aeeeff,#fff,#c9a8ff,#fff)',
+    fxColors:['#ffffff','#aeeeff','#c9a8ff','#eafcff'], fxText:'💠 ÉCLAT !'},
+  {match:['glace','ice','glaçon','glacon'],
+    bgFrom:'#0a2d3d', bgVia:'#1a5c72', bgTo:'#052029', world:'worldFacet',
+    kerbA:'#eafcff', kerbB:'#1a5c72', pylonShape:'diamond', pylonBg:'radial-gradient(circle,#eafcff 0%,rgba(234,252,255,.15) 70%)',
+    fxColors:['#eafcff','#8fd8ff','#ffffff','#4fa8ff'], fxText:'❄️ CRAC !'},
+  {match:['plastique','plexiglas','polymère','polymere','plastic'],
+    bgFrom:'#2a0a3d', bgVia:'#5c1a72', bgTo:'#1a0529', world:'worldGrid',
+    kerbA:'#ff4fd8', kerbB:'#5c1a72', pylonShape:'diamond', pylonBg:'radial-gradient(circle,#ff9ee8 0%,rgba(255,79,216,.15) 70%)',
+    fxColors:['#ff4fd8','#ff9ee8','#c9a8ff','#ffffff'], fxText:'✨ POP !'},
+  {match:['air','atmosphère','atmosphere'],
+    bgFrom:'#153a5c', bgVia:'#2e6fa3', bgTo:'#0d2438', world:'worldBubbles',
+    kerbA:'#eaf7ff', kerbB:'#2e6fa3', pylonShape:'circle', pylonBg:'radial-gradient(circle,#eaf7ff 0%,rgba(234,247,255,.15) 70%)',
+    fxColors:['#eaf7ff','#9ecbff','#ffffff','#4fa8ff'], fxText:'🌬️ WOOSH !'},
+  {match:['alcool','ethanol','éthanol','alcohol'],
+    bgFrom:'#0c3d3a', bgVia:'#158a7f', bgTo:'#062421', world:'worldWave',
+    kerbA:'#8fffe8', kerbB:'#158a7f', pylonShape:'circle', pylonBg:'radial-gradient(circle,#c9fff2 0%,rgba(143,255,232,.15) 70%)',
+    fxColors:['#8fffe8','#4fffcf','#ffffff','#158a7f'], fxText:'🔥 FLASH !'},
+  {match:['quartz'],
+    bgFrom:'#3d2a1a', bgVia:'#8a5c2c', bgTo:'#241708', world:'worldFacet',
+    kerbA:'#ffe6c2', kerbB:'#8a5c2c', pylonShape:'prism', pylonBg:'conic-gradient(from 0deg,#ffe6c2,#fff,#c9a86f,#fff)',
+    fxColors:['#ffe6c2','#fff2d9','#c9a86f','#ffffff'], fxText:'💠 ÉCLAT !'},
+  {match:['saphir','sapphire'],
+    bgFrom:'#0a1a5c', bgVia:'#1a3ba3', bgTo:'#050d29', world:'worldFacet',
+    kerbA:'#9ecbff', kerbB:'#1a3ba3', pylonShape:'prism', pylonBg:'conic-gradient(from 0deg,#2f6fff,#9ecbff,#fff,#2f6fff)',
+    fxColors:['#2f6fff','#9ecbff','#ffffff','#0a1a5c'], fxText:'💎 SAPHIR !'},
+  {match:['rubis','ruby'],
+    bgFrom:'#4d0a1a', bgVia:'#a31a3b', bgTo:'#290510', world:'worldFacet',
+    kerbA:'#ff9eb0', kerbB:'#a31a3b', pylonShape:'prism', pylonBg:'conic-gradient(from 0deg,#ff2f5c,#ff9eb0,#fff,#ff2f5c)',
+    fxColors:['#ff2f5c','#ff9eb0','#ffffff','#a31a3b'], fxText:'❤️ RUBIS !'},
+  {match:['améthyste','amethyste','amethyst'],
+    bgFrom:'#2a0a4d', bgVia:'#6e1aa3', bgTo:'#170529', world:'worldFacet',
+    kerbA:'#d6b0ff', kerbB:'#6e1aa3', pylonShape:'prism', pylonBg:'conic-gradient(from 0deg,#a34fff,#d6b0ff,#fff,#a34fff)',
+    fxColors:['#a34fff','#d6b0ff','#ffffff','#6e1aa3'], fxText:'💜 ÉCLAT !'},
+  {match:['ambre','amber'],
+    bgFrom:'#4d2a0a', bgVia:'#a3691a', bgTo:'#291505', world:'worldWave',
+    kerbA:'#ffd28a', kerbB:'#a3691a', pylonShape:'circle', pylonBg:'radial-gradient(circle,#ffe6b8 0%,rgba(255,210,138,.15) 70%)',
+    fxColors:['#ffd28a','#ffb04f','#fff2d9','#a3691a'], fxText:'🟠 AMBRE !'},
+  {match:['mercure','mercury'],
+    bgFrom:'#2a2a35', bgVia:'#5c5c6e', bgTo:'#161620', world:'worldBubbles',
+    kerbA:'#e8e8f0', kerbB:'#5c5c6e', pylonShape:'circle', pylonBg:'radial-gradient(circle,#f0f0f8 0%,rgba(232,232,240,.2) 70%)',
+    fxColors:['#e8e8f0','#c9c9dc','#ffffff','#8a8aa0'], fxText:'🪞 SPLASH !'},
+  {match:['essence','petrol','pétrole','kerosene','kérosène'],
+    bgFrom:'#3d3d0a', bgVia:'#8a8a1a', bgTo:'#1f1f05', world:'worldWave',
+    kerbA:'#f0ff8a', kerbB:'#8a8a1a', pylonShape:'circle', pylonBg:'radial-gradient(circle,#f7ffc2 0%,rgba(240,255,138,.15) 70%)',
+    fxColors:['#f0ff8a','#d4ff4f','#fffbe0','#8a8a1a'], fxText:'⛽ GLOUP !'},
+  {match:['glycérine','glycerine','sirop','miel','honey'],
+    bgFrom:'#4d3a0a', bgVia:'#a3801a', bgTo:'#291f05', world:'worldWave',
+    kerbA:'#ffe08a', kerbB:'#a3801a', pylonShape:'circle', pylonBg:'radial-gradient(circle,#fff0c2 0%,rgba(255,224,138,.15) 70%)',
+    fxColors:['#ffe08a','#ffb04f','#fff7dc','#a3801a'], fxText:'🍯 GLOUP !'},
+  {match:['plasma','néon','neon'],
+    bgFrom:'#1a0a3d', bgVia:'#a31af0', bgTo:'#0a0521', world:'worldGrid',
+    kerbA:'#ff4fd8', kerbB:'#4ff0ff', pylonShape:'prism', pylonBg:'conic-gradient(from 0deg,#ff4fd8,#4ff0ff,#a34fff,#ff4fd8)',
+    fxColors:['#ff4fd8','#4ff0ff','#a34fff','#ffffff'], fxText:'⚡ ZAP !'},
+  {match:['lave','magma','lava'],
+    bgFrom:'#4d0a0a', bgVia:'#c23a1a', bgTo:'#210505', world:'worldWave',
+    kerbA:'#ffb04f', kerbB:'#c23a1a', pylonShape:'diamond', pylonBg:'radial-gradient(circle,#ffd28a 0%,rgba(194,58,26,.3) 70%)',
+    fxColors:['#ff4f2f','#ffb04f','#ffe08a','#c23a1a'], fxText:'🌋 BOUM !'}
+];
+
+function hashStr(s){
+  let h = 0;
+  for(let i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+
+// thème procédural pour tout médium non reconnu : couleurs, motif et pylône
+// déterminés par le texte du label, donc stables mais uniques pour chaque libellé.
+function generateTheme(label, seedIndex){
+  const h = hashStr(label) + seedIndex * 97;
+  const hue = h % 360;
+  const hue2 = (hue + 45) % 360;
+  const worlds = ['worldWave','worldFacet','worldGrid','worldBubbles'];
+  const shapes = ['circle','diamond','prism'];
+  const world = worlds[h % worlds.length];
+  const shape = shapes[Math.floor(h / 7) % shapes.length];
+  const pylonBg = shape === 'prism'
+    ? `conic-gradient(from 0deg, hsl(${hue} 85% 65%), hsl(${hue2} 85% 65%), hsl(${(hue+120)%360} 85% 65%), hsl(${hue} 85% 65%))`
+    : `radial-gradient(circle, hsl(${hue2} 100% 85%) 0%, hsl(${hue} 75% 55%) 70%)`;
+  return {
+    bgFrom:`hsl(${hue} 55% 16%)`, bgVia:`hsl(${hue} 60% 26%)`, bgTo:`hsl(${hue} 55% 11%)`,
+    world, kerbA:`hsl(${hue2} 90% 75%)`, kerbB:`hsl(${hue} 55% 26%)`,
+    pylonShape:shape, pylonBg,
+    fxColors:[`hsl(${hue} 90% 70%)`, `hsl(${hue2} 90% 70%)`, `hsl(${(hue+90)%360} 90% 70%)`, '#ffffff'],
+    fxText:'✨ ARRIVÉE !'
+  };
+}
+
+function pickTheme(label, seedIndex){
+  const low = (label || '').toLowerCase();
+  for(const kit of THEME_KITS){
+    if(kit.match.some(k => low.includes(k))) return kit;
+  }
+  return generateTheme(label || ('milieu' + seedIndex), seedIndex);
+}
+
+const themeM1 = pickTheme(P.theme1 || label1, 1);
+const themeM2 = pickTheme(P.theme2 || label2, 2);
+function setupLane(laneId, barId, worldId, theme){
+  const lane = document.getElementById(laneId);
+  const trackW = lane.clientWidth;
+  const finishX = Math.round(trackW * 2 / 3); // arrivée aux 2/3 de l'écran : on voit la ligne venir vers le rayon
+
+  if(theme){
+    lane.style.background = `linear-gradient(180deg, ${theme.bgFrom} 0%, ${theme.bgVia} 55%, ${theme.bgTo} 100%)`;
+    lane.style.setProperty('--kerbA', theme.kerbA);
+    lane.style.setProperty('--kerbB', theme.kerbB);
+    lane.style.setProperty('--pylonBg', theme.pylonBg);
+  }
+
+  const worldWidth = Math.round(trackW * 2.3);
+  const world = document.getElementById(worldId);
+  world.innerHTML = '';
+  world.style.width = worldWidth + 'px';
+  world.className = 'world' + (theme ? (' ' + theme.world) : '');
+
+  const maxScroll = worldWidth - trackW;
+
+  // ligne de départ, intégrée au monde qui défile
+  const startFlag = document.createElement('div');
+  startFlag.className = 'startFlag';
+  startFlag.style.left = '20px';
+  world.appendChild(startFlag);
+
+  // ligne d'arrivée, positionnée dans le monde pour arriver à l'écran
+  // exactement quand le défilement atteint son maximum (p = 1)
+  const finishFlag = document.createElement('div');
+  finishFlag.className = 'finishFlag';
+  finishFlag.style.left = (finishX + maxScroll) + 'px';
+  world.appendChild(finishFlag);
+
+  // plots qui filent le long du circuit
+  const shapeClass = theme ? ('shape' + theme.pylonShape.charAt(0).toUpperCase() + theme.pylonShape.slice(1)) : 'shapeCircle';
+  for(let x = 90; x < worldWidth - 30; x += 95){
+    const p1 = document.createElement('div');
+    p1.className = 'pylon ' + shapeClass;
+    p1.style.left = x + 'px';
+    p1.style.top = '14px';
+    world.appendChild(p1);
+    const p2 = document.createElement('div');
+    p2.className = 'pylon ' + shapeClass;
+    p2.style.left = (x + 45) + 'px';
+    p2.style.top = 'calc(100% - 14px)';
+    world.appendChild(p2);
+  }
+
+  return {lane, finishX, trackW, world, maxScroll};
+}
+let geomVide = setupLane('laneVide','barVide','worldVide', null);
+let geomM1   = setupLane('laneM1','barM1','worldM1', themeM1);
+let geomM2   = setupLane('laneM2','barM2','worldM2', themeM2);
+
+function placeBarStart(barId, startX){
+  const bar = document.getElementById(barId);
+  bar.style.left = startX + 'px';
+  bar.style.width = '70px';
+}
+placeBarStart('barVide', 14);
+placeBarStart('barM1', 14);
+placeBarStart('barM2', 14);
+
+// ── Effets d'arrivée : explosion d'étoiles façon boîte d'objet Mario Kart ──
+const FX_VIDE = {text:'⚡ VITESSE MAX !', colors:['#ffffff','#9ecbff','#ffe680','#c9a8ff']};
+
+function spawnFX(laneEl, x, fx){
+  const layer = document.createElement('div');
+  layer.className = 'fxLayer';
+  laneEl.appendChild(layer);
+
+  const flash = document.createElement('div');
+  flash.className = 'fxFlash';
+  flash.style.left = x + 'px';
+  layer.appendChild(flash);
+
+  const nStars = 20;
+  for(let i = 0; i < nStars; i++){
+    const star = document.createElement('div');
+    star.className = 'fxStar';
+    const angle = (Math.PI * 2 * i / nStars) + (Math.random() * 0.4 - 0.2);
+    const dist = 55 + Math.random() * 70;
+    const dx = Math.cos(angle) * dist;
+    const dy = Math.sin(angle) * dist * 0.75; // ellipse pour rester dans la piste
+    const size = 7 + Math.random() * 10;
+    const color = fx.colors[i % fx.colors.length];
+    star.style.setProperty('--dx', dx.toFixed(1) + 'px');
+    star.style.setProperty('--dy', dy.toFixed(1) + 'px');
+    star.style.setProperty('--rot', (Math.round(Math.random()*2-1) * (180 + Math.random()*360)) + 'deg');
+    star.style.setProperty('--s', size.toFixed(1) + 'px');
+    star.style.setProperty('--c', color);
+    star.style.setProperty('--dur', (0.6 + Math.random()*0.5).toFixed(2) + 's');
+    star.style.left = x + 'px';
+    layer.appendChild(star);
+  }
+
+  const txt = document.createElement('div');
+  txt.className = 'fxText';
+  txt.style.left = x + 'px';
+  txt.style.setProperty('--c', fx.colors[0]);
+  txt.textContent = fx.text;
+  layer.appendChild(txt);
+
+  laneEl.classList.remove('shake');
+  void laneEl.offsetWidth; // reflow pour rejouer l'animation
+  laneEl.classList.add('shake');
+
+  setTimeout(() => layer.remove(), 1200);
+}
+
+// ── Animation d'une piste ──
+function runLane(opts){
+  const {laneId, barId, world, maxScroll, finishX, durationMs, t_final_fs, chronoId, fx} = opts;
+  const lane = document.getElementById(laneId);
+  const bar = document.getElementById(barId);
+  const chrono = document.getElementById(chronoId);
+  const startX = 14;
+  const travel = finishX - startX;
+  const t0 = performance.now();
+  lane.classList.remove('arrived');
+  lane.classList.add('running');
+
+  function frame(now){
+    let p = (now - t0) / durationMs;
+    if(p > 1) p = 1;
+    bar.style.left = (startX + travel * p) + 'px';
+    world.style.transform = 'translateX(' + (-(p * maxScroll)) + 'px)';
+    chrono.textContent = (p * t_final_fs).toFixed(1) + ' fs';
+    if(p < 1){
+      requestAnimationFrame(frame);
+    }else{
+      chrono.textContent = t_final_fs.toFixed(1) + ' fs';
+      lane.classList.remove('running');
+      lane.classList.add('arrived');
+      spawnFX(lane, finishX, fx);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+// ── Lancement ──
+const btn = document.getElementById('btnStart');
+btn.addEventListener('click', () => {
+  btn.disabled = true;
+  placeBarStart('barVide', 14);
+  placeBarStart('barM1', 14);
+  placeBarStart('barM2', 14);
+  document.getElementById('chronoVide').textContent = '0.0 fs';
+  document.getElementById('chronoM1').textContent = '0.0 fs';
+  document.getElementById('chronoM2').textContent = '0.0 fs';
+  document.getElementById('laneVide').classList.remove('arrived');
+  document.getElementById('laneM1').classList.remove('arrived');
+  document.getElementById('laneM2').classList.remove('arrived');
+
+  runLane({laneId:'laneVide', barId:'barVide', world:geomVide.world, maxScroll:geomVide.maxScroll, finishX:geomVide.finishX, durationMs:durVide, t_final_fs:t_vide_fs, chronoId:'chronoVide', fx:FX_VIDE});
+  runLane({laneId:'laneM1', barId:'barM1', world:geomM1.world, maxScroll:geomM1.maxScroll, finishX:geomM1.finishX, durationMs:dur1, t_final_fs:t1_fs, chronoId:'chronoM1', fx:{colors:themeM1.fxColors, text:themeM1.fxText}});
+  if(showM2){
+    runLane({laneId:'laneM2', barId:'barM2', world:geomM2.world, maxScroll:geomM2.maxScroll, finishX:geomM2.finishX, durationMs:dur2, t_final_fs:t2_fs, chronoId:'chronoM2', fx:{colors:themeM2.fxColors, text:themeM2.fxText}});
+  }
+
+  const maxDur = showM2 ? Math.max(durVide, dur1, dur2) : Math.max(durVide, dur1);
+  setTimeout(() => { btn.disabled = false; }, maxDur + 100);
+});
+
+window.addEventListener('resize', () => {
+  geomVide = setupLane('laneVide','barVide','worldVide', null);
+  geomM1   = setupLane('laneM1','barM1','worldM1', themeM1);
+  geomM2   = setupLane('laneM2','barM2','worldM2', themeM2);
+});
+</script>
+</body>
+</html>
