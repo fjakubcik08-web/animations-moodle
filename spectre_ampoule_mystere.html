@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spectre d'une ampoule mystere</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#ffffff; color:#201e1d; font-family:Arial, sans-serif; }
+  .card { max-width:100%; width:760px; margin:0 auto; padding:20px 24px; }
+  h1 { font-size:17px; font-weight:600; margin:0 0 6px; }
+  .subtitle { font-size:13px; color:#5a5757; margin:0 0 16px; line-height:1.5; }
+  .panel { background:#f7f7f5; border:1px solid #d8d5d5; border-radius:8px; padding:16px 20px; margin-bottom:14px; }
+  .btn { font-family:inherit; font-size:12px; padding:5px 12px; border:1px solid #d8d5d5; border-radius:6px;
+         background:#ffffff; color:#201e1d; cursor:pointer; white-space:nowrap; }
+  .btn:hover { background:#efefec; }
+  .btn.active { background:#ec3013; border-color:#ec3013; color:#ffffff; }
+  input[type="range"] { accent-color:#ec3013; }
+  .axis-label { font-size:11px; letter-spacing:0.04em; text-transform:uppercase; color:#8a8785; font-weight:600; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function(){
+  var WL_MIN = 380, WL_MAX = 800;
+
+  // ---- raies d'emission (meme jeu de donnees que get_lo cote Python) ----
+  var RAIES = {
+    H:[410.2,434.0,486.1,656.3], He:[447.1,471.3,492.2,501.6,587.6,667.8,706.5],
+    Ne:[540.1,585.2,594.5,597.6,603.0,607.4,616.4,621.7,626.6,633.4,640.2,650.7,659.9,692.9,703.2],
+    Ar:[419.8,425.9,451.1,459.0,470.2,480.6,501.7,518.8,545.2,588.9,675.3,696.5,706.7,738.4,750.4],
+    Kr:[427.4,431.9,435.0,445.4,450.2,460.9,470.6,556.2,587.1,645.6,760.2,768.5,810.4],
+    Xe:[462.4,467.1,484.4,492.3,500.0,529.2,541.9,553.7,605.9,619.9],
+    Hg:[404.7,407.8,435.8,491.6,546.1,577.0,579.1], Na:[568.8,589.0,589.6,615.4,616.1],
+    Li:[413.3,460.3,610.4,670.8], K:[404.4,691.1,693.9,766.5,769.9],
+    Rb:[420.2,421.6,620.6,629.8,780.0,794.8], Cs:[455.5,459.3,601.0,621.3,697.0],
+    Ca:[422.7,559.4,585.7,616.2,646.3], Sr:[460.7,546.6,606.0,636.6,646.8,688.0,707.0],
+    Ba:[455.4,493.4,553.5,585.4,614.2,649.7], Cu:[465.1,510.6,515.3,521.8,578.2],
+    Cd:[467.8,480.0,508.6,533.8,643.8], Zn:[468.0,472.2,481.0,636.2],
+    Tl:[466.0,535.0,652.0,706.0], In:[410.2,451.1,468.0,610.4,616.0],
+    Pb:[405.8,500.6,571.8,639.0], Bi:[440.0,461.5,472.3,529.0,613.0],
+    Sb:[452.7,473.0,528.0,606.0], Al:[394.4,396.2,466.0,512.0,624.0,669.0],
+    B:[492.0,518.0,549.0,563.0], Mn:[403.1,476.0,542.0,601.0],
+    Fe:[438.4,495.7,516.7,527.0], Ni:[430.0,470.0,486.0,508.0,533.0,547.7,610.0],
+    Co:[423.0,450.0,481.3,520.9,546.0,587.0,612.0], Cr:[425.4,427.5,520.6,552.5,600.0]
+  };
+
+  // ---- decodage du parametre d'URL (XOR + base64, cle a harmoniser avec un
+  //      eventuel xxx_params.py existant cote Python -- voir SKILL.md) ----
+  var XOR_KEY = "FJlyceeBayleP03";
+  function xorBytes(bytes, keyStr){
+    var key = []; for (var i=0;i<keyStr.length;i++) key.push(keyStr.charCodeAt(i));
+    var out = new Uint8Array(bytes.length);
+    for (var i=0;i<bytes.length;i++) out[i] = bytes[i] ^ key[i % key.length];
+    return out;
+  }
+  function b64urlDecode(s){
+    s = s.replace(/-/g,'+').replace(/_/g,'/');
+    while (s.length % 4) s += '=';
+    var bin = atob(s);
+    var bytes = new Uint8Array(bin.length);
+    for (var i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function decodeSimParams(code){
+    try {
+      var raw = xorBytes(b64urlDecode(code), XOR_KEY);
+      var txt = ''; for (var i=0;i<raw.length;i++) txt += String.fromCharCode(raw[i]);
+      return JSON.parse(decodeURIComponent(escape(txt)));
+    } catch(e){ return null; }
+  }
+
+  var qp = new URLSearchParams(window.location.search);
+  var decoded = qp.has('param') ? decodeSimParams(qp.get('param')) : null;
+  var elems = (decoded && decoded.elems && decoded.elems.length) ? decoded.elems : ['Na', 'H', 'He'];
+
+  var lines = [];
+  elems.forEach(function(e){
+    (RAIES[e] || []).forEach(function(wl){ if (lines.indexOf(wl) === -1) lines.push(wl); });
+  });
+  lines.sort(function(a, b){ return a - b; });
+
+  function wavelengthToRGB(wl) {
+    var r=0,g=0,b=0;
+    if (wl>=380 && wl<440) { r=-(wl-440)/(440-380); g=0; b=1; }
+    else if (wl>=440 && wl<490) { r=0; g=(wl-440)/(490-440); b=1; }
+    else if (wl>=490 && wl<510) { r=0; g=1; b=-(wl-510)/(510-490); }
+    else if (wl>=510 && wl<580) { r=(wl-510)/(580-510); g=1; b=0; }
+    else if (wl>=580 && wl<645) { r=1; g=-(wl-645)/(645-580); b=0; }
+    else if (wl>=645 && wl<=780) { r=1; g=0; b=0; }
+    var factor;
+    if (wl>=380 && wl<420) factor = 0.55 + 0.45*(wl-380)/(420-380);
+    else if (wl>=420 && wl<701) factor = 1;
+    else if (wl>=701 && wl<=780) factor = 0.55 + 0.45*(780-wl)/(780-701);
+    else factor = 0.55;
+    var gamma = 0.8;
+    function adj(c){ return c===0 ? 0 : Math.round(255*Math.pow(c*factor, gamma)); }
+    return 'rgb('+adj(r)+','+adj(g)+','+adj(b)+')';
+  }
+
+  var state = { on:false, cursorPct:50, gain:1, viewMin:WL_MIN, viewMax:WL_MAX };
+
+  // Tout est positionne en % du conteneur reel (pas de px absolus) : le curseur,
+  // les raies et les graduations restent alignes quelle que soit la largeur reelle
+  // de l'iframe cote Moodle, et le zoom ne desynchronise plus rien.
+  function pctFromWl(wl){ return (wl - state.viewMin) / (state.viewMax - state.viewMin) * 100; }
+  function wlFromPct(pct){ return state.viewMin + pct / 100 * (state.viewMax - state.viewMin); }
+  function pctFromWlIn(wl, vMin, vMax){ return (wl - vMin) / (vMax - vMin) * 100; }
+  function pickStep(span){
+    var steps = [0.1,0.2,0.5,1,2,5,10,20,50,100,200];
+    for (var i=0;i<steps.length;i++){ if (span/steps[i] <= 9) return steps[i]; }
+    return 200;
+  }
+  function zoomBy(factor){
+    var vMin=state.viewMin, vMax=state.viewMax;
+    var centerWl = Math.max(vMin, Math.min(vMax, wlFromPct(state.cursorPct)));
+    var half = Math.max(5, (vMax - vMin) / 2 * factor);
+    var newMin = centerWl - half, newMax = centerWl + half;
+    if (newMax - newMin >= WL_MAX - WL_MIN) { newMin = WL_MIN; newMax = WL_MAX; }
+    else {
+      if (newMin < WL_MIN) { newMax += WL_MIN - newMin; newMin = WL_MIN; }
+      if (newMax > WL_MAX) { newMin -= newMax - WL_MAX; newMax = WL_MAX; }
+    }
+    state.viewMin = newMin; state.viewMax = newMax;
+    state.cursorPct = pctFromWlIn(centerWl, newMin, newMax);
+    render();
+  }
+  function adjustCursor(deltaNm){
+    var currentWl = wlFromPct(state.cursorPct) + deltaNm;
+    currentWl = Math.max(state.viewMin, Math.min(state.viewMax, currentWl));
+    state.cursorPct = pctFromWl(currentWl);
+    render();
+  }
+
+  var root = document.getElementById('root');
+  root.innerHTML =
+    '<div class="card">' +
+      '<h1>Spectre d\'une ampoule mystere</h1>' +
+      '<p class="subtitle">Une ampoule contient un melange de 1 a 3 elements inconnus. Allume l\'interrupteur ' +
+      'pour observer le spectre obtenu sur l\'ecran, puis utilise le curseur (et le zoom si besoin) pour relever ' +
+      'la longueur d\'onde de chaque raie visible.</p>' +
+
+      '<div class="panel">' +
+        '<svg id="bench" viewBox="0 0 700 190" width="100%" height="170" style="display:block;"></svg>' +
+        '<div style="text-align:center;"><button class="btn" id="powerBtn">Allumer</button></div>' +
+      '</div>' +
+
+      '<div class="panel">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' +
+          '<span class="axis-label">Spectre observe</span>' +
+          '<span class="axis-label">Longueur d\'onde &rarr;</span>' +
+        '</div>' +
+        '<div id="cursorLabelWrap" style="position:relative; height:20px;">' +
+          '<div id="cursorLabel" style="position:absolute; top:0; transform:translateX(-50%); font-size:11px; font-weight:700; ' +
+            'color:#ec3013; white-space:nowrap; background:#ffffff; padding:1px 6px; border:1px solid #ec3013; border-radius:4px;"></div>' +
+        '</div>' +
+        '<div id="spectrumBox" style="position:relative; height:64px; background:#161515; border-radius:6px; overflow:hidden; cursor:grab; touch-action:none;">' +
+          '<div id="spectrumBg" style="position:absolute; inset:0;"></div>' +
+          '<div id="cursorLine" style="position:absolute; top:0; bottom:0; width:0; border-left:2px dashed #ec3013; ' +
+            'transform:translateX(-50%); pointer-events:none;"></div>' +
+        '</div>' +
+        '<div id="ticks" style="position:relative; height:22px;"></div>' +
+        '<div id="scrollTrack" style="position:relative; height:8px; background:#e6e4e1; border-radius:4px; margin-top:8px;">' +
+          '<div id="scrollThumb" style="position:absolute; top:0; height:8px; background:#c9c6c3; border-radius:4px; cursor:grab;"></div>' +
+        '</div>' +
+        '<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-top:10px;">' +
+          '<div style="display:flex; gap:6px; flex-wrap:wrap;">' +
+            '<button class="btn" data-cursor="-1">&minus;1 nm</button>' +
+            '<button class="btn" data-cursor="-0.1">&minus;0,1 nm</button>' +
+            '<button class="btn" data-cursor="0.1">+0,1 nm</button>' +
+            '<button class="btn" data-cursor="1">+1 nm</button>' +
+            '<button class="btn" id="zoomOut">Zoom &minus;</button>' +
+            '<button class="btn" id="zoomIn">Zoom +</button>' +
+            '<button class="btn" id="zoomReset">Reinitialiser le zoom</button>' +
+          '</div>' +
+          '<div style="display:flex; align-items:center; gap:8px;">' +
+            '<label style="font-size:12px; color:#5a5757; white-space:nowrap;">Amplification &times;<span id="gainLabel">1.0</span></label>' +
+            '<input type="range" id="gainRange" min="1" max="4" step="0.1" value="1" style="width:140px;">' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  var bench = document.getElementById('bench');
+  var spectrumBg = document.getElementById('spectrumBg');
+  var spectrumBox = document.getElementById('spectrumBox');
+  var cursorLine = document.getElementById('cursorLine');
+  var cursorLabelEl = document.getElementById('cursorLabel');
+  var ticksEl = document.getElementById('ticks');
+  var scrollTrack = document.getElementById('scrollTrack');
+  var scrollThumb = document.getElementById('scrollThumb');
+  var gainLabelEl = document.getElementById('gainLabel');
+  var gainRange = document.getElementById('gainRange');
+  var powerBtn = document.getElementById('powerBtn');
+
+  document.querySelectorAll('[data-cursor]').forEach(function(btn){
+    btn.addEventListener('click', function(){ adjustCursor(parseFloat(btn.getAttribute('data-cursor'))); });
+  });
+  document.getElementById('zoomIn').addEventListener('click', function(){ zoomBy(0.6); });
+  document.getElementById('zoomOut').addEventListener('click', function(){ zoomBy(1/0.6); });
+  document.getElementById('zoomReset').addEventListener('click', function(){ state.viewMin=WL_MIN; state.viewMax=WL_MAX; render(); });
+  gainRange.addEventListener('input', function(){ state.gain = parseFloat(gainRange.value); render(); });
+  powerBtn.addEventListener('click', function(){
+    state.on = !state.on;
+    powerBtn.textContent = state.on ? 'Eteindre' : 'Allumer';
+    powerBtn.classList.toggle('active', state.on);
+    render();
+  });
+
+  // ---- curseur : directement dans le spectre, ligne pointillee --------
+  var draggingCursor = false;
+  spectrumBox.addEventListener('pointerdown', function(e){ draggingCursor = true; spectrumBox.setPointerCapture(e.pointerId); spectrumBox.style.cursor='grabbing'; updateCursorFromEvent(e); });
+  spectrumBox.addEventListener('pointermove', function(e){ if (draggingCursor) updateCursorFromEvent(e); });
+  spectrumBox.addEventListener('pointerup', function(){ draggingCursor = false; spectrumBox.style.cursor='grab'; });
+  function updateCursorFromEvent(e){
+    var rect = spectrumBox.getBoundingClientRect();
+    var pct = (e.clientX - rect.left) / rect.width * 100;
+    state.cursorPct = Math.max(0, Math.min(100, pct));
+    render();
+  }
+
+  // ---- ascenseur horizontal : pour se deplacer une fois zoome ---------
+  var draggingScroll = false, scrollStartX = 0, scrollStartViewMin = 0;
+  scrollThumb.addEventListener('pointerdown', function(e){
+    draggingScroll = true; scrollThumb.setPointerCapture(e.pointerId);
+    scrollStartX = e.clientX; scrollStartViewMin = state.viewMin;
+  });
+  scrollThumb.addEventListener('pointermove', function(e){
+    if (!draggingScroll) return;
+    var rect = scrollTrack.getBoundingClientRect();
+    var pxPerWl = rect.width / (WL_MAX - WL_MIN);
+    var deltaWl = (e.clientX - scrollStartX) / pxPerWl;
+    var span = state.viewMax - state.viewMin;
+    var newMin = Math.max(WL_MIN, Math.min(WL_MAX - span, scrollStartViewMin + deltaWl));
+    state.viewMin = newMin; state.viewMax = newMin + span;
+    render();
+  });
+  scrollThumb.addEventListener('pointerup', function(){ draggingScroll = false; });
+  scrollTrack.addEventListener('pointerdown', function(e){
+    if (e.target === scrollThumb) return;
+    var rect = scrollTrack.getBoundingClientRect();
+    var clickWl = WL_MIN + (e.clientX - rect.left) / rect.width * (WL_MAX - WL_MIN);
+    var span = state.viewMax - state.viewMin;
+    var newMin = Math.max(WL_MIN, Math.min(WL_MAX - span, clickWl - span / 2));
+    state.viewMin = newMin; state.viewMax = newMin + span;
+    render();
+  });
+
+  function svgEl(tag, attrs){
+    var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  function renderBench(){
+    bench.innerHTML = '';
+    var SOURCE_X = 55, PRISM_X = 330, SCREEN_X = 650, AXIS_Y = 95;
+
+    // etabli / table
+    bench.appendChild(svgEl('rect', { x:10, y:150, width:680, height:14, fill:'#d8d5d5', rx:3 }));
+
+    // ampoule mystere
+    var bulbColor = state.on ? '#fff3d6' : '#e3e1dd';
+    bench.appendChild(svgEl('rect', { x:SOURCE_X-3, y:110, width:6, height:40, fill:'#c9c6c3' }));
+    bench.appendChild(svgEl('circle', { cx:SOURCE_X, cy:95, r:22, fill:bulbColor, stroke:'#b8b5b1', 'stroke-width':1.5 }));
+    bench.appendChild(svgEl('text', { x:SOURCE_X, y:99, 'text-anchor':'middle', 'font-size':16, fill:'#8a8785' })).textContent = '?';
+    var lbl1 = svgEl('text', { x:SOURCE_X, y:60, 'text-anchor':'middle', 'font-size':11, fill:'#5a5757' });
+    lbl1.textContent = 'Source';
+    bench.appendChild(lbl1);
+
+    // faisceau
+    bench.appendChild(svgEl('line', { x1:SOURCE_X+22, y1:AXIS_Y, x2:PRISM_X-16, y2:AXIS_Y, stroke: state.on ? '#e0b34a' : '#d8d5d5', 'stroke-width':3, 'stroke-linecap':'round' }));
+
+    // prisme
+    bench.appendChild(svgEl('rect', { x:PRISM_X-3, y:120, width:6, height:32, fill:'#c9c6c3' }));
+    bench.appendChild(svgEl('polygon', { points:(PRISM_X)+',68 '+(PRISM_X-30)+',120 '+(PRISM_X+30)+',120', fill:'#eef1f4', stroke:'#8a8785', 'stroke-width':1.5 }));
+    var lbl2 = svgEl('text', { x:PRISM_X, y:56, 'text-anchor':'middle', 'font-size':11, fill:'#5a5757' });
+    lbl2.textContent = 'Prisme';
+    bench.appendChild(lbl2);
+
+    // rayons disperses + ecran
+    var d = SCREEN_X - PRISM_X;
+    var sorted = lines.slice().sort(function(a,b){ return a-b; });
+    sorted.forEach(function(wl, i){
+      var offset = (550 - wl) * 0.09;
+      offset = Math.max(-32, Math.min(32, offset));
+      var y2 = AXIS_Y + offset;
+      var color = wavelengthToRGB(wl);
+      if (state.on) {
+        bench.appendChild(svgEl('line', { x1:PRISM_X, y1:AXIS_Y, x2:SCREEN_X, y2:y2, stroke:color, 'stroke-width':2, opacity:0.85 }));
+        bench.appendChild(svgEl('circle', { cx:SCREEN_X, cy:y2, r:4, fill:color }));
+      }
+    });
+
+    bench.appendChild(svgEl('rect', { x:SCREEN_X-1, y:120, width:4, height:32, fill:'#c9c6c3' }));
+    bench.appendChild(svgEl('rect', { x:SCREEN_X+6, y:40, width:6, height:110, fill:'#3a3838' }));
+    var lbl3 = svgEl('text', { x:SCREEN_X+9, y:32, 'text-anchor':'middle', 'font-size':11, fill:'#5a5757' });
+    lbl3.textContent = 'Ecran';
+    bench.appendChild(lbl3);
+  }
+
+  function render(){
+    renderBench();
+
+    var gain = state.gain;
+    spectrumBg.innerHTML = '';
+    lines.forEach(function(wl, idx){
+      var pct = pctFromWl(wl);
+      if (pct < -3 || pct > 103) return;
+      var color = wavelengthToRGB(wl);
+      var width = Math.min(24, 3 * gain);
+      var bar = document.createElement('div');
+      bar.style.cssText = 'position:absolute; top:14px; left:'+pct+'%; transform:translateX(-50%); width:'+width+'px; ' +
+        'height:47px; background:'+color+'; box-shadow:0 0 10px '+color+'; opacity:'+(state.on?1:0)+'; ' +
+        'filter:brightness('+gain+'); transition:opacity 0.4s ease;';
+      spectrumBg.appendChild(bar);
+
+      var rankEl = document.createElement('div');
+      rankEl.style.cssText = 'position:absolute; top:2px; left:'+pct+'%; transform:translateX(-50%); font-size:9px; ' +
+        'font-weight:800; line-height:1; color:#161515; background:'+color+'; padding:0 3px; border-radius:2px; ' +
+        'opacity:'+(state.on?1:0)+'; transition:opacity 0.4s ease;';
+      rankEl.textContent = idx + 1;
+      spectrumBg.appendChild(rankEl);
+    });
+
+    cursorLine.style.left = state.cursorPct + '%';
+    cursorLabelEl.style.left = state.cursorPct + '%';
+    var cursorWl = wlFromPct(state.cursorPct);
+    cursorLabelEl.textContent = cursorWl.toFixed(1) + ' nm';
+
+    gainLabelEl.textContent = gain.toFixed(1);
+
+    var thumbLeft = (state.viewMin - WL_MIN) / (WL_MAX - WL_MIN) * 100;
+    var thumbWidth = (state.viewMax - state.viewMin) / (WL_MAX - WL_MIN) * 100;
+    scrollThumb.style.left = thumbLeft + '%';
+    scrollThumb.style.width = Math.max(4, thumbWidth) + '%';
+
+    var vMin = state.viewMin, vMax = state.viewMax;
+    var majorStep = pickStep(vMax - vMin);
+    var minorStep = majorStep / 5;
+    ticksEl.innerHTML = '';
+    for (var v = Math.ceil(vMin/minorStep)*minorStep; v <= vMax + 1e-6; v += minorStep) {
+      if (Math.abs(v/majorStep - Math.round(v/majorStep)) > 1e-6) {
+        var mt = document.createElement('div');
+        mt.style.cssText = 'position:absolute; top:0; left:'+pctFromWl(v)+'%; width:1px; height:6px; background:#c9c6c3;';
+        ticksEl.appendChild(mt);
+      }
+    }
+    for (var v2 = Math.ceil(vMin/majorStep)*majorStep; v2 <= vMax + 1e-6; v2 += majorStep) {
+      var t = document.createElement('div');
+      t.style.cssText = 'position:absolute; top:0; left:'+pctFromWl(v2)+'%; width:1px; height:10px; background:#8a8785;';
+      ticksEl.appendChild(t);
+      var lbl = document.createElement('span');
+      lbl.style.cssText = 'position:absolute; top:11px; left:'+pctFromWl(v2)+'%; transform:translateX(-50%); font-size:11px; color:#5a5757; white-space:nowrap;';
+      lbl.textContent = (majorStep < 1 ? v2.toFixed(1) : Math.round(v2)) + ' nm';
+      ticksEl.appendChild(lbl);
+    }
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
