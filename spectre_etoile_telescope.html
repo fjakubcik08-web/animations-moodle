@@ -164,6 +164,7 @@
     padding:0 8px;
   }
   #zoom-bar button{width:28px;font-size:17px;padding:0;}
+  #export-jpg{width:auto !important;font-size:12px !important;padding:0 10px !important;margin-left:6px;}
   #zoom-bar button:hover, #cursor-bar button:hover{background:#334155;}
   #zoom-level{color:#94a3b8;font-size:13px;min-width:34px;text-align:center;}
   #cursor-bar{color:#94a3b8;font-size:13px;}
@@ -343,6 +344,7 @@
       <button id="zoom-out" title="Zoom arrière">−</button>
       <span id="zoom-level">×1</span>
       <button id="zoom-in" title="Zoom avant">+</button>
+      <button id="export-jpg" title="Télécharger le spectre en image">⭳ Exporter JPG</button>
     </div>
     <div id="cursor-bar">
       <span>Curseur :</span>
@@ -889,10 +891,25 @@ function fakeTermLine(){
   return `${term} ${dots} ${status}`;
 }
 
+const FAKE_MATH = [
+  "1+1=2","2+2=4","9x9=81","E=mc2","pi=3.14159","c2=8.98e16",
+  "0+0=1","42x42=1764","phi=1.618","racine(2)=1.414","1/0=NaN",
+  "somme_infinie=converge","2^10=1024","log(centauri)=indefini",
+];
+const FAKE_MATH_STATUS = ["ok","verifie","confirme","stable","ERREUR: division par zero","approuve"];
+function fakeMathLine(){
+  const m = FAKE_MATH[Math.floor(Math.random()*FAKE_MATH.length)];
+  const s = FAKE_MATH_STATUS[Math.floor(Math.random()*FAKE_MATH_STATUS.length)];
+  return `${m} .... ${s}`;
+}
+
 function generateTerminalLines(n=22){
   const lines = [];
   for(let i=0;i<n;i++){
-    lines.push(Math.random()<0.28 ? fakeCodeLine() : fakeTermLine());
+    const r = Math.random();
+    if(r<0.2) lines.push(fakeCodeLine());
+    else if(r<0.45) lines.push(fakeMathLine());
+    else lines.push(fakeTermLine());
   }
   lines.push('STATUT ..................... analyse terminee');
   return lines;
@@ -921,6 +938,35 @@ document.getElementById('zoom-in').addEventListener('click', ()=>{
   document.getElementById('zoom-level').textContent = '×'+zoomLevel.toFixed(1).replace(/\.0$/,'');
   drawSpectra();
 });
+document.getElementById('export-jpg').addEventListener('click', ()=>{
+  const flatCv = document.getElementById('flat-spectrum');
+  const intCv = document.getElementById('intensity-spectrum');
+  const out = document.createElement('canvas');
+  out.width = Math.max(flatCv.width, intCv.width);
+  out.height = flatCv.height + intCv.height;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#050914';
+  octx.fillRect(0,0,out.width,out.height);
+  octx.drawImage(flatCv, 0, 0);
+  octx.drawImage(intCv, 0, flatCv.height);
+  const url = out.toDataURL('image/jpeg', 0.92);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `spectre_${DISPLAY_NAME.replace(/\s+/g,'_')}.jpg`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  const box = document.getElementById('terminal-lines');
+  if(box){
+    const p = document.createElement('div');
+    p.className = 'tline';
+    p.innerHTML = `<span class="prompt">&gt;_</span> export_image.jpg ................. saved`;
+    box.appendChild(p);
+    box.scrollTop = box.scrollHeight;
+  }
+});
+
 document.getElementById('zoom-out').addEventListener('click', ()=>{
   zoomLevel = Math.max(1, +(zoomLevel/1.5).toFixed(2));
   document.getElementById('zoom-level').textContent = '×'+zoomLevel.toFixed(1).replace(/\.0$/,'');
