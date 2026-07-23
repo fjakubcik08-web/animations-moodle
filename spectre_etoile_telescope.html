@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Analyse spectrale d'une étoile</title>
+<style>
+  :root{
+    --sky-top:#020617;
+    --sky-mid:#0b1a3a;
+    --star:#fff7cc;
+    --accent:#38bdf8;
+    --panel:#0f172acc;
+  }
+  html,body{
+    margin:0;padding:0;width:100%;height:100%;overflow:hidden;
+    font-family:"Segoe UI",Arial,sans-serif;
+    background:#000;
+  }
+  #app{position:relative;width:100%;height:100vh;min-height:520px;}
+
+  /* ---------- SCENE 1 : ciel + paysage + telescope ---------- */
+  #scene1{
+    position:absolute;inset:0;
+    background:linear-gradient(180deg,var(--sky-top) 0%,var(--sky-mid) 70%,#13284d 100%);
+    overflow:hidden;
+    transition:opacity .8s ease;
+  }
+  #scene1.hidden{opacity:0;pointer-events:none;}
+
+  .bg-star{
+    position:absolute;border-radius:50%;background:#fff;
+    animation:twinkle 2.4s ease-in-out infinite;
+  }
+  @keyframes twinkle{
+    0%,100%{opacity:.2;}
+    50%{opacity:1;}
+  }
+
+  .shooting-star{
+    position:absolute;width:2px;height:2px;background:#fff;
+    box-shadow:0 0 6px 2px #fff;
+    border-radius:50%;
+    opacity:0;
+    animation:shoot 4s linear infinite;
+  }
+  @keyframes shoot{
+    0%{opacity:0;transform:translate(0,0);}
+    2%{opacity:1;}
+    16%{opacity:0;transform:translate(-240px,170px);}
+    100%{opacity:0;}
+  }
+
+  /* paysage : montagnes + horizon + arbres, on est sur Terre, pas la Lune */
+  #landscape{position:absolute;left:0;right:0;bottom:0;height:38%;}
+  .mountains{position:absolute;left:0;right:0;bottom:0;width:100%;height:100%;}
+  #horizon-ground{
+    position:absolute;left:0;right:0;bottom:0;height:16%;
+    background:linear-gradient(180deg,#0a1526,#050a14);
+  }
+
+  .tree{
+    position:absolute;bottom:0;width:0;height:0;
+  }
+  .tree .trunk{
+    position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+    width:4px;background:#04070c;
+  }
+  .tree .leaves{
+    position:absolute;left:50%;transform:translateX(-50%);
+    width:0;height:0;
+    border-left:11px solid transparent;
+    border-right:11px solid transparent;
+    border-bottom:26px solid #04070c;
+  }
+
+  /* etoile a analyser */
+  #target-star{
+    position:absolute;width:72px;height:72px;cursor:pointer;z-index:4;
+    transition:filter .5s ease;
+    filter:drop-shadow(0 0 6px var(--star));
+    animation:pulse 1.8s ease-in-out infinite;
+  }
+  #target-star svg{width:100%;height:100%;overflow:visible;}
+  #target-star.locked{
+    animation:none;
+    transform:scale(1.3);
+    filter:drop-shadow(0 0 18px var(--star)) drop-shadow(0 0 36px #ffdf8877);
+    transition:transform .5s cubic-bezier(.34,1.6,.64,1), filter .5s ease;
+  }
+  @keyframes pulse{
+    0%,100%{transform:scale(1);}
+    50%{transform:scale(1.12);}
+  }
+
+  /* telescope */
+  #telescope{
+    position:absolute;left:60px;bottom:16%;width:120px;height:170px;z-index:3;
+  }
+  #telescope-body{
+    position:absolute;bottom:0;left:20px;width:80px;height:70px;
+    background:#334155;border-radius:16px 16px 8px 8px;
+    box-shadow:inset 0 -8px 12px #0008;
+  }
+  #telescope-dome{
+    position:absolute;bottom:52px;left:10px;width:100px;height:60px;
+    background:radial-gradient(circle at 35% 30%,#94a3b8,#475569 70%);
+    border-radius:50% 50% 4px 4px;
+    overflow:hidden;
+  }
+  #telescope-dome::after{
+    content:"";position:absolute;left:0;top:60%;width:100%;height:2px;background:#1e293b;
+  }
+  #telescope-tube{
+    position:absolute;left:60px;bottom:82px;width:14px;height:90px;
+    background:linear-gradient(90deg,#cbd5e1,#64748b,#cbd5e1);
+    border-radius:4px;
+    transform-origin:bottom center;
+    transform:rotate(0deg);
+    transition:transform .15s linear;
+  }
+  #telescope.locked #telescope-tube{transition:transform .6s ease;}
+  #telescope-label{
+    position:absolute;bottom:-20px;left:0;width:120px;text-align:center;
+    color:#94a3b8;font-size:12px;
+  }
+
+  #analyser-bar{
+    position:absolute;left:0;right:0;bottom:0;height:60px;z-index:6;
+    background:#0f172a;border-top:1px solid #1e293b;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #analyser-btn{
+    padding:10px 28px;font-size:16px;font-weight:600;
+    background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:6px;
+    cursor:not-allowed;transition:all .3s ease;
+  }
+  #analyser-btn.ready{
+    background:var(--accent);color:#04121f;border-color:var(--accent);
+    cursor:pointer;box-shadow:0 0 12px #38bdf888;
+  }
+  #hint{
+    position:absolute;bottom:70px;left:0;right:0;text-align:center;
+    color:#64748b;font-size:13px;z-index:6;
+  }
+
+  /* ---------- SCENE 2 : spectres ---------- */
+  #scene2{
+    position:absolute;inset:0;background:#0b1220;color:#e2e8f0;
+    opacity:0;pointer-events:none;transition:opacity .8s ease;
+    display:flex;flex-direction:column;align-items:center;
+    padding:22px 16px;box-sizing:border-box;
+  }
+  #scene2.visible{opacity:1;pointer-events:all;}
+  #scene2{overflow-y:auto;}
+  #scene2 h2{margin:0 0 4px 0;font-size:20px;color:#fff;}
+  #scene2 .sub{color:#94a3b8;font-size:13px;margin-bottom:10px;}
+
+  #zoom-bar, #cursor-bar{
+    display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;
+  }
+  #zoom-bar button, #cursor-bar button{
+    height:28px;border-radius:6px;border:1px solid #334155;
+    background:#1e293b;color:#e2e8f0;font-size:13px;line-height:1;cursor:pointer;
+    padding:0 8px;
+  }
+  #zoom-bar button{width:28px;font-size:17px;padding:0;}
+  #zoom-bar button:hover, #cursor-bar button:hover{background:#334155;}
+  #zoom-level{color:#94a3b8;font-size:13px;min-width:34px;text-align:center;}
+  #cursor-bar{color:#94a3b8;font-size:13px;}
+  #cursor-value{
+    color:#fecaca;font-variant-numeric:tabular-nums;min-width:110px;
+    text-align:center;background:#1e293b;border:1px solid #334155;
+    border-radius:6px;padding:4px 8px;
+  }
+
+  #spectra-scroll{
+    max-width:min(760px, 92vw);overflow-x:auto;overflow-y:hidden;
+    border-radius:6px;
+  }
+  #spectra-wrap{position:relative;width:max-content;}
+  #spectra-wrap canvas{display:block;background:#050914;}
+  #flat-spectrum{border:1px solid #1e293b;border-bottom:none;border-radius:6px 6px 0 0;}
+  #intensity-spectrum{border:1px solid #1e293b;border-top:none;border-radius:0 0 6px 6px;}
+
+  #cursor-line{
+    position:absolute;top:0;width:1px;height:100%;
+    background:#f87171;pointer-events:none;opacity:0;
+    box-shadow:0 0 4px #f87171;
+  }
+  #cursor-readout{
+    position:absolute;top:4px;transform:translate(-50%,0);
+    background:#1e293bee;border:1px solid #f87171;border-radius:4px;
+    padding:4px 8px;font-size:12px;color:#fecaca;white-space:nowrap;
+    pointer-events:none;opacity:0;z-index:5;
+  }
+
+  #caption{
+    margin-top:18px;max-width:640px;text-align:center;
+    background:var(--panel);border:1px solid #1e293b;border-radius:8px;
+    padding:14px 20px;font-size:14px;line-height:1.5;color:#cbd5e1;
+    opacity:0;transform:translateY(8px);
+    transition:opacity .6s ease, transform .6s ease;
+  }
+  #caption.show{opacity:1;transform:translateY(0);}
+  #back-btn{
+    margin-top:16px;background:none;border:1px solid #334155;color:#94a3b8;
+    padding:6px 16px;border-radius:6px;cursor:pointer;font-size:13px;
+  }
+  #back-btn:hover{color:#fff;border-color:#64748b;}
+
+  #terminal-info{
+    position:relative;overflow:hidden;
+    margin-top:14px;margin-bottom:14px;width:min(600px,90vw);
+    background:#020617;border:1px solid #164e63;border-radius:8px;
+    padding:8px 14px;font-family:"Consolas","Courier New",monospace;
+    box-shadow:0 0 18px #0891b233 inset;
+  }
+  #terminal-title{color:#22d3ee;font-size:11px;letter-spacing:2px;margin-bottom:6px;opacity:.85;}
+  #terminal-lines{
+    color:#67e8f9;font-size:11.5px;line-height:1.55;
+    max-height:110px;overflow-y:auto;scroll-behavior:smooth;
+  }
+  #terminal-lines::-webkit-scrollbar{width:0;}
+  #terminal-lines .tline{opacity:0;animation:tlineIn .25s ease forwards;white-space:nowrap;}
+  @keyframes tlineIn{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:translateY(0);}}
+  #terminal-lines .prompt{color:#4ade80;}
+  .term-scanline{
+    position:absolute;left:0;right:0;height:2px;top:0;
+    background:linear-gradient(90deg,transparent,#22d3ee,transparent);
+    box-shadow:0 0 10px 1px #22d3ee;
+    animation:scan 2.2s linear infinite;
+    pointer-events:none;opacity:.8;
+  }
+
+  /* ---------- TRANSITION "HACK" façon HUD Iron Man ---------- */
+  #hack-overlay{
+    position:fixed;inset:0;background:#000109;
+    z-index:50;opacity:0;pointer-events:none;
+    font-family:"Consolas","Courier New",monospace;
+    transition:opacity .35s ease;
+    overflow:hidden;
+  }
+  #hack-overlay.active{opacity:1;pointer-events:all;}
+  #hack-overlay.glitch{animation:glitchShake .12s steps(2) infinite;}
+  @keyframes glitchShake{
+    0%{transform:translate(0,0);}
+    50%{transform:translate(1px,-1px) skewX(.4deg);}
+    100%{transform:translate(-1px,1px);}
+  }
+  .hud-corner{position:absolute;width:60px;height:60px;border-color:#22d3ee;opacity:.9;}
+  .hud-corner.tl{top:16px;left:16px;border-top:2px solid;border-left:2px solid;}
+  .hud-corner.tr{top:16px;right:16px;border-top:2px solid;border-right:2px solid;}
+  .hud-corner.bl{bottom:16px;left:16px;border-bottom:2px solid;border-left:2px solid;}
+  .hud-corner.br{bottom:16px;right:16px;border-bottom:2px solid;border-right:2px solid;}
+  #hack-scanline{
+    position:absolute;left:0;right:0;height:3px;top:0;
+    background:linear-gradient(90deg,transparent,#22d3ee,transparent);
+    box-shadow:0 0 12px 2px #22d3ee;
+    animation:scan 1.1s linear infinite;
+  }
+  @keyframes scan{
+    0%{top:0%;}
+    100%{top:100%;}
+  }
+  #hack-lines{
+    position:absolute;left:8%;top:22%;max-width:84%;
+    color:#67e8f9;font-size:15px;line-height:1.9;
+    text-shadow:0 0 6px #22d3ee88;
+  }
+  #hack-lines .done{color:#a5f3fc;}
+  #hack-lines .ok{color:#4ade80;}
+  #hack-title{
+    position:absolute;left:8%;top:10%;color:#22d3ee;font-size:22px;
+    letter-spacing:3px;text-shadow:0 0 10px #22d3ee;
+  }
+  .cursor-blink{display:inline-block;width:8px;background:#67e8f9;
+    animation:blink .5s steps(1) infinite;margin-left:2px;}
+  @keyframes blink{50%{opacity:0;}}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- SCENE 1 -->
+  <div id="scene1">
+    <svg width="0" height="0">
+      <defs>
+        <radialGradient id="starGrad" cx="50%" cy="50%" r="55%">
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="45%" stop-color="#ffe9a8"/>
+          <stop offset="100%" stop-color="#ffd166" stop-opacity="0.9"/>
+        </radialGradient>
+        <radialGradient id="starHalo" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#fff7cc" stop-opacity="0.55"/>
+          <stop offset="100%" stop-color="#fff7cc" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+    </svg>
+
+    <div id="target-star">
+      <svg viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="48" fill="url(#starHalo)"/>
+        <circle cx="50" cy="50" r="9" fill="url(#starGrad)"/>
+        <g stroke="#fff7cc" stroke-linecap="round">
+          <line x1="50" y1="6"  x2="50" y2="30" stroke-width="3"/>
+          <line x1="50" y1="70" x2="50" y2="94" stroke-width="3"/>
+          <line x1="6"  y1="50" x2="30" y2="50" stroke-width="3"/>
+          <line x1="70" y1="50" x2="94" y2="50" stroke-width="3"/>
+          <line x1="20" y1="20" x2="35" y2="35" stroke-width="2"/>
+          <line x1="80" y1="20" x2="65" y2="35" stroke-width="2"/>
+          <line x1="20" y1="80" x2="35" y2="65" stroke-width="2"/>
+          <line x1="80" y1="80" x2="65" y2="65" stroke-width="2"/>
+        </g>
+      </svg>
+    </div>
+
+    <div id="telescope">
+      <div id="telescope-dome"></div>
+      <div id="telescope-tube"></div>
+      <div id="telescope-body"></div>
+    </div>
+
+    <div id="landscape">
+      <svg class="mountains" viewBox="0 0 1000 260" preserveAspectRatio="none">
+        <polygon points="0,260 0,150 120,90 230,160 320,70 430,150 520,60 640,140 740,50 860,130 1000,90 1000,260"
+                 fill="#0d1b33"/>
+        <polygon points="0,260 0,190 100,140 210,200 330,120 460,190 600,110 730,180 860,120 1000,170 1000,260"
+                 fill="#0a1526"/>
+      </svg>
+      <div id="horizon-ground"></div>
+    </div>
+
+    <div id="analyser-bar">
+      <button id="analyser-btn" disabled>Analyser</button>
+    </div>
+  </div>
+
+  <!-- SCENE 2 -->
+  <div id="scene2">
+    <h2 id="star-title">—</h2>
+    <div class="sub">Spectre de l'étoile — de 200 à 1500 nm (déplace le curseur sur le graphique)</div>
+    <div id="zoom-bar">
+      <button id="zoom-out" title="Zoom arrière">−</button>
+      <span id="zoom-level">×1</span>
+      <button id="zoom-in" title="Zoom avant">+</button>
+    </div>
+    <div id="cursor-bar">
+      <span>Curseur :</span>
+      <button data-delta="-1">−1 nm</button>
+      <button data-delta="-0.1">−0,1 nm</button>
+      <span id="cursor-value">λ = — nm</span>
+      <button data-delta="0.1">+0,1 nm</button>
+      <button data-delta="1">+1 nm</button>
+    </div>
+    <div id="spectra-scroll">
+      <div id="spectra-wrap">
+        <canvas id="flat-spectrum" width="720" height="46"></canvas>
+        <canvas id="intensity-spectrum" width="720" height="260"></canvas>
+        <div id="cursor-line"></div>
+        <div id="cursor-readout"></div>
+      </div>
+    </div>
+    <div id="terminal-info">
+      <div class="term-scanline"></div>
+      <div id="terminal-title">// LOG SYSTEME — ANALYSE EN COURS</div>
+      <div id="terminal-lines"></div>
+    </div>
+    <button id="back-btn">← revenir au ciel</button>
+  </div>
+
+  <!-- OVERLAY HUD "hacking" (transition) -->
+  <div id="hack-overlay">
+    <div class="hud-corner tl"></div>
+    <div class="hud-corner tr"></div>
+    <div class="hud-corner bl"></div>
+    <div class="hud-corner br"></div>
+    <div id="hack-scanline"></div>
+    <div id="hack-title">SYSTEME D'ANALYSE SPECTRALE</div>
+    <div id="hack-lines"></div>
+  </div>
+
+</div>
+
+<script>
+/* =========================================================================
+   1) PARAMETRES : nom, abrev, type_spectral (A/F/G/K/M), lambda_max (nm)
+   Encodage : JSON -> XOR (cle fixe) -> base64 urlsafe, passé en ?param=
+   /!\ Ce n'est pas du chiffrement fort (la cle est dans ce fichier, lisible
+   par qui ouvre le code source) : ça bloque juste le "atob() copié-collé
+   dans la console" fait sans reflechir, pas une inspection serieuse du JS.
+   ========================================================================= */
+const DEFAULT_PARAMS = { nom:"Sirius", abrev:"α CMa", type:"A", lambda_max:326 };
+const XOR_KEY = "FJ-spectre-etoile-2026"; // meme convention que les autres animations
+
+function xorStr(str, key){
+  let out = '';
+  for(let i=0;i<str.length;i++){
+    out += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+  }
+  return out;
+}
+
+function decodeParam(str){
+  try{
+    const b64 = str.replace(/-/g,'+').replace(/_/g,'/');
+    const xored = decodeURIComponent(escape(atob(b64)));
+    const json = xorStr(xored, XOR_KEY);
+    return JSON.parse(json);
+  }catch(e){
+    console.warn("param invalide, valeurs par défaut utilisées", e);
+    return null;
+  }
+}
+// Helper accessible depuis la console pour générer un lien de test :
+// buildParam({nom:"Bételgeuse", abrev:"α Ori", type:"M", lambda_max:965})
+window.buildParam = function(obj){
+  const json = JSON.stringify(obj);
+  const xored = xorStr(json, XOR_KEY);
+  const b64 = btoa(unescape(encodeURIComponent(xored)));
+  return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+};
+
+const urlParams = new URLSearchParams(window.location.search);
+const raw = urlParams.get('param');
+const PARAMS = (raw && decodeParam(raw)) || DEFAULT_PARAMS;
+
+/* -------- nom d'affichage brouille --------
+   Le vrai nom (PARAMS.nom, ex "Sirius") ne doit JAMAIS apparaitre a l'ecran :
+   un eleve pourrait le googler / demander a une IA et obtenir directement le type
+   spectral. On genere donc un designant fictif, sans lien avec une vraie base
+   catalographique, pour l'affichage (le type et lambda_max restent les vraies
+   donnees physiques utilisees pour le tracé). */
+function generateCodeName(){
+  const prefixes = ["HD","KOI","TYC","GJ","WISE","2MASS","OGLE","ASAS"];
+  const prefix = prefixes[Math.floor(Math.random()*prefixes.length)];
+  const num = Math.floor(Math.random()*900000)+100000;
+  const suffix = String.fromCharCode(65+Math.floor(Math.random()*26));
+  return `${prefix}-${num}${suffix}`;
+}
+const DISPLAY_NAME = generateCodeName();
+
+/* =========================================================================
+   2) TABLE DE REFERENCE (Doc.1 / Doc.4, ions supprimes -> atomes)
+   ========================================================================= */
+const RAIES_PAR_TYPE = {
+  A: ["H","Ca"],
+  F: ["H","Fe","Ti","Ca","Na","Mg"],
+  G: ["Fe","Ti","Ca","Na","CH"],
+  K: ["Fe","Ti","CH"],
+  M: ["Fe","Ti","CH","TiO"],
+};
+const LAMBDA_ESPECE = {
+  H:[434.0,486.1,656.3], He:[447.1,587.6], Ti:[453.5,501.4],
+  Mg:[517.3,719.3], Fe:[438.4,527.0,778.3], Ca:[422.7],
+  Na:[589.6], CH:[430.0], TiO:[761.2],
+};
+
+function getRaiesWavelengths(type){
+  const especes = RAIES_PAR_TYPE[type] || [];
+  let wl = [];
+  especes.forEach(e => { if(LAMBDA_ESPECE[e]) wl = wl.concat(LAMBDA_ESPECE[e].map(l=>({l,e}))); });
+  return wl;
+}
+function especeAt(lambda, tol=6){
+  const especes = RAIES_PAR_TYPE[PARAMS.type] || [];
+  for(const e of especes){
+    for(const l of (LAMBDA_ESPECE[e]||[])){
+      if(Math.abs(l-lambda) <= tol) return e;
+    }
+  }
+  return null;
+}
+
+/* =========================================================================
+   3) SCENE 1 : ciel étoilé + paysage + télescope
+   ========================================================================= */
+const scene1 = document.getElementById('scene1');
+const scene2 = document.getElementById('scene2');
+
+// fond etoiles scintillantes (au dessus des montagnes)
+const NB_BG_STARS = 90;
+for(let i=0;i<NB_BG_STARS;i++){
+  const s = document.createElement('div');
+  s.className = 'bg-star';
+  const size = Math.random()*2 + 1;
+  s.style.width = size+'px';
+  s.style.height = size+'px';
+  s.style.left = (Math.random()*100)+'%';
+  s.style.top = (Math.random()*68)+'%';
+  s.style.animationDelay = (Math.random()*2.4)+'s';
+  scene1.insertBefore(s, document.getElementById('landscape'));
+}
+for(let i=0;i<3;i++){
+  const s = document.createElement('div');
+  s.className = 'shooting-star';
+  s.style.left = (40+Math.random()*50)+'%';
+  s.style.top = (5+Math.random()*20)+'%';
+  s.style.animationDelay = (Math.random()*8)+'s';
+  s.style.animationDuration = (3+Math.random()*3)+'s';
+  scene1.insertBefore(s, document.getElementById('landscape'));
+}
+
+// arbres le long de l'horizon
+const landscape = document.getElementById('landscape');
+const NB_TREES = 14;
+for(let i=0;i<NB_TREES;i++){
+  const t = document.createElement('div');
+  t.className = 'tree';
+  const left = 4 + i*(92/NB_TREES) + (Math.random()*4-2);
+  const h = 18 + Math.random()*14;
+  t.style.left = left+'%';
+  t.innerHTML = `<div class="trunk" style="height:${h*0.35}px;"></div>
+                 <div class="leaves" style="bottom:${h*0.28}px;border-bottom-width:${h}px;"></div>`;
+  landscape.appendChild(t);
+}
+
+// position aleatoire de l'etoile a chaque chargement, n'importe ou dans le ciel
+const starX = 6 + Math.random()*88;   // % largeur
+const starY = 6 + Math.random()*56;   // % hauteur (au dessus du paysage)
+
+const targetStar = document.getElementById('target-star');
+targetStar.style.left = starX+'%';
+targetStar.style.top  = starY+'%';
+
+let locked = false;
+
+const telescope = document.getElementById('telescope');
+const tube = document.getElementById('telescope-tube');
+
+function pointTubeAt(clientX, clientY){
+  const rect = tube.getBoundingClientRect();
+  const originX = rect.left + rect.width/2;
+  const originY = rect.bottom;
+  const angle = Math.atan2(clientX-originX, -(clientY-originY)) * (180/Math.PI);
+  const clamped = Math.max(-80, Math.min(80, angle));
+  tube.style.transform = `rotate(${clamped}deg)`;
+}
+
+scene1.addEventListener('mousemove', (e)=>{
+  if(locked) return;
+  pointTubeAt(e.clientX, e.clientY);
+});
+
+const analyserBtn = document.getElementById('analyser-btn');
+
+targetStar.addEventListener('click', ()=>{
+  if(locked) return;
+  locked = true;
+  telescope.classList.add('locked');
+  targetStar.classList.add('locked');
+  const r = targetStar.getBoundingClientRect();
+  pointTubeAt(r.left + r.width/2, r.top + r.height/2);
+  analyserBtn.disabled = false;
+  analyserBtn.classList.add('ready');
+});
+
+/* -------- transition "hack" façon HUD (Iron Man / JARVIS) -------- */
+const HACK_LINES = [
+  ["ACCES AU RESEAU D'OBSERVATION...", "ok"],
+  [`VERROUILLAGE CIBLE : ${DISPLAY_NAME}`, "done"],
+  ["INTERCEPTION DU FLUX LUMINEUX...", "ok"],
+  ["DECRYPTAGE DU SPECTRE EN COURS...", "ok"],
+  ["ANALYSE DES RAIES D'ABSORPTION...", "ok"],
+  ["IDENTIFICATION DES ELEMENTS CHIMIQUES...", "ok"],
+  ["ACCES AUTORISE.", "ok"],
+];
+
+function runHackSequence(onDone){
+  const overlay = document.getElementById('hack-overlay');
+  const linesBox = document.getElementById('hack-lines');
+  linesBox.innerHTML = '';
+  overlay.classList.add('active');
+
+  let i = 0;
+  function nextLine(){
+    if(i >= HACK_LINES.length){
+      overlay.classList.add('glitch');
+      setTimeout(()=>{
+        overlay.classList.remove('glitch','active');
+        onDone();
+      }, 450);
+      return;
+    }
+    const [text, cls] = HACK_LINES[i];
+    const p = document.createElement('div');
+    p.innerHTML = `<span class="${cls}"></span><span class="cursor-blink">&nbsp;</span>`;
+    linesBox.appendChild(p);
+    const span = p.querySelector(`.${cls}`);
+    let c = 0;
+    const typeInterval = setInterval(()=>{
+      span.textContent = text.slice(0, c+1);
+      c++;
+      if(c >= text.length){
+        clearInterval(typeInterval);
+        i++;
+        setTimeout(nextLine, 160);
+      }
+    }, 16);
+  }
+  nextLine();
+}
+
+analyserBtn.addEventListener('click', ()=>{
+  if(!locked) return;
+  runHackSequence(()=>{
+    scene1.classList.add('hidden');
+    scene2.classList.add('visible');
+    drawSpectra();
+    showCursor(LAMBDA_MIN + (LAMBDA_MAX-LAMBDA_MIN)/2);
+    runTerminal();
+  });
+});
+
+document.getElementById('back-btn').addEventListener('click', ()=>{
+  scene2.classList.remove('visible');
+  scene1.classList.remove('hidden');
+});
+
+/* =========================================================================
+   4) SCENE 2 : spectre "a plat" (bande colorée) + spectre en intensité,
+      axe des longueurs d'onde commun, curseur synchronisé
+   ========================================================================= */
+document.getElementById('star-title').textContent = DISPLAY_NAME;
+
+const LAMBDA_MIN = 200, LAMBDA_MAX = 1500;
+const MARGIN_L = 50, MARGIN_R = 16;
+
+// conversion longueur d'onde visible -> couleur RGB (convention francaise : visible = 400-800 nm)
+const VIS_MIN = 400, VIS_MAX = 800;
+function wavelengthToRGB(wl){
+  let r=0,g=0,b=0;
+  if(wl>=400 && wl<450){ r=-(wl-450)/(450-400); g=0; b=1; }
+  else if(wl>=450 && wl<475){ r=0; g=(wl-450)/(475-450); b=1; }
+  else if(wl>=475 && wl<510){ r=0; g=1; b=-(wl-510)/(510-475); }
+  else if(wl>=510 && wl<565){ r=(wl-510)/(565-510); g=1; b=0; }
+  else if(wl>=565 && wl<590){ r=1; g=-(wl-590)/(590-565); b=0; }
+  else if(wl>=590 && wl<=800){ r=1; g=Math.max(0,-(wl-590)/(800-590)*0.55+0.55*(wl<625?1:0)); b=0; }
+  else { return [10,8,20]; } // hors visible : quasi noir (UV/IR)
+  let factor=1;
+  if(wl>=400 && wl<420) factor = 0.3+0.7*(wl-400)/(420-400);
+  else if(wl>=750 && wl<=800) factor = 0.3+0.7*(800-wl)/(800-750);
+  const gamma=0.8;
+  const f=(c)=> c>0 ? Math.round(255*Math.pow(c*factor,gamma)) : 0;
+  return [f(r), f(g), f(b)];
+}
+
+const BASE_W = 720;
+const MAJOR_STEP = 200, MINOR_STEP = 50;
+let zoomLevel = 1;
+
+// Forme spectrale d'un corps chaud (loi de Planck exprimee via lambda_max, cf. loi de Wien :
+// lambda_max * T = 2,9e6 nm.K). Bien plus fidele qu'une gaussienne : montee raide cote UV,
+// longue traine cote IR (comme sur un vrai spectre stellaire), et pic exact en lambda_max.
+const WIEN_CONST = 2.9e6;     // nm.K
+const HC_OVER_K  = 1.4388e7;  // nm.K (h*c/k)
+function planckShape(l, lambdaMax){
+  const ratio = lambdaMax / l;
+  const x = (HC_OVER_K / WIEN_CONST) * ratio;
+  const denom = Math.exp(Math.min(x, 700)) - 1;
+  return Math.pow(ratio, 5) / denom;
+}
+function intensityOf(l, lambdaMaxEtoile){
+  const x0 = HC_OVER_K / WIEN_CONST;
+  const peak = 1 / (Math.exp(x0) - 1); // planckShape(lambdaMax, lambdaMax)
+  const base = planckShape(l, lambdaMaxEtoile) / peak;
+  const noise = Math.sin(l*0.045)*0.006; // granularité très réduite
+  return Math.max(0, base + noise);
+}
+function isOnLine(l, lines){
+  for(const {l:wl} of lines){ if(Math.abs(l-wl) < 5) return Math.abs(l-wl)/5; }
+  return null;
+}
+
+function drawSpectra(){
+  const flatCv = document.getElementById('flat-spectrum');
+  const intCv = document.getElementById('intensity-spectrum');
+  const fctx = flatCv.getContext('2d');
+  const ictx = intCv.getContext('2d');
+
+  const W = Math.round(BASE_W * zoomLevel);
+  flatCv.width = W;
+  intCv.width = W;
+  const plotW = W - MARGIN_L - MARGIN_R;
+
+  const lambdaMaxEtoile = PARAMS.lambda_max;
+  const lines = getRaiesWavelengths(PARAMS.type);
+
+  // ---- bande colorée "a plat" ----
+  fctx.clearRect(0,0,W, flatCv.height);
+  for(let px=0; px<plotW; px++){
+    const l = LAMBDA_MIN + (px/plotW)*(LAMBDA_MAX-LAMBDA_MIN);
+    const [r,g,b] = wavelengthToRGB(l);
+    const d = isOnLine(l, lines);
+    let col = `rgb(${r},${g},${b})`;
+    if(d!==null){
+      const k = 0.15+0.85*d; // creux sombre au centre de la raie
+      col = `rgb(${Math.round(r*k)},${Math.round(g*k)},${Math.round(b*k)})`;
+    }
+    fctx.fillStyle = col;
+    fctx.fillRect(MARGIN_L+px, 0, 1, flatCv.height);
+  }
+  fctx.fillStyle = '#050914';
+  fctx.fillRect(0,0,MARGIN_L,flatCv.height);
+  fctx.fillRect(W-MARGIN_R,0,MARGIN_R,flatCv.height);
+
+  // ---- courbe d'intensité (coloree comme le spectre visible) ----
+  const H = intCv.height, marginB=30, marginT=8;
+  const plotH = H - marginB - marginT;
+  ictx.clearRect(0,0,W,H);
+
+  // graduations secondaires (fines, sans etiquette)
+  ictx.strokeStyle = '#16233a';
+  ictx.lineWidth = 1;
+  for(let l=LAMBDA_MIN; l<=LAMBDA_MAX; l+=MINOR_STEP){
+    const x = MARGIN_L + (l-LAMBDA_MIN)/(LAMBDA_MAX-LAMBDA_MIN)*plotW;
+    ictx.beginPath();
+    ictx.moveTo(x, marginT);
+    ictx.lineTo(x, H-marginB);
+    ictx.stroke();
+    ictx.beginPath();
+    ictx.moveTo(x, H-marginB);
+    ictx.lineTo(x, H-marginB+3);
+    ictx.stroke();
+  }
+  // graduations principales (marquees + etiquetees)
+  ictx.strokeStyle = '#334155';
+  ictx.fillStyle = '#94a3b8';
+  ictx.font = '11px Arial';
+  ictx.textAlign = 'center';
+  for(let l=LAMBDA_MIN; l<=LAMBDA_MAX; l+=MAJOR_STEP){
+    const x = MARGIN_L + (l-LAMBDA_MIN)/(LAMBDA_MAX-LAMBDA_MIN)*plotW;
+    ictx.beginPath();
+    ictx.moveTo(x, marginT);
+    ictx.lineTo(x, H-marginB);
+    ictx.stroke();
+    ictx.beginPath();
+    ictx.moveTo(x, H-marginB);
+    ictx.lineTo(x, H-marginB+6);
+    ictx.stroke();
+    ictx.fillText(l, x, H-marginB+18);
+  }
+  // axes
+  ictx.strokeStyle = '#64748b';
+  ictx.beginPath();
+  ictx.moveTo(MARGIN_L, marginT);
+  ictx.lineTo(MARGIN_L, H-marginB);
+  ictx.lineTo(W-MARGIN_R, H-marginB);
+  ictx.stroke();
+
+  ictx.fillStyle = '#94a3b8';
+  ictx.save();
+  ictx.translate(14, H/2);
+  ictx.rotate(-Math.PI/2);
+  ictx.fillText('I relative', 0, 0);
+  ictx.restore();
+  ictx.fillText('λ (nm)', W/2, H-4);
+
+  // courbe : sur-echantillonnee (4 points/pixel) pour un tracé fin et des raies bien nettes
+  const OVERSAMPLE = 4;
+  const nSteps = Math.round(plotW*OVERSAMPLE);
+  ictx.lineWidth = 2;
+  let prevX=null, prevY=null;
+  for(let s=0; s<=nSteps; s++){
+    const px = s/OVERSAMPLE;
+    const l = LAMBDA_MIN + (px/plotW)*(LAMBDA_MAX-LAMBDA_MIN);
+    let I = intensityOf(l, lambdaMaxEtoile);
+    const d = isOnLine(l, lines);
+    if(d!==null) I *= 0.1+0.9*d;
+    const x = MARGIN_L + px;
+    const y = H - marginB - I*plotH;
+    if(prevX!==null){
+      const visible = (l>=VIS_MIN && l<=VIS_MAX);
+      if(visible){
+        const [r,g,b] = wavelengthToRGB(l);
+        ictx.strokeStyle = `rgb(${r},${g},${b})`;
+      } else {
+        ictx.strokeStyle = '#94a3b8'; // hors du visible (UV/IR) : tracé neutre, mais toujours trace
+      }
+      ictx.beginPath();
+      ictx.moveTo(prevX, prevY);
+      ictx.lineTo(x, y);
+      ictx.stroke();
+    }
+    prevX=x; prevY=y;
+  }
+
+  // ---- numerotation des raies d'absorption (reperes neutres, sans nom d'espece) ----
+  const sortedLines = lines.slice().sort((a,b)=>a.l-b.l)
+                            .filter(({l})=> l>=LAMBDA_MIN && l<=LAMBDA_MAX);
+  ictx.font = 'bold 11px Arial';
+  ictx.textAlign = 'center';
+  sortedLines.forEach(({l}, i)=>{
+    const x = MARGIN_L + (l-LAMBDA_MIN)/(LAMBDA_MAX-LAMBDA_MIN)*plotW;
+    ictx.fillStyle = '#f87171';
+    ictx.beginPath();
+    ictx.arc(x, marginT+8, 8, 0, 2*Math.PI);
+    ictx.fill();
+    ictx.fillStyle = '#0b1220';
+    ictx.fillText(String(i+1), x, marginT+11);
+  });
+
+  // ---- curseur synchronise sur les deux spectres ----
+  const wrap = document.getElementById('spectra-wrap');
+  const totalH = flatCv.height + intCv.height;
+  document.getElementById('cursor-line').style.height = totalH+'px';
+
+  wrap.onmousemove = (e)=>{
+    const rect = flatCv.getBoundingClientRect();
+    let x = e.clientX - rect.left;
+    x = Math.max(MARGIN_L, Math.min(W-MARGIN_R, x));
+    showCursor(LAMBDA_MIN + (x-MARGIN_L)/plotW*(LAMBDA_MAX-LAMBDA_MIN));
+  };
+  wrap.onmouseleave = ()=>{
+    document.getElementById('cursor-line').style.opacity=0;
+    document.getElementById('cursor-readout').style.opacity=0;
+  };
+}
+
+/* -------- curseur precis, pilote par la souris OU par les boutons +/- -------- */
+let cursorLambda = null;
+
+function showCursor(l){
+  cursorLambda = Math.max(LAMBDA_MIN, Math.min(LAMBDA_MAX, l));
+  const flatCv = document.getElementById('flat-spectrum');
+  const plotW = flatCv.width - MARGIN_L - MARGIN_R;
+  const x = MARGIN_L + (cursorLambda-LAMBDA_MIN)/(LAMBDA_MAX-LAMBDA_MIN)*plotW;
+
+  const cursorLine = document.getElementById('cursor-line');
+  const readout = document.getElementById('cursor-readout');
+  cursorLine.style.left = x+'px';
+  cursorLine.style.opacity = 1;
+  readout.style.left = x+'px';
+  readout.style.opacity = 1;
+  readout.textContent = `λ ≈ ${cursorLambda.toFixed(1)} nm`;
+  document.getElementById('cursor-value').textContent = `λ = ${cursorLambda.toFixed(1)} nm`;
+}
+
+document.querySelectorAll('#cursor-bar button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const delta = parseFloat(btn.dataset.delta);
+    const base = cursorLambda ?? (LAMBDA_MIN + (LAMBDA_MAX-LAMBDA_MIN)/2);
+    showCursor(+(base + delta).toFixed(1));
+  });
+});
+
+/* -------- terminal "log systeme" : jargon pseudo-scientifique de serie Z -------- */
+const FAKE_TERMS = [
+  "atom_explosion", "geodesic_constellation", "quantum_flux_capacitor",
+  "chrono_displacement_field", "neutrino_compensator", "tachyon_inverter",
+  "graviton_stabilizer", "plasma_conduit_array", "subspace_resonance_chamber",
+  "photon_deflector_grid", "antimatter_containment", "hyperspace_beacon",
+  "ion_flux_regulator", "warp_core_matrix", "positronic_relay",
+  "magnetic_gear", "singularity_core", "cryo_stasis_pod",
+  "dark_matter_condenser", "temporal_anomaly_scanner", "molecular_resequencer",
+  "uranium_energy_power", "fusion_containment_ring", "nebula_uplink",
+];
+const FAKE_STATUS = [
+  "ready", "en ligne", "recalibrage...", "surchauffe critique",
+  "explosion set to centauri phase", "sequence initialisee",
+  "champ stabilise", "verrouillage quantique", "ERREUR : anomalie detectee",
+  "phase alpha engagee", "fusion amorcee", "core temperature nominal",
+  "override manuel requis", "set to 23.3 N°", "synchro etoile en cours",
+];
+
+function randomHex(n){
+  const chars='0123456789ABCDEF';
+  let s='';
+  for(let i=0;i<n;i++) s += chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+function fakeCodeLine(){
+  return `SYNC::0x${randomHex(4)}-${FAKE_TERMS[Math.floor(Math.random()*FAKE_TERMS.length)].toUpperCase()}-${Math.floor(Math.random()*99)}`;
+}
+function fakeTermLine(){
+  const term = FAKE_TERMS[Math.floor(Math.random()*FAKE_TERMS.length)];
+  const status = FAKE_STATUS[Math.floor(Math.random()*FAKE_STATUS.length)];
+  const dots = '.'.repeat(Math.max(3, 26-term.length));
+  return `${term} ${dots} ${status}`;
+}
+
+function generateTerminalLines(n=22){
+  const lines = [];
+  for(let i=0;i<n;i++){
+    lines.push(Math.random()<0.28 ? fakeCodeLine() : fakeTermLine());
+  }
+  lines.push('STATUT ..................... analyse terminee');
+  return lines;
+}
+
+function runTerminal(){
+  const box = document.getElementById('terminal-lines');
+  box.innerHTML = '';
+  const facts = generateTerminalLines();
+  let i = 0;
+  function nextLine(){
+    if(i >= facts.length) return;
+    const p = document.createElement('div');
+    p.className = 'tline';
+    p.innerHTML = `<span class="prompt">&gt;_</span> ${facts[i]}`;
+    box.appendChild(p);
+    box.scrollTop = box.scrollHeight;
+    i++;
+    setTimeout(nextLine, 340 + Math.random()*220);
+  }
+  nextLine();
+}
+
+document.getElementById('zoom-in').addEventListener('click', ()=>{
+  zoomLevel = Math.min(6, +(zoomLevel*1.5).toFixed(2));
+  document.getElementById('zoom-level').textContent = '×'+zoomLevel.toFixed(1).replace(/\.0$/,'');
+  drawSpectra();
+});
+document.getElementById('zoom-out').addEventListener('click', ()=>{
+  zoomLevel = Math.max(1, +(zoomLevel/1.5).toFixed(2));
+  document.getElementById('zoom-level').textContent = '×'+zoomLevel.toFixed(1).replace(/\.0$/,'');
+  drawSpectra();
+});
+</script>
+</body>
+</html>
