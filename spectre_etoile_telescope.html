@@ -666,9 +666,21 @@ function intensityOf(l, lambdaMaxEtoile){
   const noise = Math.sin(l*0.045)*0.006; // granularité très réduite
   return Math.max(0, base + noise);
 }
-function isOnLine(l, lines){
-  for(const {l:wl} of lines){ if(Math.abs(l-wl) < 5) return Math.abs(l-wl)/5; }
-  return null;
+// Profil lisse (gaussien) du creux d'absorption, au lieu d'un V lineaire tronque
+// (c'etait ca le "mauvais echantillonnage" visuel : la forme elle-meme etait anguleuse,
+// pas le nombre de points calcules).
+const LINE_SIGMA = 1.6; // largeur (nm) du creux, ~raie fine mais bord arrondi
+// Profondeur relative par espece (toutes les raies n'absorbent pas autant) :
+const RAIE_DEPTH = { H:0.92, He:0.85, Ca:0.78, Na:0.72, Mg:0.62, Fe:0.55, Ti:0.48, CH:0.4, TiO:0.35 };
+function lineDipFactor(l, lines){
+  let factor = 1;
+  for(const {l:wl, e} of lines){
+    const depth = RAIE_DEPTH[e] ?? 0.6;
+    const d = l - wl;
+    const g = Math.exp(-(d*d)/(2*LINE_SIGMA*LINE_SIGMA));
+    factor *= (1 - depth*g);
+  }
+  return factor;
 }
 
 function drawSpectra(){
@@ -690,10 +702,10 @@ function drawSpectra(){
   for(let px=0; px<plotW; px++){
     const l = LAMBDA_MIN + (px/plotW)*(LAMBDA_MAX-LAMBDA_MIN);
     const [r,g,b] = wavelengthToRGB(l);
-    const d = isOnLine(l, lines);
+    const factor = lineDipFactor(l, lines);
     let col = `rgb(${r},${g},${b})`;
-    if(d!==null){
-      const k = 0.15+0.85*d; // creux sombre au centre de la raie
+    if(factor<1){
+      const k = 0.15+0.85*factor;
       col = `rgb(${Math.round(r*k)},${Math.round(g*k)},${Math.round(b*k)})`;
     }
     fctx.fillStyle = col;
@@ -764,8 +776,7 @@ function drawSpectra(){
     const px = s/OVERSAMPLE;
     const l = LAMBDA_MIN + (px/plotW)*(LAMBDA_MAX-LAMBDA_MIN);
     let I = intensityOf(l, lambdaMaxEtoile);
-    const d = isOnLine(l, lines);
-    if(d!==null) I *= 0.1+0.9*d;
+    I *= lineDipFactor(l, lines);
     const x = MARGIN_L + px;
     const y = H - marginB - I*plotH;
     if(prevX!==null){
