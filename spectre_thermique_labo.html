@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spectre thermique — labo</title>
+<style>
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:#eef2f6;
+    font-family:"Segoe UI",Arial,sans-serif;
+    color:#25313d;
+    overflow:hidden;
+  }
+  #stage{
+    position:relative; width:100%; height:100%;
+    display:flex; flex-direction:column;
+  }
+  canvas{ display:block; width:100%; }
+  #scene{ flex:1.4; min-height:0; }
+  #graphCanvas{ flex:1; min-height:0; border-top:1px solid #d7e0e8; }
+  #panel{
+    background:#ffffff;
+    border-top:1px solid #d7e0e8;
+    padding:10px 16px;
+    display:flex; align-items:center; gap:18px;
+    flex-wrap:wrap;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+  }
+  .gauge{
+    background:#f0f4f8; border:1px solid #c7d3dd; border-radius:6px;
+    padding:6px 12px; font-size:1.1em; letter-spacing:1px;
+    color:#1d5fa8; font-family:"Consolas","Courier New",monospace; min-width:110px; text-align:center;
+  }
+  button{
+    font-family:"Segoe UI",Arial,sans-serif; font-size:0.95em;
+    background:#1d5fa8;
+    color:#fff; border:none; border-radius:6px;
+    padding:9px 16px; cursor:pointer;
+  }
+  button:hover{ background:#164a86; }
+  button.on{ background:#c0392b; }
+  .lbl{ font-size:0.8em; color:#6b7c8c; margin-bottom:2px; }
+  #consigneWrap{ display:flex; flex-direction:column; min-width:200px; }
+  #consigneRow{ display:flex; align-items:center; gap:8px; }
+  #consigneSlider{ flex:1; }
+  #consigneVal{
+    background:#f0f4f8; border:1px solid #c7d3dd; border-radius:6px;
+    padding:4px 8px; font-family:"Consolas","Courier New",monospace;
+    color:#1d5fa8; width:78px; text-align:center;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="scene"></canvas>
+  <canvas id="graphCanvas"></canvas>
+  <div id="panel">
+    <div id="consigneWrap">
+      <div class="lbl">Consigne du thermostat</div>
+      <div id="consigneRow">
+        <input type="range" id="consigneSlider" min="293" max="6000" step="10" value="293">
+        <input type="number" id="consigneVal" value="293"> K
+      </div>
+    </div>
+    <div>
+      <div class="lbl">Bec Bunsen</div>
+      <button id="btnMarche" onclick="toggleThermostat()">Marche</button>
+    </div>
+    <div>
+      <div class="lbl">Curseur (λ)</div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button onclick="nudgeCursor(-1)">◀</button>
+        <div class="gauge" id="cursorVal" style="min-width:90px;">— nm</div>
+        <button onclick="nudgeCursor(1)">▶</button>
+      </div>
+    </div>
+    <div>
+      <div class="lbl">Intensité au curseur</div>
+      <div class="gauge" id="cursorIVal">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= Paramètres codés (XOR + base64) ================= */
+const XOR_KEY = "CFPB-spectreTherm19e";
+function xorStr(str, key){
+  let out = "";
+  for(let i=0;i<str.length;i++){
+    out += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+  }
+  return out;
+}
+function decodeParam(s){
+  try{ return JSON.parse(xorStr(atob(s), XOR_KEY)); }catch(e){ return null; }
+}
+function getParams(){
+  const usp = new URLSearchParams(window.location.search);
+  let data = {};
+  const p = usp.get("p");
+  if(p){ const d = decodeParam(p); if(d) data = d; }
+  if(usp.get("Tmax")) data.Tmax = parseFloat(usp.get("Tmax"));
+  if(usp.get("tauH")) data.tauH = parseFloat(usp.get("tauH"));
+  if(usp.get("tauC")) data.tauC = parseFloat(usp.get("tauC"));
+  return data;
+}
+const params = getParams();
+const T_AMBIANT = 293;
+const T_MAX   = (params.Tmax != null) ? params.Tmax : 20000;
+const TAU_HEAT = (params.tauH != null) ? params.tauH : 18;
+const TAU_COOL = (params.tauC != null) ? params.tauC : 45;
+
+/* ================= État ================= */
+const HYSTERESIS = 5; // K, bande morte du thermostat
+let bunsenOn = false;
+let thermostatOn = false;
+let consigne = T_AMBIANT;
+let T = T_AMBIANT;
+let lastT = performance.now();
+
+const slider = document.getElementById("consigneSlider");
+const consigneInput = document.getElementById("consigneVal");
+slider.min = T_AMBIANT; slider.max = T_MAX; slider.value = T_AMBIANT;
+consigneInput.min = T_AMBIANT; consigneInput.max = T_MAX; consigneInput.value = T_AMBIANT;
+
+function setConsigne(v){
+  v = Math.min(T_MAX, Math.max(T_AMBIANT, Math.round(v)));
+  consigne = v;
+  slider.value = v;
+  consigneInput.value = v;
+}
+slider.addEventListener("input", () => setConsigne(parseFloat(slider.value)));
+consigneInput.addEventListener("change", () => setConsigne(parseFloat(consigneInput.value) || T_AMBIANT));
+
+function toggleThermostat(){
+  thermostatOn = !thermostatOn;
+  const b = document.getElementById("btnMarche");
+  b.textContent = thermostatOn ? "Arrêt" : "Marche";
+  b.classList.toggle("on", thermostatOn);
+  if(!thermostatOn) bunsenOn = false;
+}
+
+/* ================= Physique (loi de Planck, pour le rendu couleur) ================= */
+function planck(lamNm, Temp){
+  const h=6.626e-34, c=3.0e8, k=1.381e-23;
+  const lam = lamNm*1e-9;
+  const x = (h*c)/(lam*k*Temp);
+  return (1/Math.pow(lam,5)) / (Math.exp(Math.min(x,700))-1);
+}
+function wavelengthToRGB(lam){
+  let r=0,g=0,b=0;
+  if(lam>=380 && lam<440){ r=-(lam-440)/(440-380); g=0; b=1; }
+  else if(lam>=440 && lam<490){ r=0; g=(lam-440)/(490-440); b=1; }
+  else if(lam>=490 && lam<510){ r=0; g=1; b=-(lam-510)/(510-490); }
+  else if(lam>=510 && lam<580){ r=(lam-510)/(580-510); g=1; b=0; }
+  else if(lam>=580 && lam<645){ r=1; g=-(lam-645)/(645-580); b=0; }
+  else if(lam>=645 && lam<=780){ r=1; g=0; b=0; }
+  let factor;
+  if(lam>=380 && lam<420) factor = 0.3 + 0.7*(lam-380)/(420-380);
+  else if(lam>=420 && lam<701) factor = 1.0;
+  else if(lam>=701 && lam<=780) factor = 0.3 + 0.7*(780-lam)/(780-700);
+  else factor = 0.0;
+  const gamma=0.8;
+  const adj = v => v<=0 ? 0 : Math.round(255*Math.pow(v*factor, gamma));
+  return [adj(r), adj(g), adj(b)];
+}
+function emberRGB(temp){
+  // couleur perçue de l'objet chauffé, obtenue par pondération de Planck sur le
+  // visible (même physique que le faisceau/le graphe) plutôt qu'un dégradé arbitraire :
+  // rouge sombre à basse T, orange, puis blanc, et bleuté si T_MAX est très élevé.
+  let rs=0, gs=0, bs=0, wsum=0;
+  for(let lam=380; lam<=780; lam+=10){
+    const w = planck(lam, temp);
+    const [r,g,b] = wavelengthToRGB(lam);
+    rs += r*w; gs += g*w; bs += b*w; wsum += w;
+  }
+  let r=50, g=20, b=15;
+  if(wsum > 0){
+    r = rs/wsum; g = gs/wsum; b = bs/wsum;
+    const mx = Math.max(r,g,b,1);
+    r = r/mx*255; g = g/mx*255; b = b/mx*255;
+  }
+  // en dessous d'un certain seuil l'objet reste "froid" (matière non lumineuse) :
+  // on mélange progressivement la teinte incandescente à une teinte froide de base
+  const glow = Math.min(1, Math.max(0, (temp-T_AMBIANT)/(T_MAX-T_AMBIANT)));
+  const br = Math.min(1, glow*1.3);
+  const coldR=55, coldG=45, coldB=40;
+  return [
+    Math.round(coldR + (r-coldR)*br),
+    Math.round(coldG + (g-coldG)*br),
+    Math.round(coldB + (b-coldB)*br)
+  ];
+}
+
+/* ================= Scène ================= */
+const canvas = document.getElementById("scene");
+const ctx = canvas.getContext("2d");
+function resize(){
+  canvas.width = canvas.clientWidth * devicePixelRatio;
+  canvas.height = canvas.clientHeight * devicePixelRatio;
+}
+window.addEventListener("resize", resize);
+
+// image du bec Bunsen (SVG embarqué, pour rester un fichier HTML autonome)
+const BUNSEN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 320">
+  <defs>
+    <linearGradient id="brass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eccf74"/>
+      <stop offset="0.5" stop-color="#cf9f3f"/>
+      <stop offset="1" stop-color="#9c7420"/>
+    </linearGradient>
+    <linearGradient id="baseGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0f2f4"/>
+      <stop offset="1" stop-color="#c3c8cd"/>
+    </linearGradient>
+    <linearGradient id="barrelGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3a3a3a"/>
+      <stop offset="0.35" stop-color="#1c1c1c"/>
+      <stop offset="1" stop-color="#2b2b2b"/>
+    </linearGradient>
+  </defs>
+  <path d="M112,244 C165,248 188,258 196,272 C202,286 190,300 172,296"
+        fill="none" stroke="#141414" stroke-width="15" stroke-linecap="round"/>
+  <path d="M112,244 C165,248 188,258 196,272 C202,286 190,300 172,296"
+        fill="none" stroke="#4a4a4a" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+  <ellipse cx="70" cy="298" rx="58" ry="15" fill="url(#baseGrad)" stroke="#8a8f95" stroke-width="2"/>
+  <ellipse cx="70" cy="293" rx="58" ry="14" fill="#eef0f2" stroke="#9ba1a7" stroke-width="1.5"/>
+  <rect x="14" y="258" width="34" height="9" rx="3" fill="#9aa0a6" stroke="#7d838a" stroke-width="1"/>
+  <circle cx="12" cy="262" r="13" fill="#c3c7cc" stroke="#7d838a" stroke-width="2"/>
+  <g stroke="#7d838a" stroke-width="1.6">
+    <line x1="12" y1="251" x2="12" y2="273"/>
+    <line x1="1" y1="262" x2="23" y2="262"/>
+    <line x1="4" y1="254" x2="20" y2="270"/>
+    <line x1="4" y1="270" x2="20" y2="254"/>
+  </g>
+  <rect x="48" y="236" width="44" height="18" rx="3" fill="url(#brass)" stroke="#8a6a24" stroke-width="1"/>
+  <rect x="50" y="256" width="40" height="34" rx="4" fill="#1c1c1c"/>
+  <rect x="60" y="70" width="20" height="168" rx="2" fill="url(#barrelGrad)"/>
+  <rect x="62" y="70" width="5" height="168" fill="#4a4a4a" opacity="0.7"/>
+  <rect x="57" y="64" width="26" height="10" rx="2" fill="#151515"/>
+</svg>`;
+const bunsenImg = new Image();
+bunsenImg.src = "data:image/svg+xml;utf8," + encodeURIComponent(BUNSEN_SVG);
+
+// petit cordon spiralé (façon fil de thermomètre digital), de (x1,y1) à (x2,y2)
+function drawCoiledWire(x1,y1,x2,y2, coils=9, amp=5){
+  const dx = x2-x1, dy = y2-y1;
+  const len = Math.hypot(dx,dy);
+  const ux = dx/len, uy = dy/len;      // direction
+  const nx = -uy, ny = ux;             // normale
+  ctx.beginPath();
+  const steps = coils*10;
+  for(let i=0;i<=steps;i++){
+    const t = i/steps;
+    const along = t*len;
+    const wig = Math.sin(t*coils*2*Math.PI)*amp;
+    const px = x1 + ux*along + nx*wig;
+    const py = y1 + uy*along + ny*wig;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.stroke();
+}
+
+function drawScene(){
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  const dpr = devicePixelRatio;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+
+  // mur clair, sobre et moderne
+  const wallGrad = ctx.createLinearGradient(0,0,0,H);
+  wallGrad.addColorStop(0,"#f7f9fb");
+  wallGrad.addColorStop(1,"#e9eef3");
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(0,0,W,H);
+  // plinthe discrète
+  ctx.fillStyle = "#dde5ec";
+  ctx.fillRect(0, H*0.72, W, 4);
+
+  // comptoir moderne
+  const counterY = H*0.78;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0,counterY,W,H-counterY);
+  ctx.fillStyle = "#dbe4ec";
+  ctx.fillRect(0,counterY,W,6);
+
+  const baseY = counterY;
+  const xEmber = W*0.15, yEmber = baseY-135;
+  const xSlit  = W*0.42;
+  const xPrism = W*0.60, prismW = W*0.085;
+  const xScreen = W*0.86;
+
+  // ---- halo radiant (rayons dans toutes les directions) ----
+  const glow = Math.min(1, Math.max(0,(T-T_AMBIANT)/(T_MAX-T_AMBIANT)));
+  const [er,eg,eb] = emberRGB(T);
+  if(glow > 0.02){
+    const nRays = 24;
+    for(let i=0;i<nRays;i++){
+      const ang = (i/nRays)*2*Math.PI + performance.now()/4000;
+      const len = 40 + 60*glow + 8*Math.sin(performance.now()/300 + i);
+      const x2 = xEmber + len*Math.cos(ang);
+      const y2 = yEmber + len*Math.sin(ang);
+      ctx.strokeStyle = `rgba(${er},${eg},${eb},${0.10+0.25*glow})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(xEmber,yEmber);
+      ctx.lineTo(x2,y2);
+      ctx.stroke();
+    }
+    // halo diffus
+    const rg = ctx.createRadialGradient(xEmber,yEmber,4, xEmber,yEmber,90*glow+20);
+    rg.addColorStop(0, `rgba(${er},${eg},${eb},${0.35*glow})`);
+    rg.addColorStop(1, `rgba(${er},${eg},${eb},0)`);
+    ctx.fillStyle = rg;
+    ctx.beginPath(); ctx.arc(xEmber,yEmber,90*glow+20,0,2*Math.PI); ctx.fill();
+  }
+
+  // ---- portion du halo captée par la fente vers le prisme ----
+  if(glow > 0.03 && xSlit > xEmber){
+    ctx.strokeStyle = `rgba(${er},${eg},${eb},${0.30+0.4*glow})`;
+    ctx.lineWidth = 2 + 2*glow;
+    ctx.beginPath();
+    ctx.moveTo(xEmber, yEmber);
+    ctx.lineTo(xSlit, yEmber);
+    ctx.lineTo(xPrism, yEmber);
+    ctx.stroke();
+  }
+
+  // ---- fente (support court, juste autour de l'axe optique) ----
+  const slitHalf = 78;
+  ctx.strokeStyle = "#c7d3dd";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(xSlit, yEmber-slitHalf);
+  ctx.lineTo(xSlit, yEmber+slitHalf);
+  ctx.stroke();
+  // petit pied au sol pour ancrer le support
+  ctx.beginPath();
+  ctx.moveTo(xSlit, yEmber+slitHalf);
+  ctx.lineTo(xSlit, baseY-6);
+  ctx.stroke();
+  ctx.fillStyle = "#6b7c8c";
+  ctx.font = "13px Segoe UI";
+  ctx.fillText("Fente", xSlit-14, yEmber-slitHalf-10);
+
+  // ---- prisme (triangle solide, base étroite, façon prisme expérimental) ----
+  const pApexY = yEmber - 62;
+  const pBotY  = yEmber + 62;
+  const pLeftX = xPrism - prismW*0.32;
+  const pRightX = xPrism + prismW*0.32;
+  const pTop = {x:xPrism, y:pApexY};
+  const pBotL = {x:pLeftX, y:pBotY};
+  const pBotR = {x:pRightX, y:pBotY};
+  const pApex = {x:pRightX, y:yEmber+12}; // point de sortie de la dispersion, sur la face droite du prisme
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(pTop.x,pTop.y); ctx.lineTo(pBotL.x,pBotL.y); ctx.lineTo(pBotR.x,pBotR.y);
+  ctx.closePath();
+  ctx.shadowColor = "rgba(0,0,0,0.2)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = "#aab2b8";
+  ctx.fill();
+  ctx.restore();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "#7d8790";
+  ctx.stroke();
+  ctx.fillStyle = "#6b7580";
+  ctx.font = "13px Segoe UI";
+  ctx.fillText("Prisme", xPrism-16, pBotY+18);
+
+  // ---- support du prisme ----
+  const standTopY = pBotY;
+  ctx.fillStyle = "#8a97a3";
+  ctx.fillRect(xPrism-4, standTopY, 8, baseY-standTopY-8);
+  ctx.fillStyle = "#6b7580";
+  ctx.fillRect(xPrism-26, baseY-8, 52, 8);
+
+  // ---- éventail de dispersion prisme -> écran ----
+  // Le phénomène existe dès qu'il y a de la lumière à disperser, que l'élève ait
+  // cliqué "Analyser" ou non : ce bouton ne fait que figer une lecture, il ne
+  // déclenche pas la dispersion elle-même.
+  const fanHalf = 85; // demi-largeur réelle du cône de lumière à l'écran (doit matcher le bandeau)
+  if(glow > 0.01){
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const nBeam = 60;
+    const boost = Math.min(1, 0.35 + glow); // visible même à basse température
+    // enveloppe de Planck à la température courante, normalisée sur le visible :
+    // c'est elle qui donne sa couleur dominante au faisceau (rouge à basse T, blanc-bleu à haute T)
+    let maxI = 0;
+    for(let i=0;i<nBeam;i++){
+      const lam = 380 + (i/(nBeam-1))*(780-380);
+      const I = planck(lam, T);
+      if(I>maxI) maxI = I;
+    }
+    for(let i=0;i<nBeam;i++){
+      const lam = 380 + (i/(nBeam-1))*(780-380);
+      const [r,g,b] = wavelengthToRGB(lam);
+      const w = planck(lam, T)/maxI; // poids spectral propre à la température
+      const spread = (i/(nBeam-1) - 0.5) * 2*fanHalf; // étalement vertical à l'écran
+      // double passage (halo + cœur), toujours coloré : pas de blanc plaqué sur
+      // chaque rayon individuel, sinon la décomposition disparaît visuellement.
+      // Le blanc n'apparaît que là où plusieurs longueurs d'onde se recouvrent
+      // réellement (près du prisme), par simple addition physique des couleurs.
+      ctx.strokeStyle = `rgba(${r},${g},${b},${0.14*boost*w})`;
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(pApex.x, pApex.y); ctx.lineTo(xScreen, yEmber+spread); ctx.stroke();
+      ctx.strokeStyle = `rgba(${r},${g},${b},${0.85*boost*w})`;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(pApex.x, pApex.y); ctx.lineTo(xScreen, yEmber+spread); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---- écran ----
+  const screenHalf = 150;
+  ctx.strokeStyle = "#c7d3dd";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(xScreen, yEmber-screenHalf);
+  ctx.lineTo(xScreen, yEmber+screenHalf);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(xScreen, yEmber+screenHalf);
+  ctx.lineTo(xScreen, baseY-6);
+  ctx.stroke();
+  ctx.fillStyle = "#6b7c8c";
+  ctx.fillText("Écran", xScreen-16, yEmber-screenHalf-10);
+
+  // bandeau du spectre projeté sur l'écran : automatique et en direct (pas de bouton)
+  // sa hauteur correspond exactement à la largeur réelle du cône de lumière (fanHalf),
+  // pas à la taille physique de l'écran qui peut être plus grande
+  {
+    const y0 = yEmber-fanHalf, y1 = yEmber+fanHalf, hgt = y1-y0;
+    let maxI = 0;
+    for(let lam=380; lam<=780; lam+=3){ const I = planck(lam, T); if(I>maxI) maxI=I; }
+    for(let yy=0; yy<hgt; yy++){
+      const lam = 380 + (yy/hgt)*(780-380);
+      const [r,g,b] = wavelengthToRGB(lam);
+      const I = planck(lam, T)/maxI;
+      ctx.fillStyle = `rgb(${Math.round(r*I)},${Math.round(g*I)},${Math.round(b*I)})`;
+      ctx.fillRect(xScreen-16, y0+yy, 32, 1);
+    }
+    ctx.strokeStyle="#c7d3dd"; ctx.lineWidth=2;
+    ctx.strokeRect(xScreen-16, y0, 32, hgt);
+  }
+
+  // ---- matière chaude (météorite incandescente, source du halo) ----
+  // forme irrégulière figée (offsets fixes), pas un cercle parfait ni un octogone régulier
+  const r0 = 30;
+  const meteorOffsets = [1.00,0.82,1.12,0.90,1.05,0.78,1.15,0.88,0.98,1.10,0.85,1.03];
+  ctx.beginPath();
+  for(let i=0;i<meteorOffsets.length;i++){
+    const ang = (i/meteorOffsets.length)*2*Math.PI;
+    const rr = r0*meteorOffsets[i];
+    const px = xEmber + rr*Math.cos(ang), py = yEmber + rr*Math.sin(ang)*0.9;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.closePath();
+  const meteorGrad = ctx.createRadialGradient(xEmber-8,yEmber-10,4, xEmber,yEmber,r0*1.2);
+  meteorGrad.addColorStop(0, `rgb(${Math.min(255,er+40)},${Math.min(255,eg+40)},${Math.min(255,eb+40)})`);
+  meteorGrad.addColorStop(1, `rgb(${Math.round(er*0.7)},${Math.round(eg*0.7)},${Math.round(eb*0.7)})`);
+  ctx.fillStyle = meteorGrad;
+  ctx.fill();
+  ctx.strokeStyle = `rgb(${Math.round(er*0.5)},${Math.round(eg*0.5)},${Math.round(eb*0.5)})`;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // quelques cratères / aspérités pour l'aspect rocheux
+  const craters = [[-10,-6,6],[8,5,4.5],[2,-12,3.5],[-6,10,4]];
+  craters.forEach(([dx,dy,rc])=>{
+    ctx.beginPath();
+    ctx.arc(xEmber+dx, yEmber+dy*0.9, rc, 0, 2*Math.PI);
+    ctx.fillStyle = `rgba(0,0,0,0.15)`;
+    ctx.fill();
+  });
+
+  // ---- sonde de température plantée dans la matière + boîtier de thermomètre digital ----
+  {
+    const probeTipX = xEmber + 6, probeTipY = yEmber - 4; // pointe dans l'objet
+    const boxW = 78, boxH = 46;
+    const boxX = xEmber + 96, boxY = yEmber - 108;
+
+    // fil enroulé (façon thermomètre de frigo/aquarium)
+    ctx.strokeStyle = "#2a2a2a"; ctx.lineWidth = 2;
+    drawCoiledWire(boxX+boxW*0.15, boxY+boxH, probeTipX, probeTipY, 10, 4.5);
+
+    // pointe métallique (sonde) dans l'objet
+    ctx.strokeStyle = "#c7d3dd"; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(probeTipX-10, probeTipY+10);
+    ctx.lineTo(probeTipX, probeTipY);
+    ctx.stroke();
+    ctx.fillStyle = "#9aa7b2";
+    ctx.beginPath(); ctx.arc(probeTipX-10, probeTipY+10, 3, 0, 2*Math.PI); ctx.fill();
+
+    // boîtier noir
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.25)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+    ctx.fillStyle = "#1c1c1c";
+    if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(boxX, boxY, boxW, boxH, 6); ctx.fill(); }
+    else ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.restore();
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 1;
+    if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(boxX, boxY, boxW, boxH, 6); ctx.stroke(); }
+
+    // écran LCD
+    const lcdX = boxX+7, lcdY = boxY+7, lcdW = boxW-14, lcdH = boxH-18;
+    ctx.fillStyle = "#c9d6c2";
+    ctx.fillRect(lcdX, lcdY, lcdW, lcdH);
+    ctx.strokeStyle = "#8a978a"; ctx.lineWidth = 1;
+    ctx.strokeRect(lcdX, lcdY, lcdW, lcdH);
+    ctx.fillStyle = "#2a2a2a";
+    ctx.font = "bold 13px Consolas, monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(Math.round(T), lcdX+lcdW-12, lcdY+lcdH/2+5);
+    ctx.font = "9px Consolas, monospace";
+    ctx.fillText("K", lcdX+lcdW-2, lcdY+lcdH/2+5);
+    ctx.textAlign = "left";
+    // petit bouton sous l'écran
+    ctx.fillStyle = "#3a3a3a";
+    ctx.beginPath(); ctx.arc(boxX+boxW/2, boxY+boxH-6, 3.5, 0, 2*Math.PI); ctx.fill();
+  }
+
+  // ---- bec bunsen (image SVG), plus petit et posé sous l'objet sans l'enfoncer ----
+  const xBun = xEmber;
+  const bunBaseY = baseY - 6; // posé sur le comptoir
+  const bunH = 88, bunW = bunH*(200/320);
+  const bunImgTop = bunBaseY - bunH;
+  if(bunsenImg.complete && bunsenImg.naturalWidth){
+    ctx.drawImage(bunsenImg, xBun-bunW*0.35, bunImgTop, bunW, bunH);
+  }
+  if(bunsenOn){
+    const flick = 5*Math.sin(performance.now()/70);
+    const flameY = bunImgTop + bunH*0.20; // hauteur de sortie du tube (haut du SVG)
+    ctx.beginPath();
+    ctx.moveTo(xBun-9, flameY);
+    ctx.quadraticCurveTo(xBun, flameY-42+flick, xBun+9, flameY);
+    ctx.closePath();
+    const fg = ctx.createLinearGradient(0,flameY-42,0,flameY);
+    fg.addColorStop(0,"#7ec8ff"); fg.addColorStop(0.5,"#ffcf5c"); fg.addColorStop(1,"#ff7a3c");
+    ctx.fillStyle = fg;
+    ctx.fill();
+  }
+  ctx.fillStyle = "#6b7c8c";
+  ctx.font = "12px Segoe UI";
+  ctx.fillText("Bec Bunsen", xBun-30, bunBaseY+16);
+}
+
+/* ================= Graphe d'intensité (live, automatique) ================= */
+const graphCanvas = document.getElementById("graphCanvas");
+const gctx = graphCanvas.getContext("2d");
+function resizeGraph(){
+  graphCanvas.width = graphCanvas.clientWidth * devicePixelRatio;
+  graphCanvas.height = graphCanvas.clientHeight * devicePixelRatio;
+}
+window.addEventListener("resize", resizeGraph);
+
+// bornes du graphe : assez large pour couvrir les λmax atteignables entre
+// T_AMBIANT et T_MAX (loi de Wien), UV/IR inclus de part et d'autre du visible
+const LAM_MIN = 100, LAM_MAX = 3000;
+const GPAD = {L:46, B:34, T:16, R:16};
+
+function graphMetrics(){
+  const W = graphCanvas.clientWidth, H = graphCanvas.clientHeight;
+  return {
+    W, H,
+    plotW: W-GPAD.L-GPAD.R, plotH: H-GPAD.T-GPAD.B,
+    x0: GPAD.L, y0: H-GPAD.B
+  };
+}
+function lamToX(lam, m){ return m.x0 + (lam-LAM_MIN)/(LAM_MAX-LAM_MIN)*m.plotW; }
+function xToLam(x, m){ return LAM_MIN + (x-m.x0)/m.plotW*(LAM_MAX-LAM_MIN); }
+
+/* ---- curseur de longueur d'onde (déplaçable) ---- */
+let cursorLam = 550;
+let draggingCursor = false;
+function clampLam(v){ return Math.min(LAM_MAX, Math.max(LAM_MIN, v)); }
+function setCursor(lam){
+  cursorLam = clampLam(lam);
+  document.getElementById("cursorVal").textContent = Math.round(cursorLam) + " nm";
+}
+function nudgeCursor(dir){ setCursor(cursorLam + dir*5); }
+
+graphCanvas.addEventListener("pointerdown", (e)=>{
+  draggingCursor = true;
+  const m = graphMetrics();
+  const rect = graphCanvas.getBoundingClientRect();
+  setCursor(xToLam(e.clientX-rect.left, m));
+  graphCanvas.setPointerCapture(e.pointerId);
+});
+graphCanvas.addEventListener("pointermove", (e)=>{
+  if(!draggingCursor) return;
+  const m = graphMetrics();
+  const rect = graphCanvas.getBoundingClientRect();
+  setCursor(xToLam(e.clientX-rect.left, m));
+});
+graphCanvas.addEventListener("pointerup", ()=> draggingCursor = false);
+setCursor(cursorLam);
+
+function drawGraph(){
+  const W = graphCanvas.clientWidth, H = graphCanvas.clientHeight;
+  const dpr = devicePixelRatio;
+  gctx.setTransform(dpr,0,0,dpr,0,0);
+  gctx.clearRect(0,0,W,H);
+  gctx.fillStyle = "#ffffff";
+  gctx.fillRect(0,0,W,H);
+
+  const padL = GPAD.L, padB = GPAD.B, padT = GPAD.T, padR = GPAD.R;
+  const plotW = W-padL-padR, plotH = H-padT-padB;
+  const x0 = padL, y0 = H-padB;
+
+  // ---- quadrillage (secondaire fin + principal marqué) avec graduations ----
+  const xMinorStep = 100, xMajorStep = 500;
+  const yMinorStep = 0.1, yMajorStep = 0.2;
+
+  gctx.strokeStyle = "#eef1f4"; gctx.lineWidth = 1;
+  for(let lam=LAM_MIN; lam<=LAM_MAX; lam+=xMinorStep){
+    if(lam % xMajorStep === 0) continue;
+    const px = x0 + (lam-LAM_MIN)/(LAM_MAX-LAM_MIN)*plotW;
+    gctx.beginPath(); gctx.moveTo(px, padT); gctx.lineTo(px, y0); gctx.stroke();
+  }
+  for(let v=0; v<=1.0001; v+=yMinorStep){
+    if(Math.round(v/yMajorStep)*yMajorStep === Math.round(v*100)/100) continue;
+    const py = y0 - v*plotH;
+    gctx.beginPath(); gctx.moveTo(x0, py); gctx.lineTo(x0+plotW, py); gctx.stroke();
+  }
+
+  gctx.strokeStyle = "#d5dce3"; gctx.lineWidth = 1.2;
+  gctx.fillStyle = "#8a97a3"; gctx.font = "10px Segoe UI";
+  for(let lam=Math.ceil(LAM_MIN/xMajorStep)*xMajorStep; lam<=LAM_MAX; lam+=xMajorStep){
+    const px = x0 + (lam-LAM_MIN)/(LAM_MAX-LAM_MIN)*plotW;
+    gctx.beginPath(); gctx.moveTo(px, padT); gctx.lineTo(px, y0); gctx.stroke();
+    gctx.beginPath(); gctx.moveTo(px, y0); gctx.lineTo(px, y0+4); gctx.stroke();
+    gctx.textAlign = "center";
+    gctx.fillText(lam, px, y0+15);
+  }
+  for(let v=0; v<=1.0001; v+=yMajorStep){
+    const py = y0 - v*plotH;
+    gctx.beginPath(); gctx.moveTo(x0, py); gctx.lineTo(x0+plotW, py); gctx.stroke();
+    gctx.beginPath(); gctx.moveTo(x0-4, py); gctx.lineTo(x0, py); gctx.stroke();
+    gctx.textAlign = "right";
+    gctx.fillText(v.toFixed(1), x0-7, py+3);
+  }
+  gctx.textAlign = "left";
+
+  // axes façon "flèches"
+  gctx.strokeStyle = "#25313d"; gctx.lineWidth = 1.5;
+  gctx.beginPath();
+  gctx.moveTo(x0, padT-6); gctx.lineTo(x0, y0); gctx.lineTo(W-padR, y0);
+  gctx.stroke();
+  // pointes de flèche
+  gctx.beginPath();
+  gctx.moveTo(x0-5, padT+6); gctx.lineTo(x0, padT-6); gctx.lineTo(x0+5, padT+6);
+  gctx.moveTo(W-padR-8, y0-5); gctx.lineTo(W-padR, y0); gctx.lineTo(W-padR-8, y0+5);
+  gctx.stroke();
+  gctx.fillStyle = "#6b7c8c";
+  gctx.font = "12px Segoe UI";
+  gctx.fillText("Intensité", x0+6, padT+4);
+  gctx.fillText("λ", W-padR-4, y0-8);
+
+  // courbe de Planck à la température courante, colorée dans le visible.
+  // Normalisée sur son propre maximum (λmax donné par la loi de Wien à cette T)
+  // pour que la forme de la courbe reste lisible à toute température, y compris
+  // quand la source est encore froide.
+  const n = 260;
+  const lamPeak = 2.898e6 / T;
+  const maxI = planck(Math.max(LAM_MIN, Math.min(LAM_MAX, lamPeak)), T) || planck(LAM_MIN, T);
+  const t = performance.now()/1000;
+
+  // léger bruit temporel (irrégularité vivante, pas une courbe mathématique figée)
+  function jitter(lam){
+    return 1 + 0.010*Math.sin(t*1.3 + lam*0.04)
+             + 0.007*Math.sin(t*2.9 + lam*0.11 + 1.7)
+             + 0.004*Math.sin(t*5.1 + lam*0.021 + 3.1);
+  }
+
+  const pts = [];
+  for(let i=0;i<n;i++){
+    const lam = LAM_MIN + (i/(n-1))*(LAM_MAX-LAM_MIN);
+    const I = Math.min(1, (planck(lam, T)/maxI) * jitter(lam));
+    pts.push({lam, x: x0 + (i/(n-1))*plotW, y: y0 - I*plotH});
+  }
+
+  // remplissage plein et coloré sur la partie visible (façon spectre "sous la courbe")
+  for(let i=0;i<pts.length-1;i++){
+    const a = pts[i], b = pts[i+1];
+    if(a.lam>=380 && a.lam<=780){
+      const [r,g,b2] = wavelengthToRGB(a.lam);
+      gctx.fillStyle = `rgb(${r},${g},${b2})`;
+      gctx.beginPath();
+      gctx.moveTo(a.x, y0);
+      gctx.lineTo(a.x, a.y);
+      gctx.lineTo(b.x, b.y);
+      gctx.lineTo(b.x, y0);
+      gctx.closePath();
+      gctx.fill();
+    }
+  }
+
+  // contour de la courbe sur toute la plage (UV/IR en gris, par-dessus le remplissage)
+  gctx.beginPath();
+  pts.forEach((p,i)=> i===0 ? gctx.moveTo(p.x,p.y) : gctx.lineTo(p.x,p.y));
+  gctx.strokeStyle = "rgba(37,49,61,0.55)";
+  gctx.lineWidth = 1.6;
+  gctx.stroke();
+
+
+  // ---- curseur de longueur d'onde ----
+  {
+    const m = {x0,y0,plotW,plotH};
+    const cx = lamToX(cursorLam, m);
+    // intensité théorique (sans le bruit temporel, pour une mesure stable)
+    const IcTheo = Math.min(1, planck(cursorLam, T)/maxI);
+    const cy = y0 - IcTheo*plotH;
+
+    gctx.strokeStyle = "#25313d";
+    gctx.setLineDash([4,3]);
+    gctx.lineWidth = 1.2;
+    gctx.beginPath();
+    gctx.moveTo(cx, padT-6);
+    gctx.lineTo(cx, y0);
+    gctx.stroke();
+    gctx.setLineDash([]);
+
+    gctx.fillStyle = "#ffffff";
+    gctx.strokeStyle = "#25313d";
+    gctx.lineWidth = 1.5;
+    gctx.beginPath();
+    gctx.arc(cx, cy, 4.5, 0, 2*Math.PI);
+    gctx.fill(); gctx.stroke();
+
+    gctx.fillStyle = "#25313d";
+    gctx.font = "11px Segoe UI";
+    gctx.textAlign = "center";
+    gctx.fillText(Math.round(cursorLam) + " nm", cx, padT+2);
+    gctx.textAlign = "left";
+
+    document.getElementById("cursorIVal").textContent = IcTheo.toFixed(3);
+  }
+}
+
+/* ================= Boucle ================= */
+function step(now){
+  const dt = Math.min(0.2,(now-lastT)/1000);
+  lastT = now;
+
+  // régulation thermostat (tout ou rien, avec bande morte)
+  if(thermostatOn){
+    if(T < consigne - HYSTERESIS) bunsenOn = true;
+    else if(T > consigne + HYSTERESIS) bunsenOn = false;
+    // sinon : on garde l'état courant (bande morte)
+  } else {
+    bunsenOn = false;
+  }
+
+  const target = bunsenOn ? T_MAX : T_AMBIANT;
+  const tau = bunsenOn ? TAU_HEAT : TAU_COOL;
+  T += (target - T) * (1 - Math.exp(-dt/tau));
+  drawScene();
+  drawGraph();
+  requestAnimationFrame(step);
+}
+resize();
+resizeGraph();
+requestAnimationFrame(step);
+</script>
+</body>
+</html>
