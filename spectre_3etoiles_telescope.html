@@ -187,6 +187,17 @@
     border-radius:6px;padding:4px 8px;line-height:1.35;
   }
 
+  #lumin-bar{
+    display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;
+  }
+  #lumin-btn{
+    height:30px;border-radius:6px;border:1px solid #334155;
+    background:#1e293b;color:#e2e8f0;font-size:13px;cursor:pointer;padding:0 12px;
+    transition:all .2s ease;
+  }
+  #lumin-btn:hover{background:#334155;}
+  #lumin-btn:disabled{opacity:.5;cursor:not-allowed;}
+
   #spectra-scroll{
     max-width:min(760px, 92vw);overflow-x:auto;overflow-y:hidden;
     border-radius:6px;
@@ -234,6 +245,7 @@
   #terminal-lines .tline{opacity:0;animation:tlineIn .25s ease forwards;white-space:nowrap;}
   @keyframes tlineIn{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:translateY(0);}}
   #terminal-lines .prompt{color:#4ade80;}
+  #terminal-lines .tline.result{color:#c4b5fd;font-weight:600;}
   .term-scanline{
     position:absolute;left:0;right:0;height:2px;top:0;
     background:linear-gradient(90deg,transparent,#22d3ee,transparent);
@@ -357,6 +369,9 @@
         <div id="cursor-readout"></div>
       </div>
     </div>
+    <div id="lumin-bar">
+      <button id="lumin-btn">📡 Mesurer la luminosité relative</button>
+    </div>
     <div id="terminal-info">
       <div class="term-scanline"></div>
       <div id="terminal-title">// LOG SYSTEME — ANALYSE EN COURS</div>
@@ -380,17 +395,18 @@
 
 <script>
 /* =========================================================================
-   1) PARAMETRES : tableau plat a 6 valeurs
-      [nom1, nom2, nom3, lambda_max1, lambda_max2, lambda_max3]
+   1) PARAMETRES : tableau plat a 9 valeurs
+      [nom1, nom2, nom3, lambda_max1, lambda_max2, lambda_max3, k1, k2, k3]
+   ki = L/Lsoleil, la luminosité de l'étoile i exprimée en luminosités
+   solaires (valeur "mesurée" par le bouton Mesurer la luminosité relative).
    (abrev/type retires : plus utilises depuis qu'il n'y a plus de raies
-   d'absorption a afficher, seul le nom -jamais montre a l'ecran- et
-   lambda_max -qui pilote la courbe de Planck- comptent encore.)
+   d'absorption a afficher.)
    Encodage : JSON -> XOR (cle fixe) -> base64 urlsafe, passé en ?param=
    /!\ Ce n'est pas du chiffrement fort (la cle est dans ce fichier, lisible
    par qui ouvre le code source) : ça bloque juste le "atob() copié-collé
    dans la console" fait sans reflechir, pas une inspection serieuse du JS.
    ========================================================================= */
-const DEFAULT_PARAMS = ["Sirius", "Bételgeuse", "Rigel", 326, 965, 220];
+const DEFAULT_PARAMS = ["Sirius", "Bételgeuse", "Rigel", 326, 965, 220, 6, 450, 40];
 const XOR_KEY = "FJ-spectre-3etoiles-2026"; // meme convention que les autres animations
 
 function xorStr(str, key){
@@ -414,8 +430,9 @@ function decodeParam(str){
   }
 }
 // Helper accessible depuis la console pour générer un lien de test :
-// buildParam(["Véga","Altaïr","Deneb", 290, 250, 310])  (exactement 6 valeurs :
-// 3 noms puis 3 lambda_max en nm, dans le même ordre)
+// buildParam(["Véga","Altaïr","Deneb", 290, 250, 310, 6, 450, 40])  (exactement 9
+// valeurs : 3 noms, puis 3 lambda_max en nm, puis 3 luminosités k=L/Lsoleil,
+// toujours dans le même ordre)
 window.buildParam = function(arr){
   const json = JSON.stringify(arr);
   const xored = xorStr(json, XOR_KEY);
@@ -426,9 +443,9 @@ window.buildParam = function(arr){
 const urlParams = new URLSearchParams(window.location.search);
 const raw = urlParams.get('param');
 let PARAMS = (raw && decodeParam(raw)) || DEFAULT_PARAMS;
-if(!Array.isArray(PARAMS) || PARAMS.length!==6) PARAMS = DEFAULT_PARAMS;
+if(!Array.isArray(PARAMS) || PARAMS.length!==9) PARAMS = DEFAULT_PARAMS;
 // tableau structuré pour le reste du code : STARS[i] = { nom, lambda_max }
-const STARS = [0,1,2].map(i => ({ nom: PARAMS[i], lambda_max: PARAMS[3+i] }));
+const STARS = [0,1,2].map(i => ({ nom: PARAMS[i], lambda_max: PARAMS[3+i], luminosite: PARAMS[6+i] }));
 
 /* -------- noms d'affichage brouillés --------
    Les vrais noms (STARS[i].nom) ne doivent JAMAIS apparaitre a l'ecran :
@@ -626,7 +643,7 @@ analyserBtn.addEventListener('click', ()=>{
     scene2.classList.add('visible');
     doneSet.add(idx);
     openSpectrumFor(idx);
-    runTerminal();
+    runTerminal(()=>{ document.getElementById('lumin-btn').disabled = false; });
   });
 });
 
@@ -706,7 +723,52 @@ function openSpectrumFor(idx){
   document.getElementById('zoom-level').textContent = '×1';
   drawSpectrum();
   showCursor(LAMBDA_MIN + (LAMBDA_MAX-LAMBDA_MIN)/2);
+  resetLuminMeasure();
 }
+
+/* -------- mesure de luminosité relative : bouton + "effet de ouf" dans le syslog -------- */
+const LUMIN_FAKE_LINES = [
+  "CALIBRAGE DU PHOTOMETRE...",
+  "COMPENSATION ATMOSPHERIQUE...",
+  "INTEGRATION DU FLUX PHOTONIQUE...",
+  "COMPARAISON AU FLUX SOLAIRE DE REFERENCE...",
+];
+
+function resetLuminMeasure(){
+  // grise le bouton tant que le log initial n'est pas termine (runTerminal
+  // le reactive lui-meme via son callback onDone une fois fini)
+  document.getElementById('lumin-btn').disabled = true;
+}
+
+document.getElementById('lumin-btn').addEventListener('click', ()=>{
+  const btn = document.getElementById('lumin-btn');
+  const box = document.getElementById('terminal-lines');
+  const idx = currentIdx;
+
+  btn.disabled = true;
+
+  let i = 0;
+  function nextFakeLine(){
+    if(i < LUMIN_FAKE_LINES.length){
+      const p = document.createElement('div');
+      p.className = 'tline';
+      p.innerHTML = `<span class="prompt">&gt;_</span> ${LUMIN_FAKE_LINES[i]}`;
+      box.appendChild(p);
+      box.scrollTop = box.scrollHeight;
+      i++;
+      setTimeout(nextFakeLine, 380 + Math.random()*220);
+    } else {
+      const L = STARS[idx].luminosite;
+      const p = document.createElement('div');
+      p.className = 'tline result';
+      p.innerHTML = `<span class="prompt">&gt;_</span> RESULTAT : L ≈ ${L} L(soleil)`;
+      box.appendChild(p);
+      box.scrollTop = box.scrollHeight;
+      btn.disabled = false;
+    }
+  }
+  nextFakeLine();
+});
 
 function drawSpectrum(){
   const intCv = document.getElementById('intensity-spectrum');
@@ -967,13 +1029,16 @@ function generateTerminalLines(n=22){
   return lines;
 }
 
-function runTerminal(){
+function runTerminal(onDone){
   const box = document.getElementById('terminal-lines');
   box.innerHTML = '';
   const facts = generateTerminalLines();
   let i = 0;
   function nextLine(){
-    if(i >= facts.length) return;
+    if(i >= facts.length){
+      if(onDone) onDone();
+      return;
+    }
     const p = document.createElement('div');
     p.className = 'tline';
     p.innerHTML = `<span class="prompt">&gt;_</span> ${facts[i]}`;
