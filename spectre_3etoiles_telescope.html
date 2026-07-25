@@ -243,8 +243,13 @@
     max-height:110px;overflow-y:auto;scroll-behavior:smooth;
   }
   #terminal-lines::-webkit-scrollbar{width:0;}
-  #terminal-lines .tline{opacity:0;animation:tlineIn .25s ease forwards;white-space:nowrap;}
-  @keyframes tlineIn{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:translateY(0);}}
+  /* opacity:1 par defaut : la ligne DOIT etre visible immediatement, quoi qu'il
+     arrive. L'animation ci-dessous n'est qu'un flash decoratif a l'apparition ;
+     si elle ne se joue pas (onglet en arriere-plan, navigateur lent, etc.) la
+     ligne reste quand meme pleinement visible au lieu de rester bloquee a
+     opacity:0 pour toujours (c'etait le bug : "la ligne existe mais invisible"). */
+  #terminal-lines .tline{opacity:1;white-space:nowrap;animation:tlineIn .25s ease;}
+  @keyframes tlineIn{from{filter:brightness(2.2);}to{filter:brightness(1);}}
   #terminal-lines .prompt{color:#4ade80;}
   #terminal-lines .tline.result{color:#c4b5fd;font-weight:600;}
   .term-scanline{
@@ -749,6 +754,7 @@ document.getElementById('lumin-btn').addEventListener('click', ()=>{
       p.innerHTML = `<span class="prompt">&gt;_</span> ${LUMIN_FAKE_LINES[i]}`;
       box.appendChild(p);
       box.scrollTop = box.scrollHeight;
+      p.scrollIntoView({block:'end'});
       i++;
       setTimeout(nextFakeLine, 380 + Math.random()*220);
     } else {
@@ -759,6 +765,7 @@ document.getElementById('lumin-btn').addEventListener('click', ()=>{
         p.innerHTML = `<span class="prompt">&gt;_</span> RESULTAT : L &asymp; ${L} L(soleil)`;
         box.appendChild(p);
         box.scrollTop = box.scrollHeight;
+        p.scrollIntoView({block:'end'});
       } catch(err) {
         console.error('Erreur mesure luminosite :', err);
         const p = document.createElement('div');
@@ -766,6 +773,7 @@ document.getElementById('lumin-btn').addEventListener('click', ()=>{
         p.innerHTML = `<span class="prompt">&gt;_</span> ERREUR : ${err.message}`;
         box.appendChild(p);
         box.scrollTop = box.scrollHeight;
+        p.scrollIntoView({block:'end'});
       } finally {
         btn.disabled = false;
       }
@@ -1048,6 +1056,7 @@ function runTerminal(onDone){
     p.innerHTML = `<span class="prompt">&gt;_</span> ${facts[i]}`;
     box.appendChild(p);
     box.scrollTop = box.scrollHeight;
+    p.scrollIntoView({block:'end'});
     i++;
     setTimeout(nextLine, 220 + Math.random()*140);
   }
