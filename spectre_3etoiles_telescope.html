@@ -1021,7 +1021,7 @@ function fakeMathLine(){
   return `${m} .... ${s}`;
 }
 
-function generateTerminalLines(n=22){
+function generateTerminalLines(n=8){
   const lines = [];
   for(let i=0;i<n;i++){
     const r = Math.random();
@@ -1049,7 +1049,7 @@ function runTerminal(onDone){
     box.appendChild(p);
     box.scrollTop = box.scrollHeight;
     i++;
-    setTimeout(nextLine, 340 + Math.random()*220);
+    setTimeout(nextLine, 220 + Math.random()*140);
   }
   nextLine();
 }
