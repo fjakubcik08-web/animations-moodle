@@ -752,13 +752,23 @@ document.getElementById('lumin-btn').addEventListener('click', ()=>{
       i++;
       setTimeout(nextFakeLine, 380 + Math.random()*220);
     } else {
-      const L = STARS[idx].luminosite;
-      const p = document.createElement('div');
-      p.className = 'tline result';
-      p.innerHTML = `<span class="prompt">&gt;_</span> RESULTAT : L ≈ ${L} L(soleil)`;
-      box.appendChild(p);
-      box.scrollTop = box.scrollHeight;
-      btn.disabled = false;
+      try {
+        const L = STARS[idx].luminosite;
+        const p = document.createElement('div');
+        p.className = 'tline result';
+        p.innerHTML = `<span class="prompt">&gt;_</span> RESULTAT : L &asymp; ${L} L(soleil)`;
+        box.appendChild(p);
+        box.scrollTop = box.scrollHeight;
+      } catch(err) {
+        console.error('Erreur mesure luminosite :', err);
+        const p = document.createElement('div');
+        p.className = 'tline result';
+        p.innerHTML = `<span class="prompt">&gt;_</span> ERREUR : ${err.message}`;
+        box.appendChild(p);
+        box.scrollTop = box.scrollHeight;
+      } finally {
+        btn.disabled = false;
+      }
     }
   }
   nextFakeLine();
