@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Traceur de courbes</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #eef2f7;
+    padding: 14px;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  h2 {
+    color: #2c3e50;
+    text-align: center;
+    font-size: 1.25em;
+    font-weight: 600;
+    margin-bottom: 12px;
+    letter-spacing: 0.02em;
+  }
+
+  .card {
+    background: white;
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 12px;
+  }
+
+  label {
+    display: block;
+    font-size: 0.88em;
+    color: #666;
+    margin-bottom: 6px;
+  }
+
+  textarea {
+    width: 100%;
+    height: 52px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    padding: 7px 10px;
+    border: 2px solid #ccd3da;
+    border-radius: 6px;
+    resize: none;
+    color: #2c3e50;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { outline: none; border-color: #3498db; }
+  textarea::placeholder { color: #aab; }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+
+  button {
+    flex: 1;
+    padding: 9px 12px;
+    font-size: 0.95em;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  #btnAfficher { background: #3498db; color: white; }
+  #btnAfficher:hover { background: #2980b9; }
+  #btnReset { background: #ecf0f1; color: #555; flex: 0 0 auto; padding: 9px 16px; }
+  #btnReset:hover { background: #dde3e8; }
+
+  .error { color: #c0392b; font-size: 0.83em; margin-top: 6px; min-height: 1.2em; }
+
+  canvas {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+  }
+
+  .slider-wrap { margin-top: 12px; }
+
+  .slider-label {
+    font-size: 0.85em;
+    color: #555;
+    margin-bottom: 5px;
+  }
+
+  input[type=range] {
+    width: 100%;
+    accent-color: #3498db;
+    cursor: pointer;
+    height: 6px;
+  }
+
+  .coords-box {
+    text-align: center;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    background: #f4f7fb;
+    border-radius: 6px;
+    padding: 7px 12px;
+    margin-top: 8px;
+    min-height: 32px;
+    color: #2c3e50;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Traceur de courbes</h2>
+  <label>Colle le code de ton énoncé :</label>
+  <textarea id="codeInput" placeholder="Colle le code ici..."></textarea>
+  <div class="btn-row">
+    <button id="btnAfficher" onclick="afficher()">Afficher la courbe</button>
+    <button id="btnReset" onclick="reinitialiser()" title="Effacer">&#10005;</button>
+  </div>
+  <div id="errorMsg" class="error"></div>
+</div>
+
+<!-- ═══ ZONE DE DÉMO — à supprimer en production Moodle ═══ -->
+<div class="card" id="demoCard" style="font-size:0.82em; padding: 10px 14px;">
+  <details>
+    <summary style="cursor:pointer; font-weight:600; color:#3498db;">
+      Codes de démonstration (à supprimer en production)
+    </summary>
+    <div id="demoBtns" style="margin-top:8px; display:flex; flex-direction:column; gap:5px;"></div>
+  </details>
+</div>
+
+<div class="card" id="graphCard" style="display:none">
+  <canvas id="gc" width="648" height="424"></canvas>
+  <div id="sliderWrap" class="slider-wrap" style="display:none">
+    <div class="slider-label">Clique-glisse sur le graphique pour déplacer le curseur :</div>
+    <div class="coords-box" id="coordsBox"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  CRYPT  —  port exact de la fonction Python crypt()
+//  txtb = alphabet chiffré, txt = alphabet clair
+// ============================================================
+const TXTB = '124,42,119,112,75,43,56,40,107,118,44,104,114,51,48,32,92,62,91,47,125,94,78,105,52,68,67,39,64,35,90,126,121,93,88,46,102,89,37,71,79,108,99,115,36,109,106,116,111,101,120,59,97,53,86,82,123,61,50,65,117,58,57,63,77,110,113,66,34,95,33,69,100,87,60,38,55,45,41,76,83,122,49,84,85,74,72,73,98,80,96,70,81,103,54'
+  .split(',').map(n => String.fromCharCode(+n));
+
+const TXT = '96,70,33,88,89,100,84,113,60,106,85,93,50,91,107,61,82,59,125,77,49,95,115,43,81,120,63,65,74,32,80,126,64,42,53,67,47,99,94,56,37,58,35,48,110,87,83,54,103,73,98,111,66,76,104,108,41,117,86,57,116,118,78,52,62,36,75,109,97,34,71,102,44,68,45,69,121,38,79,119,124,39,101,90,105,122,72,46,112,114,40,123,55,51,92'
+  .split(',').map(n => String.fromCharCode(+n));
+
+function crypt(cd, opt) {
+  // opt = 'c' (chiffrer) ou 'd' (déchiffrer)
+  // 'c' : pour chaque car, cherche dans TXT, sort TXTB[idx]
+  // 'd' : pour chaque car, cherche dans TXTB, sort TXT[idx]
+  let result = '';
+  const src  = (opt === 'c') ? TXT  : TXTB;
+  const dest = (opt === 'c') ? TXTB : TXT;
+  for (const ch of cd) {
+    const idx = src.indexOf(ch);
+    if (idx === -1) throw new Error('Code invalide — caractère non reconnu : ' + JSON.stringify(ch));
+    result += dest[idx];
+  }
+  return result;
+}
+
+// ============================================================
+//  PARSEUR D'ÉQUATION  (format graphsketch / Python → JS)
+// ============================================================
+function makeFunc(expr) {
+  if (!expr || !expr.trim()) return null;
+  let e = expr.trim();
+
+  // 0. Normalise notation scientifique : 1.5e-05 → 1.5e-5  (évite le bug octal JS)
+  e = e.replace(/([eE])([+\-]?)0+(\d)/g, '$1$2$3');
+
+  // 1. Puissance : ^ → **
+  e = e.replace(/\^/g, '**');
+
+  // 2. Multiplication implicite : 2x → 2*x,  2( → 2*(,  )( → )*(
+  e = e.replace(/(\d)([A-Za-z(])/g, '$1*$2');
+  e = e.replace(/\)(\s*)\(/g,       ')*$1(');
+
+  // 3a. Marquer 'e' seul (nombre d'Euler) AVANT de remplacer les fonctions,
+  //     sinon le 'e' de 'exp' serait capturé après remplacement.
+  e = e.replace(/\be\b/g, '\x00EULER\x00');
+
+  // 3b. Fonctions mathématiques (plus long en premier pour éviter les conflits)
+  const subs = [
+    [/\basin\b/g,  'Math.asin'],
+    [/\bacos\b/g,  'Math.acos'],
+    [/\batan2\b/g, 'Math.atan2'],
+    [/\batan\b/g,  'Math.atan'],
+    [/\bsinh\b/g,  'Math.sinh'],
+    [/\bcosh\b/g,  'Math.cosh'],
+    [/\btanh\b/g,  'Math.tanh'],
+    [/\bsin\b/g,   'Math.sin'],
+    [/\bcos\b/g,   'Math.cos'],
+    [/\btan\b/g,   'Math.tan'],
+    [/\bsqrt\b/g,  'Math.sqrt'],
+    [/\babs\b/g,   'Math.abs'],
+    [/\bceil\b/g,  'Math.ceil'],
+    [/\bfloor\b/g, 'Math.floor'],
+    [/\bround\b/g, 'Math.round'],
+    [/\bsign\b/g,  'Math.sign'],
+    [/\blog10\b/g, 'Math.log10'],
+    [/\blog\b/g,   'Math.log10'],   // log = log₁₀ (convention graphsketch)
+    [/\bln\b/g,    'Math.log'],     // ln  = log naturel
+    [/\bexp\b/g,   'Math.exp'],
+    [/\bpi\b/g,    'Math.PI'],
+  ];
+  for (const [re, rep] of subs) {
+    e = e.replace(re, rep);
+  }
+
+  // 3c. Remplacer le marqueur Euler maintenant que 'exp' est déjà converti
+  e = e.replace(/\x00EULER\x00/g, 'Math.E');
+
+  // 4. Supprimer les zéros préfixes dans les exposants (ex: 10**-09 → 10**-9)
+  e = e.replace(/(\*\*-?)0+(\d)/g, '$1$2');
+
+  // 5. Fix : -(expr)** → 0-(expr)** (SyntaxError JS mode strict : opérateur unaire avant **)
+  //    Lookbehind négatif : on ne touche pas 0-(  ni x-(  etc. (déjà binaire)
+  e = e.replace(/(?<![0-9A-Za-z_.\)])-(\([^()]*\))\*\*/g, '0-$1**');
+
+  try {
+    return new Function('x',
+      `"use strict"; try { const _v=(${e}); return (isFinite(_v) ? _v : NaN); } catch(_){return NaN;}`
+    );
+  } catch (err) {
+    throw new Error('Équation invalide : ' + expr + ' (' + err.message + ')');
+  }
+}
+
+// ============================================================
+//  COULEURS  (codes 1–6 comme graphsketch)
+// ============================================================
+const GFX_COLORS = {
+  1: '#1060d0',   // bleu
+  2: '#cc1010',   // rouge
+  3: '#108010',   // vert
+  4: '#8000a0',   // violet
+  5: '#e07000',   // orange
+  6: '#804010'    // marron
+};
+function getColor(c) { return GFX_COLORS[c] || '#1060d0'; }
+
+// ============================================================
+//  ÉTAT GLOBAL
+// ============================================================
+let G = { params: null, fns: [] };
+
+// ============================================================
+//  TRACÉ SUR CANVAS
+// ============================================================
+function draw(cursorX) {
+  const p = G.params;
+  if (!p) return;
+
+  const canvas = document.getElementById('gc');
+  const ctx    = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // Marges : gauche/bas agrandies uniquement si nomX/nomY sont fournis
+  // (garde EXACTEMENT le même rendu qu'avant pour tout code encodé sans
+  // ces deux champs -> aucune régression sur les questions déjà déployées).
+  const hasNomX = !!(p.nomX && String(p.nomX).trim());
+  const hasNomY = !!(p.nomY && String(p.nomY).trim());
+  const PAD = {
+    l: 52 + (hasNomY ? 12 : 0),
+    r: 14,
+    t: 14,
+    b: 30 + (hasNomX ? 16 : 0)
+  };
+  const pw = W - PAD.l - PAD.r;
+  const ph = H - PAD.t - PAD.b;
+  // mémorisé pour le clic-glisse (conversion pixel canvas -> x mathématique)
+  G.plot = { PAD, pw, ph };
+
+  const { xmin, xmax, ymin, ymax, dx, dy, freqx, freqy } = p;
+
+  // Conversions coordonnées mathématiques ↔ canvas
+  const cx = x => PAD.l + (x - xmin) / (xmax - xmin) * pw;
+  const cy = y => PAD.t + (ymax - y) / (ymax - ymin) * ph;
+
+  // ── Fond blanc ──
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Grille mineure ──
+  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = '#ebebeb';
+  const Dx = dx * freqx, Dy = dy * freqy;
+
+  for (let x = snap(xmin, dx); x <= xmax + dx*1e-6; x = round_(x + dx, dx)) {
+    const c = cx(x);
+    ctx.beginPath(); ctx.moveTo(c, PAD.t); ctx.lineTo(c, H - PAD.b); ctx.stroke();
+  }
+  for (let y = snap(ymin, dy); y <= ymax + dy*1e-6; y = round_(y + dy, dy)) {
+    const c = cy(y);
+    ctx.beginPath(); ctx.moveTo(PAD.l, c); ctx.lineTo(W - PAD.r, c); ctx.stroke();
+  }
+
+  // ── Grille majeure ──
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#cccccc';
+  for (let x = snap(xmin, Dx); x <= xmax + Dx*1e-6; x = round_(x + Dx, Dx)) {
+    const c = cx(x);
+    ctx.beginPath(); ctx.moveTo(c, PAD.t); ctx.lineTo(c, H - PAD.b); ctx.stroke();
+  }
+  for (let y = snap(ymin, Dy); y <= ymax + Dy*1e-6; y = round_(y + Dy, Dy)) {
+    const c = cy(y);
+    ctx.beginPath(); ctx.moveTo(PAD.l, c); ctx.lineTo(W - PAD.r, c); ctx.stroke();
+  }
+
+  // ── Axes ──
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = '#444444';
+  if (ymin <= 0 && 0 <= ymax) {
+    ctx.beginPath(); ctx.moveTo(PAD.l, cy(0)); ctx.lineTo(W - PAD.r, cy(0)); ctx.stroke();
+  }
+  if (xmin <= 0 && 0 <= xmax) {
+    ctx.beginPath(); ctx.moveTo(cx(0), PAD.t); ctx.lineTo(cx(0), H - PAD.b); ctx.stroke();
+  }
+
+  // ── Étiquettes ──
+  ctx.fillStyle = '#333';
+  ctx.font = '11px Arial';
+
+  // Position de l'axe x pour les étiquettes y (collées à l'axe y si visible)
+  const y0canvas = clamp(cy(0), PAD.t, H - PAD.b);
+  const x0canvas = clamp(cx(0), PAD.l, W - PAD.r);
+
+  // Étiquettes axe X (sous l'axe x, à chaque graduation majeure)
+  ctx.textAlign = 'center';
+  for (let x = snap(xmin, Dx); x <= xmax + Dx*1e-6; x = round_(x + Dx, Dx)) {
+    if (Math.abs(x) < Dx * 1e-6 && ymin <= 0 && 0 <= ymax) continue; // skip 0 sur l'axe y
+    ctx.fillText(fmt(x), cx(x), y0canvas + 14);
+  }
+
+  // Étiquettes axe Y (à gauche de l'axe y, à chaque graduation majeure)
+  ctx.textAlign = 'right';
+  for (let y = snap(ymin, Dy); y <= ymax + Dy*1e-6; y = round_(y + Dy, Dy)) {
+    if (Math.abs(y) < Dy * 1e-6 && xmin <= 0 && 0 <= xmax) continue; // skip 0 sur l'axe x
+    ctx.fillText(fmt(y), x0canvas - 4, cy(y) + 4);
+  }
+
+  // Zéro à l'origine
+  if (xmin <= 0 && 0 <= xmax && ymin <= 0 && 0 <= ymax) {
+    ctx.textAlign = 'right';
+    ctx.fillText('0', cx(0) - 4, cy(0) + 14);
+  }
+
+  // ── Cadre ──
+  ctx.strokeStyle = '#aaa';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(PAD.l, PAD.t, pw, ph);
+
+  // ── Noms des axes (nomX / nomY) — n'apparaissent que si fournis dans le param ──
+  if (hasNomX) {
+    ctx.fillStyle = '#2c3e50';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText(String(p.nomX), W - PAD.r, H - 6);
+  }
+  if (hasNomY) {
+    ctx.save();
+    ctx.fillStyle = '#2c3e50';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const yMid = PAD.t + ph / 2;
+    ctx.translate(14, yMid);
+    ctx.rotate(-Math.PI / 2);
+    // centre sur le milieu vertical de la zone de tracé, texte lisible de bas en haut
+    ctx.fillText(String(p.nomY), 0, 0);
+    ctx.restore();
+  }
+
+  // ── Courbes ──
+  const NPTS = 1200;
+  const step = (xmax - xmin) / NPTS;
+
+  G.fns.forEach((fn, i) => {
+    if (!fn) return;
+    ctx.strokeStyle = getColor(p.colors[i]);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    let started = false;
+    let prevY = NaN;
+    for (let j = 0; j <= NPTS; j++) {
+      const xv = xmin + j * step;
+      const yv = fn(xv);
+      if (isNaN(yv)) { started = false; prevY = NaN; continue; }
+      const cyv = cy(yv);
+      // Saut vertical trop grand = discontinuité probable
+      if (!isNaN(prevY) && Math.abs(yv - prevY) > (ymax - ymin) * 1.5) {
+        started = false;
+      }
+      // Hors zone (avec marge)
+      if (cyv < PAD.t - 150 || cyv > H - PAD.b + 150) {
+        started = false; prevY = yv; continue;
+      }
+      if (!started) { ctx.moveTo(cx(xv), cyv); started = true; }
+      else          { ctx.lineTo(cx(xv), cyv); }
+      prevY = yv;
+    }
+    ctx.stroke();
+  });
+
+  // ── Curseur ──
+  if (cursorX !== null && cursorX !== undefined) {
+    const cxv = cx(cursorX);
+    // Ligne verticale pointillée
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = 'rgba(60,60,60,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cxv, PAD.t); ctx.lineTo(cxv, H - PAD.b); ctx.stroke();
+    ctx.restore();
+
+    // Points sur chaque courbe
+    G.fns.forEach((fn, i) => {
+      if (!fn) return;
+      const yv = fn(cursorX);
+      if (isNaN(yv) || !isFinite(yv)) return;
+      const cyv = cy(yv);
+      if (cyv < PAD.t - 5 || cyv > H - PAD.b + 5) return;
+      ctx.fillStyle = getColor(p.colors[i]);
+      ctx.beginPath(); ctx.arc(cxv, cyv, 5.5, 0, 2 * Math.PI); ctx.fill();
+      ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cxv, cyv, 5.5, 0, 2 * Math.PI); ctx.stroke();
+    });
+  }
+}
+
+// ── Fonctions utilitaires ──
+function snap(min, step) {
+  return Math.ceil(min / step - 1e-9) * step;
+}
+function round_(x, step) {
+  return Math.round(x / step) * step;
+}
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+function fmt(n) {
+  const r = parseFloat(n.toPrecision(7));
+  if (Number.isInteger(r)) return String(r);
+  // Remplacer le point décimal par une virgule (style français)
+  return r.toString().replace('.', ',');
+}
+function fmtCoord(n) {
+  const r = parseFloat(n.toPrecision(5));
+  return r.toString().replace('.', ',');
+}
+
+// ============================================================
+//  CURSEUR / SLIDER
+// ============================================================
+// ============================================================
+//  CURSEUR PAR CLIC-GLISSE SUR LE CANVAS (souris + tactile)
+// ============================================================
+let draggingCursor = false;
+
+function xFromClientX(clientX) {
+  const canvas = document.getElementById('gc');
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;  // le canvas peut être redimensionné en CSS
+  const canvasX = (clientX - rect.left) * scaleX;
+  const { PAD, pw } = G.plot;
+  const { xmin, xmax } = G.params;
+  const t = clamp((canvasX - PAD.l) / pw, 0, 1);
+  return xmin + t * (xmax - xmin);
+}
+
+function cursorFromClientX(clientX) {
+  if (!G.params || !G.plot) return;
+  const xv = xFromClientX(clientX);
+  draw(xv);
+  showCoords(xv);
+}
+
+(function initDragCursor() {
+  const canvas = document.getElementById('gc');
+  canvas.addEventListener('mousedown', (e) => {
+    if (!G.params || !G.params.slider) return;
+    draggingCursor = true;
+    cursorFromClientX(e.clientX);
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!draggingCursor) return;
+    cursorFromClientX(e.clientX);
+  });
+  window.addEventListener('mouseup', () => { draggingCursor = false; });
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (!G.params || !G.params.slider) return;
+    draggingCursor = true;
+    cursorFromClientX(e.touches[0].clientX);
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    if (!draggingCursor) return;
+    cursorFromClientX(e.touches[0].clientX);
+  }, { passive: true });
+  window.addEventListener('touchend', () => { draggingCursor = false; });
+})();
+
+function showCoords(xv) {
+  // Si nomX/nomY sont fournis, on les utilise a la place des lettres x/y
+  // generiques dans le lecteur de coordonnees du curseur.
+  const xLabel = (G.params.nomX && String(G.params.nomX).trim()) ? G.params.nomX : 'x';
+  const yLabelBase = (G.params.nomY && String(G.params.nomY).trim()) ? G.params.nomY : 'y';
+
+  const validFns = G.fns.filter(Boolean);
+  const parts = G.fns.map((fn, i) => {
+    if (!fn) return '';
+    const yv = fn(xv);
+    if (isNaN(yv) || !isFinite(yv)) return '';
+    const label = validFns.length > 1 ? `${yLabelBase}<sub>${i+1}</sub>` : yLabelBase;
+    const col   = getColor(G.params.colors[i]);
+    return `<span style="color:${col};font-weight:700">${label}&nbsp;=&nbsp;${fmtCoord(yv)}</span>`;
+  }).filter(Boolean);
+
+  document.getElementById('coordsBox').innerHTML =
+    `<b>${xLabel}&nbsp;=&nbsp;${fmtCoord(xv)}</b>&nbsp;&nbsp;&rarr;&nbsp;&nbsp;${parts.join('&nbsp;&nbsp;&nbsp;')}`;
+}
+
+// ============================================================
+//  DÉCODAGE BASE64 URL-SAFE
+// ============================================================
+function b64Decode(s) {
+  // Rétablit le padding, convertit les chars URL-safe, décode
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return atob(s);   // retourne le texte chiffré (cipher text)
+}
+
+// ============================================================
+//  POINT D'ENTRÉE  —  bouton "Afficher"
+// ============================================================
+function afficher() {
+  const raw    = document.getElementById('codeInput').value.trim();
+  const errDiv = document.getElementById('errorMsg');
+  errDiv.textContent = '';
+
+  if (!raw) {
+    errDiv.textContent = 'Colle un code avant de cliquer.';
+    return;
+  }
+
+  try {
+    // 1. Décodage base64 → texte chiffré → déchiffrement
+    const cipher = b64Decode(raw);
+    const json   = crypt(cipher, 'd');
+
+    // 2. Parsing JSON
+    let p;
+    try { p = JSON.parse(json); }
+    catch (e) { throw new Error('Code corrompu (JSON invalide)'); }
+
+    // 3. Valeurs par défaut
+    const params = {
+      eqns:   Array.isArray(p.eqns)   ? p.eqns   : [p.eqns   || ''],
+      colors: Array.isArray(p.colors) ? p.colors : [p.colors || 1],
+      xmin:   p.xmin  ?? -10,
+      xmax:   p.xmax  ?? 10,
+      ymin:   p.ymin  ?? -10,
+      ymax:   p.ymax  ?? 10,
+      dx:     p.dx    ?? 1,
+      dy:     p.dy    ?? 1,
+      freqx:  Array.isArray(p.freq) ? (p.freq[0] ?? 5) : (p.freqx ?? 5),
+      freqy:  Array.isArray(p.freq) ? (p.freq[1] ?? 5) : (p.freqy ?? 5),
+      slider: p.slider ?? false,
+      // NOUVEAU (v2) : noms d'axes optionnels, absents -> '' -> comportement
+      // identique a la v1 (rien affiche), donc rien ne casse sur les anciens codes.
+      nomX:   p.nomX ?? '',
+      nomY:   p.nomY ?? '',
+    };
+
+    // 4. Compilation des équations
+    G.params = params;
+    G.fns    = params.eqns.map(eq => makeFunc(eq));
+
+    // 5. Affichage
+    document.getElementById('graphCard').style.display = 'block';
+    draw(null);
+
+    // 6. Curseur (clic-glisse)
+    const sw = document.getElementById('sliderWrap');
+    const canvasEl = document.getElementById('gc');
+    if (params.slider) {
+      sw.style.display = 'block';
+      canvasEl.style.cursor = 'crosshair';
+      const mid = (params.xmin + params.xmax) / 2;
+      draw(mid);
+      showCoords(mid);
+    } else {
+      canvasEl.style.cursor = 'default';
+      sw.style.display = 'none';
+      document.getElementById('coordsBox').innerHTML = '';
+    }
+
+  } catch (err) {
+    errDiv.textContent = 'Erreur : ' + err.message;
+  }
+}
+
+// ============================================================
+//  RÉINITIALISER
+// ============================================================
+function reinitialiser() {
+  document.getElementById('codeInput').value = '';
+  document.getElementById('errorMsg').textContent = '';
+  document.getElementById('graphCard').style.display = 'none';
+  document.getElementById('sliderWrap').style.display = 'none';
+  G = { params: null, fns: [] };
+  document.getElementById('codeInput').focus();
+}
+
+// ── Chargement : paramètre URL ?param=... ou focus manuel ──
+window.addEventListener('load', () => {
+  // Lecture du paramètre URL ?param=... (base64 URL-safe, pas de décodage nécessaire)
+  const match = window.location.search.match(/[?&]param=([A-Za-z0-9\-_]+)/);
+  const paramCode = match ? match[1] : null;
+
+  if (paramCode) {
+    document.getElementById('codeInput').value = paramCode;
+    afficher();
+    // Masquer l'interface seulement si la courbe s'est bien affichée
+    if (document.getElementById('graphCard').style.display !== 'none') {
+      document.querySelectorAll('.card').forEach(c => {
+        if (c.contains(document.getElementById('codeInput')) || c.id === 'demoCard')
+          c.style.display = 'none';
+      });
+    }
+  } else {
+    document.getElementById('codeInput').focus();
+  }
+});
+
+// ── Codes de démonstration (générés par Python / gfx_to_code) ──
+const DEMO = [
+  {
+    label: 'sin(x)',
+    code: "F_1($N_l3_NU$`D{_hd_Y;R;PN_l3}hd_DBU$_l<}sd_DB\"D_l}sd_7BU$_l<rd_7B\"D_lrd_+D_l}d_+7_lsIXd_EP1(_l3XdXhd_NRU+1P_lE\"RN1["
+  },
+  {
+    label: 'y = 1,5x + 3  (curseur)',
+    code: "F_1($N_l3_}IXDig_hd_Y;R;PN_l3}hd_DBU$_l<rIsd_DB\"D_l}}Isd_7BU$_l<rIttd_7B\"D_lrgItd_+D_lsIXd_+7_l}Isd_EP1(_l3XdXhd_NRU+1P_luP=1["
+  },
+  {
+    label: 'Exponentielle décroissante  (curseur)',
+    code: "F_1($N_l3_}ss]1Db`<D]R$`r{frX{_hd_Y;R;PN_l3}hd_DBU$_l<XIsd_DB\"D_l}rsIsd_7BU$_l<}sIsd_7B\"D_l}rXIsd_+D_lXIsd_+7_lXIsd_EP1(_l3XdXhd_NRU+1P_luP=1["
+  },
+  {
+    label: 'Distribution acide-base pKa=4,5  (curseur)',
+    code: "F_1($N_l3_}f`}i}s%`D<?IX{{_d_}s%`D<?IX{f`}i}s%`D<?IX{{_hd_Y;R;PN_l3}drhd_DBU$_l<}d_DB\"D_l}Xd_7BU$_l<sIrd_7B\"D_l}I}d_+D_lsIrXd_+7_lsIsXd_EP1(_l3?d?hd_NRU+1P_luP=1["
+  },
+];
+
+// Construire les boutons démo dynamiquement (évite les problèmes d'échappement HTML)
+document.addEventListener('DOMContentLoaded', () => {
+  const container = document.getElementById('demoBtns');
+  if (!container) return;
+  DEMO.forEach(({ label, code }) => {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.style.cssText = 'background:#eaf4ff;border:1px solid #acd;border-radius:5px;padding:5px 10px;cursor:pointer;text-align:left;font-size:0.95em;';
+    btn.addEventListener('click', () => setDemo(code));
+    container.appendChild(btn);
+  });
+});
+
+// ── Démo : pré-remplir et lancer ──
+function setDemo(code) {
+  document.getElementById('codeInput').value = code;
+  afficher();
+}
+</script>
+</body>
+</html>
