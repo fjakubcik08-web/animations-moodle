@@ -399,6 +399,12 @@
       [nom1, nom2, nom3, lambda_max1, lambda_max2, lambda_max3, k1, k2, k3]
    ki = L/Lsoleil, la luminosité de l'étoile i exprimée en luminosités
    solaires (valeur "mesurée" par le bouton Mesurer la luminosité relative).
+   nomI = le nom AFFICHE tel quel a l'ecran (ex: "Sirius") : comme lambda_max
+   et ki sont tires au hasard independamment du vrai nom, afficher le vrai nom
+   ne donne aucun indice sur la reponse -> pas besoin de le cacher ni de
+   generer un codename separe. C'est aussi ce qui permet a un tableau
+   construit cote Python (create_table) de reference exactement le meme nom
+   que celui affiche dans l'animation.
    (abrev/type retires : plus utilises depuis qu'il n'y a plus de raies
    d'absorption a afficher.)
    Encodage : JSON -> XOR (cle fixe) -> base64 urlsafe, passé en ?param=
@@ -430,9 +436,8 @@ function decodeParam(str){
   }
 }
 // Helper accessible depuis la console pour générer un lien de test :
-// buildParam(["Véga","Altaïr","Deneb", 290, 250, 310, 6, 450, 40])  (exactement 9
-// valeurs : 3 noms, puis 3 lambda_max en nm, puis 3 luminosités k=L/Lsoleil,
-// toujours dans le même ordre)
+// buildParam(["Véga","Altaïr","Deneb", 290, 250, 310, 6, 450, 40])  (exactement
+// 9 valeurs : 3 noms, 3 lambda_max en nm, 3 luminosités k=L/Lsoleil, dans cet ordre)
 window.buildParam = function(arr){
   const json = JSON.stringify(arr);
   const xored = xorStr(json, XOR_KEY);
@@ -447,20 +452,8 @@ if(!Array.isArray(PARAMS) || PARAMS.length!==9) PARAMS = DEFAULT_PARAMS;
 // tableau structuré pour le reste du code : STARS[i] = { nom, lambda_max }
 const STARS = [0,1,2].map(i => ({ nom: PARAMS[i], lambda_max: PARAMS[3+i], luminosite: PARAMS[6+i] }));
 
-/* -------- noms d'affichage brouillés --------
-   Les vrais noms (STARS[i].nom) ne doivent JAMAIS apparaitre a l'ecran :
-   un eleve pourrait les googler / demander a une IA et obtenir directement le type
-   spectral. On genere donc des designants fictifs, sans lien avec une vraie base
-   catalographique, pour l'affichage (lambda_max reste la vraie donnee physique
-   utilisee pour le tracé). */
-function generateCodeName(){
-  const prefixes = ["HD","KOI","TYC","GJ","WISE","2MASS","OGLE","ASAS"];
-  const prefix = prefixes[Math.floor(Math.random()*prefixes.length)];
-  const num = Math.floor(Math.random()*900000)+100000;
-  const suffix = String.fromCharCode(65+Math.floor(Math.random()*26));
-  return `${prefix}-${num}${suffix}`;
-}
-const DISPLAY_NAMES = [generateCodeName(), generateCodeName(), generateCodeName()];
+// Nom affiche a l'ecran = le nom fourni dans le param, tel quel.
+const DISPLAY_NAMES = STARS.map(s => s.nom);
 
 /* =========================================================================
    2) SCENE 1 : ciel étoilé + paysage + télescope
