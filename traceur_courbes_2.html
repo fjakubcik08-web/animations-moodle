@@ -81,6 +81,19 @@
 
   .slider-wrap { margin-top: 12px; }
 
+  .curStepBtn {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 0.85em;
+    font-weight: 600;
+    background: #eaf4ff;
+    color: #2980b9;
+    border: 1px solid #acd;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .curStepBtn:hover { background: #d7ebff; }
+
   .slider-label {
     font-size: 0.85em;
     color: #555;
@@ -136,6 +149,12 @@
   <div id="sliderWrap" class="slider-wrap" style="display:none">
     <div class="slider-label">Clique-glisse sur le graphique pour déplacer le curseur :</div>
     <div class="coords-box" id="coordsBox"></div>
+    <div id="curStepBtns" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+      <button type="button" data-pct="-1"   class="curStepBtn">-1%</button>
+      <button type="button" data-pct="-0.1" class="curStepBtn">-0,1%</button>
+      <button type="button" data-pct="0.1"  class="curStepBtn">+0,1%</button>
+      <button type="button" data-pct="1"    class="curStepBtn">+1%</button>
+    </div>
   </div>
 </div>
 
@@ -478,9 +497,28 @@ function xFromClientX(clientX) {
 function cursorFromClientX(clientX) {
   if (!G.params || !G.plot) return;
   const xv = xFromClientX(clientX);
+  G.cursorX = xv;
   draw(xv);
   showCoords(xv);
 }
+
+// -------- boutons pas fixe (+/-1% et +/-0,1% de l'echelle des abscisses) --------
+// Uniquement utiles/visibles quand le curseur (slider) est actif ; le conteneur
+// #sliderWrap est deja masque sinon (meme logique que le reste du curseur).
+function moveCursorByPct(pct) {
+  if (!G.params) return;
+  const { xmin, xmax } = G.params;
+  const base = (G.cursorX ?? (xmin + xmax) / 2);
+  const delta = (pct / 100) * (xmax - xmin);
+  const xv = clamp(base + delta, xmin, xmax);
+  G.cursorX = xv;
+  draw(xv);
+  showCoords(xv);
+}
+
+document.querySelectorAll('.curStepBtn').forEach(btn => {
+  btn.addEventListener('click', () => moveCursorByPct(parseFloat(btn.dataset.pct)));
+});
 
 (function initDragCursor() {
   const canvas = document.getElementById('gc');
@@ -594,12 +632,14 @@ function afficher() {
       sw.style.display = 'block';
       canvasEl.style.cursor = 'crosshair';
       const mid = (params.xmin + params.xmax) / 2;
+      G.cursorX = mid;
       draw(mid);
       showCoords(mid);
     } else {
       canvasEl.style.cursor = 'default';
       sw.style.display = 'none';
       document.getElementById('coordsBox').innerHTML = '';
+      G.cursorX = null;
     }
 
   } catch (err) {
