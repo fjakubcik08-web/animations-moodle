@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Éditeur Python</title>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/anyword-hint.min.js"></script>
+<style>
+  :root {
+    --bleu: #2563eb;
+    --bleu-fonce: #1e3a8a;
+    --gris-fond: #f4f6f8;
+    --gris-bord: #cbd5e1;
+    --gris-texte: #334155;
+    --vert: #16a34a;
+    --rouge: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--gris-fond);
+    color: var(--gris-texte);
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-height: 480px;
+  }
+  #topbar {
+    background: var(--bleu-fonce);
+    color: #fff;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 14px;
+    flex: 0 0 auto;
+  }
+  #topbar .titre {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #topbar .statut {
+    font-size: 12px;
+    opacity: 0.85;
+  }
+  #main {
+    flex: 1 1 auto;
+    display: flex;
+    min-height: 0;
+  }
+  #panneau-code, #panneau-sortie {
+    flex: 1 1 50%;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  #panneau-code {
+    border-right: 1px solid var(--gris-bord);
+  }
+  .entete {
+    background: #eef2f7;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    border-bottom: 1px solid var(--gris-bord);
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #panneau-code .CodeMirror {
+    flex: 1 1 auto;
+    height: auto;
+    font-family: "SF Mono", Consolas, "Courier New", monospace;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  #panneau-code .CodeMirror-readonly .CodeMirror-cursor {
+    display: none;
+  }
+  #sortie {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 12px;
+    font-family: "SF Mono", Consolas, "Courier New", monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #sortie .erreur { color: #fca5a5; }
+  #sortie img {
+    max-width: 100%;
+    display: block;
+    margin: 10px 0;
+    border-radius: 6px;
+    background: #fff;
+  }
+  #barre-actions {
+    flex: 0 0 auto;
+    padding: 10px 14px;
+    background: #fff;
+    border-top: 1px solid var(--gris-bord);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  #btn-executer {
+    background: var(--bleu);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #btn-executer:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+  }
+  #btn-executer:not(:disabled):hover {
+    background: var(--bleu-fonce);
+  }
+  #btn-effacer {
+    background: #fff;
+    color: var(--gris-texte);
+    border: 1px solid var(--gris-bord);
+    border-radius: 6px;
+    padding: 9px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #btn-effacer:hover {
+    background: var(--gris-fond);
+  }
+  .zone-code-verif {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .zone-code-verif label {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 600;
+  }
+  #code-verif {
+    font-family: "SF Mono", Consolas, "Courier New", monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--bleu-fonce);
+    background: var(--gris-fond);
+    border: 1px solid var(--gris-bord);
+    border-radius: 6px;
+    padding: 7px 10px;
+    width: 120px;
+    text-align: center;
+  }
+  #chargement {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 14px;
+    color: #475569;
+    z-index: 10;
+  }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid var(--gris-bord);
+    border-top-color: var(--bleu);
+    border-radius: 50%;
+    animation: tourne 0.8s linear infinite;
+  }
+  @keyframes tourne { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app" style="position:relative;">
+  <div id="chargement">
+    <div class="spinner"></div>
+    <div id="chargement-texte">Chargement de l'environnement Python…</div>
+  </div>
+
+  <div id="topbar">
+    <div class="titre" id="titre-anim">Éditeur Python</div>
+    <div class="statut" id="statut">Python non chargé</div>
+  </div>
+
+  <div id="main">
+    <div id="panneau-code">
+      <div class="entete">CODE</div>
+      <textarea id="editeur" spellcheck="false"></textarea>
+    </div>
+    <div id="panneau-sortie">
+      <div class="entete">SORTIE</div>
+      <div id="sortie"></div>
+    </div>
+  </div>
+
+  <div id="barre-actions">
+    <button id="btn-executer" disabled>▶ Exécuter</button>
+    <button id="btn-effacer">✕ Effacer</button>
+    <div class="zone-code-verif">
+      <label for="code-verif">Code :</label>
+      <input id="code-verif" type="text" readonly value="——————" onclick="this.select()">
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================== Décodage des paramètres (XOR + base64, clé propre à cet outil) ================== */
+const XOR_KEY = "PYEDIT_FJ_2026";
+
+function xorBytes(bytes) {
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    out[i] = bytes[i] ^ XOR_KEY.charCodeAt(i % XOR_KEY.length);
+  }
+  return out;
+}
+
+function b64urlToBytes(b64url) {
+  let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function decodeParam(p) {
+  try {
+    const raw = b64urlToBytes(p);
+    const xored = xorBytes(raw);
+    const jsonStr = new TextDecoder("utf-8").decode(xored);
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    console.warn("Paramètre ?p invalide :", e);
+    return null;
+  }
+}
+
+/* ================== hash6 (identique à FJmoodl.py, pour code de vérification) ================== */
+function hash6(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  let b36;
+  if (h === 0) {
+    b36 = '0';
+  } else {
+    const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const digits = [];
+    let n = h;
+    while (n) {
+      digits.push(chars[n % 36]);
+      n = Math.floor(n / 36);
+    }
+    b36 = digits.reverse().join('');
+  }
+  return b36.padStart(6, '0').slice(0, 6);
+}
+
+/* ================== Lecture des paramètres (URL claire prioritaire sur ?p=) ================== */
+const DEFAUT_CODE = `# Écris ton code ici
+print("Bonjour !")
+`;
+
+const qs = new URLSearchParams(window.location.search);
+let params = { code: DEFAUT_CODE, edit: true, title: "", vars: [], structure: [] };
+
+const pEncode = qs.get("p");
+if (pEncode) {
+  const decoded = decodeParam(pEncode);
+  if (decoded) params = Object.assign(params, decoded);
+}
+// Paramètres en clair : prioritaires (pratique pour tests locaux)
+if (qs.has("code")) params.code = qs.get("code");
+if (qs.has("edit")) params.edit = qs.get("edit") !== "0";
+if (qs.has("title")) params.title = qs.get("title");
+if (qs.has("vars")) params.vars = qs.get("vars").split(",").map(s => s.trim()).filter(Boolean);
+if (qs.has("structure")) params.structure = qs.get("structure").split(",").map(s => s.trim()).filter(Boolean);
+
+const editeur = document.getElementById("editeur");
+const sortieEl = document.getElementById("sortie");
+const btnExecuter = document.getElementById("btn-executer");
+const codeVerifEl = document.getElementById("code-verif");
+const statutEl = document.getElementById("statut");
+const titreEl = document.getElementById("titre-anim");
+const chargementEl = document.getElementById("chargement");
+const chargementTexteEl = document.getElementById("chargement-texte");
+
+editeur.value = params.code;
+if (params.title) titreEl.textContent = params.title;
+
+/* ================== CodeMirror : coloration Python + auto-complétion ================== */
+const cm = CodeMirror.fromTextArea(editeur, {
+  mode: "python",
+  theme: "default",
+  lineNumbers: true,
+  indentUnit: 4,
+  tabSize: 4,
+  indentWithTabs: false,
+  matchBrackets: true,
+  autoCloseBrackets: true,
+  readOnly: params.edit ? false : "nocursor",
+  extraKeys: {
+    "Tab": (cmi) => cmi.replaceSelection("    ", "end"),
+    "Ctrl-Space": "autocomplete"
+  }
+});
+
+// Suggestions auto au fil de la frappe (mots déjà présents dans le code :
+// variables, fonctions, mots-clés Python déjà tapés)
+cm.on("inputRead", (cmi, change) => {
+  if (params.edit === false) return;
+  if (change.text[0] && /[a-zA-Z_.]/.test(change.text[0])) {
+    cmi.showHint({ hint: CodeMirror.hint.anyword, completeSingle: false });
+  }
+});
+
+/* ================== Pyodide ================== */
+let pyodide = null;
+
+async function initPyodide() {
+  try {
+    pyodide = await loadPyodide();
+    statutEl.textContent = "Python prêt";
+    btnExecuter.disabled = false;
+    chargementEl.style.display = "none";
+  } catch (e) {
+    chargementTexteEl.textContent = "Erreur de chargement de Python. Vérifier la connexion.";
+    console.error(e);
+  }
+}
+chargementTexteEl.textContent = "Chargement de l'environnement Python…";
+initPyodide();
+
+function afficherSortie(texte, estErreur) {
+  const span = document.createElement("span");
+  if (estErreur) span.className = "erreur";
+  span.textContent = texte;
+  sortieEl.appendChild(span);
+}
+
+function ajouterImage(base64png) {
+  const img = document.createElement("img");
+  img.src = "data:image/png;base64," + base64png;
+  sortieEl.appendChild(img);
+}
+
+// Formatage identique au _js() de FJmoodl.py : 0.0 -> "0", 1.85 -> "1.85"
+function _js(v) {
+  return v === Math.trunc(v) ? String(Math.trunc(v)) : String(v);
+}
+
+async function calculerCodeVariables(nomsVars, sourceCode, structureRequise) {
+  if (!pyodide) return "——————";
+  pyodide.globals.set("_var_names", nomsVars);
+  pyodide.globals.set("_source_code", sourceCode);
+  const jsonStr = await pyodide.runPythonAsync(`
+import json as _json
+import ast as _ast
+
+_vals = {}
+_manquantes = []
+_g = globals()
+for _name in _var_names:
+    if _name in _g:
+        _v = _g[_name]
+        if isinstance(_v, bool):
+            _vals[_name] = _v
+        elif isinstance(_v, float):
+            _vals[_name] = round(_v, 4)
+        elif isinstance(_v, int):
+            _vals[_name] = _v
+        else:
+            _vals[_name] = str(_v)
+    else:
+        _manquantes.append(_name)
+
+# Analyse structurelle du code source (boucle, if/elif/else) via ast --
+# indépendant de la façon dont le code est écrit ou de son résultat.
+_struct = {}
+try:
+    _tree = _ast.parse(_source_code)
+
+    _struct["boucle"] = any(isinstance(n, (_ast.For, _ast.While)) for n in _ast.walk(_tree))
+
+    def _condition_non_triviale(test_node):
+        # Rejette une condition constante (if True/False/1:) -- exige qu'au
+        # moins une variable (ast.Name) intervienne dans le test.
+        return any(isinstance(n, _ast.Name) for n in _ast.walk(test_node))
+
+    def _a_if_elif_else(tree):
+        for node in _ast.walk(tree):
+            if isinstance(node, _ast.If) and _condition_non_triviale(node.test):
+                cur = node
+                nb_elif = 0
+                while len(cur.orelse) == 1 and isinstance(cur.orelse[0], _ast.If):
+                    nb_elif += 1
+                    cur = cur.orelse[0]
+                a_else = len(cur.orelse) > 0
+                if nb_elif >= 1 and a_else:
+                    return True
+        return False
+
+    _struct["if_elif_else"] = _a_if_elif_else(_tree)
+
+    def _a_if_else(tree):
+        # if/else à deux branches -- elif toléré ou non, on exige juste un
+        # If avec un orelse non vide ET une condition qui dépend d'une
+        # variable (pas un if True:/if 1: trivial).
+        for node in _ast.walk(tree):
+            if isinstance(node, _ast.If) and len(node.orelse) > 0 and _condition_non_triviale(node.test):
+                return True
+        return False
+
+    _struct["if_else"] = _a_if_else(_tree)
+except SyntaxError:
+    _struct["boucle"] = False
+    _struct["if_elif_else"] = False
+    _struct["if_else"] = False
+
+_json.dumps({"vals": _vals, "manquantes": _manquantes, "struct": _struct})
+`);
+  const { vals, manquantes, struct } = JSON.parse(jsonStr);
+
+  if (manquantes.length > 0) {
+    afficherSortie("\nVariable(s) manquante(s) : " + manquantes.join(", "), true);
+    return "——————";
+  }
+
+  const manquantesStruct = [];
+  if (structureRequise.includes("boucle") && !struct.boucle) manquantesStruct.push("boucle (for/while)");
+  if (structureRequise.includes("if_elif_else") && !struct.if_elif_else) manquantesStruct.push("if / elif / else");
+  if (structureRequise.includes("if_else") && !struct.if_else) manquantesStruct.push("if / else");
+  if (manquantesStruct.length > 0) {
+    afficherSortie("\nStructure manquante : " + manquantesStruct.join(", "), true);
+    return "——————";
+  }
+
+  for (const s of structureRequise) {
+    vals["__" + s] = struct[s] ? 1 : 0;
+  }
+
+  const noms = Object.keys(vals).sort();
+  const canon = noms.map((n) => {
+    const v = vals[n];
+    const vf = typeof v === "number" ? _js(v) : String(v);
+    return n + "=" + vf;
+  }).join("|");
+  return "V-" + hash6(canon);
+}
+
+let enExecution = false;
+
+async function executer() {
+  if (!pyodide || enExecution) return;
+  enExecution = true;
+  btnExecuter.disabled = true;
+  btnExecuter.textContent = "⏳ Exécution…";
+  sortieEl.innerHTML = "";
+  codeVerifEl.value = "——————";
+
+  const code = cm.getValue();
+  let sortieTexte = "";
+  let erreur = false;
+
+  pyodide.setStdout({ batched: (s) => { sortieTexte += s + "\n"; } });
+  pyodide.setStderr({ batched: (s) => { sortieTexte += s + "\n"; } });
+
+  try {
+    // Toujours repartir d'une session matplotlib propre : ferme les figures
+    // laissées par une exécution précédente (Pyodide ne redémarre pas entre
+    // deux clics, la mémoire Python persiste tant que la page reste ouverte).
+    // Sans effet (except silencieux) si matplotlib n'a jamais été chargé.
+    await pyodide.runPythonAsync(`
+try:
+    import matplotlib.pyplot as _plt
+    _plt.close('all')
+except Exception:
+    pass
+`);
+
+    // Chargement à la demande de numpy/matplotlib si le code en a besoin
+    if (/import\s+matplotlib|from\s+matplotlib/.test(code)) {
+      statutEl.textContent = "Chargement de matplotlib…";
+      await pyodide.loadPackage("matplotlib");
+      // Backend Agg forcé : le backend interactif par défaut de Pyodide
+      // injecte lui-même les figures dans la page (cause du doublon et des
+      // erreurs sur close()). Agg = rendu image pur, pas d'auto-injection DOM.
+      await pyodide.runPythonAsync(`
+import matplotlib
+matplotlib.use("AGG")
+`);
+    }
+    if (/import\s+numpy|from\s+numpy/.test(code) && !/import\s+matplotlib|from\s+matplotlib/.test(code)) {
+      statutEl.textContent = "Chargement de numpy…";
+      await pyodide.loadPackage("numpy");
+    }
+    statutEl.textContent = "Python prêt";
+
+    await pyodide.runPythonAsync(code);
+
+    // Récupération des figures matplotlib éventuellement ouvertes
+    if (/import\s+matplotlib|from\s+matplotlib/.test(code)) {
+      const figsCode = `
+import io, base64
+_imgs = []
+try:
+    import matplotlib.pyplot as _plt
+    for _num in _plt.get_fignums():
+        _fig = _plt.figure(_num)
+        _buf = io.BytesIO()
+        _fig.savefig(_buf, format='png', bbox_inches='tight')
+        _buf.seek(0)
+        _imgs.append(base64.b64encode(_buf.read()).decode('ascii'))
+    _plt.close('all')
+except Exception:
+    pass
+_imgs
+`;
+      const imgs = await pyodide.runPythonAsync(figsCode);
+      const imgsJs = imgs.toJs();
+      for (const b64 of imgsJs) ajouterImage(b64);
+    }
+  } catch (e) {
+    sortieTexte += "\n" + (e && e.message ? e.message : String(e));
+    erreur = true;
+  }
+
+  afficherSortie(sortieTexte, erreur);
+
+  if ((params.vars && params.vars.length > 0) || (params.structure && params.structure.length > 0)) {
+    // Code de vérification basé sur l'état final des variables demandées
+    // (m, l, z...) et/ou sur la structure du code (boucle, if/elif/else)
+    // -- peu importe comment l'élève l'a écrit, tant que le résultat et la
+    // structure demandée y sont.
+    codeVerifEl.value = await calculerCodeVariables(params.vars || [], code, params.structure || []);
+  } else {
+    // Comportement par défaut : hash de la sortie texte normalisée
+    const normalise = sortieTexte.trim();
+    codeVerifEl.value = normalise ? "P-" + hash6(normalise) : "——————";
+  }
+
+  btnExecuter.disabled = false;
+  btnExecuter.textContent = "▶ Exécuter";
+  enExecution = false;
+}
+
+btnExecuter.addEventListener("click", executer);
+
+const btnEffacer = document.getElementById("btn-effacer");
+btnEffacer.addEventListener("click", () => {
+  sortieEl.innerHTML = "";
+  codeVerifEl.value = "——————";
+});
+</script>
+</body>
+</html>
