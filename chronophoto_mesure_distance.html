@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chronophotographie — Mesure de distance</title>
+<style>
+  :root{
+    --blue:#2b5f9e;
+    --blue-dark:#1d4675;
+    --gray-bg:#f4f6f8;
+    --gray-border:#c9d2db;
+    --text:#26313d;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;
+    font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--gray-bg);
+    color:var(--text);
+  }
+  .bandeau{
+    background:var(--blue);
+    color:#fff;
+    padding:10px 16px;
+    font-size:16px;
+    font-weight:600;
+    letter-spacing:.2px;
+  }
+  .wrap{
+    display:flex;
+    gap:16px;
+    padding:16px;
+    align-items:flex-start;
+    flex-wrap:wrap;
+  }
+  #stage{
+    position:relative;
+    background:#fff;
+    border:1px solid var(--gray-border);
+    border-radius:6px;
+    flex:1 1 auto;
+    min-width:380px;
+    max-width:620px; /* = résolution native du canvas : ne grandit jamais au-delà,
+                         même en plein écran hors iframe (sinon le graphique gonfle
+                         verticalement avec la largeur disponible). */
+  }
+  canvas{
+    display:block;
+    cursor:default;
+    width:100%;
+    height:auto;
+    max-width:100%;
+  }
+  .sidebar{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    min-width:250px;
+    max-width:260px;
+    max-height:480px;
+    overflow-y:auto;
+    padding-right:2px;
+  }
+  .accordion{
+    background:#fff;
+    border:1px solid var(--gray-border);
+    border-radius:6px;
+    overflow:hidden;
+  }
+  .accHeader{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    background:var(--blue);
+    color:#fff;
+    border:none;
+    padding:11px 14px;
+    font-size:13px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:.5px;
+    cursor:pointer;
+    border-radius:0;
+  }
+  .accHeader:hover{
+    background:var(--blue-dark);
+  }
+  .accHeader .chevron{
+    display:inline-block;
+    font-size:16px;
+    line-height:1;
+    transition:transform .2s ease;
+  }
+  .accordion.open .accHeader .chevron{
+    transform:rotate(90deg);
+  }
+  /* flèche dessinée au-dessus d'un nom de vecteur (notation v⃗), en HTML */
+  .vecArrow{
+    position:relative;
+    display:inline-block;
+    padding-top:9px;
+  }
+  .vecArrow::before{
+    content:"";
+    position:absolute;
+    top:1px;
+    left:1px;
+    right:6px;
+    border-top:1px solid currentColor;
+  }
+  .vecArrow::after{
+    content:"";
+    position:absolute;
+    top:-2px;
+    right:4px;
+    border:3px solid transparent;
+    border-left-color:currentColor;
+    border-right:none;
+  }
+  .accBody{
+    max-height:0;
+    overflow:hidden;
+    transition:max-height .25s ease;
+  }
+  .accordion.open .accBody{
+    max-height:600px;
+  }
+  .accInner{
+    padding:14px 16px;
+  }
+  button{
+    background:var(--blue);
+    color:#fff;
+    border:none;
+    border-radius:4px;
+    padding:9px 14px;
+    font-size:14px;
+    cursor:pointer;
+    width:100%;
+  }
+  button:disabled{
+    background:#b7c2cc;
+    cursor:not-allowed;
+  }
+  button:not(:disabled):hover{
+    background:var(--blue-dark);
+  }
+  #result{
+    margin-top:12px;
+    font-size:14px;
+    line-height:1.5;
+    min-height:20px;
+  }
+  #result .val{
+    font-weight:700;
+    color:var(--blue-dark);
+  }
+  #tooltip{
+    position:absolute;
+    pointer-events:none;
+    background:var(--blue-dark);
+    color:#fff;
+    font-size:12px;
+    padding:2px 6px;
+    border-radius:3px;
+    transform:translate(-50%,-130%);
+    display:none;
+    white-space:nowrap;
+  }
+  .hint{
+    font-size:12px;
+    color:#5c6b78;
+    margin-top:10px;
+    line-height:1.5;
+  }
+  .btnSecondary{
+    background:#fff;
+    color:var(--blue-dark);
+    border:1px solid var(--blue);
+  }
+  .btnSecondary:not(:disabled):hover{
+    background:#eef3f9;
+    color:var(--blue-dark);
+  }
+  .btnGhost{
+    background:#fff;
+    color:#7a8794;
+    border:1px solid var(--gray-border);
+    font-size:12px;
+    padding:6px 10px;
+    margin-top:8px;
+  }
+  .btnGhost:not(:disabled):hover{
+    background:#f4f6f8;
+  }
+  #vectorInfo{
+    margin-top:12px;
+    font-size:14px;
+    line-height:1.5;
+    min-height:20px;
+  }
+  #vectorInfo .val{
+    font-weight:700;
+    color:#7b3fbf;
+  }
+  #vectorScaleLine{
+    font-size:12px;
+    color:#5c6b78;
+    margin-top:6px;
+  }
+  /* --- modal --- */
+  .modalOverlay{
+    position:fixed;
+    inset:0;
+    background:rgba(38,49,61,0.45);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:50;
+  }
+  .modalCard{
+    background:#fff;
+    border-radius:8px;
+    padding:20px 22px;
+    width:280px;
+    box-shadow:0 6px 24px rgba(0,0,0,.2);
+  }
+  .modalCard.wide{
+    width:420px;
+  }
+  .modalCard h4{
+    margin:0 0 14px 0;
+    font-size:14px;
+    color:var(--blue-dark);
+    text-transform:uppercase;
+    letter-spacing:.4px;
+  }
+  .modalCard label{
+    display:block;
+    font-size:12px;
+    color:#5c6b78;
+    margin:10px 0 4px 0;
+  }
+  .modalCard input, .modalCard textarea{
+    width:100%;
+    padding:7px 8px;
+    border:1px solid var(--gray-border);
+    border-radius:4px;
+    font-size:14px;
+    font-family:inherit;
+  }
+  .modalCard textarea{
+    resize:vertical;
+    font-family:ui-monospace,Consolas,monospace;
+    font-size:12px;
+  }
+  .modalCard .row{
+    display:flex;
+    gap:10px;
+    margin-top:16px;
+  }
+  .modalCard .row button{
+    flex:1;
+  }
+  #modalScaleNote{
+    font-size:11px;
+    color:#8a97a3;
+    margin-top:4px;
+    line-height:1.4;
+  }
+  #importNote{
+    font-size:11px;
+    color:#8a97a3;
+    margin-top:4px;
+    line-height:1.4;
+  }
+</style>
+</head>
+<body>
+
+<div class="bandeau">Chronophotographie — mesure de distance</div>
+
+<div class="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="tooltip"></div>
+  </div>
+
+  <div class="sidebar">
+    <div class="accordion" data-acc="import">
+      <button class="accHeader">
+        <span>Importer des données</span>
+        <span class="chevron">›</span>
+      </button>
+      <div class="accBody">
+        <div class="accInner">
+          <button id="btnImport" class="btnSecondary">Importer des données</button>
+          <div class="hint">
+            Colle directement le tableau de l'énoncé (Moodle, Word...) et précise
+            l'unité de temps et de distance : origine, échelle, axes et vecteurs
+            s'adaptent automatiquement. Remplace les points actuels.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="accordion" data-acc="coord">
+      <button class="accHeader">
+        <span>Coordonnées point</span>
+        <span class="chevron">›</span>
+      </button>
+      <div class="accBody">
+        <div class="accInner">
+          <div id="coordInfo" class="hint" style="margin-top:0;">
+            Cliquez sur un point pour afficher ses coordonnées.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="accordion" data-acc="norme">
+      <button class="accHeader">
+        <span>Norme vecteur</span>
+        <span class="chevron">›</span>
+      </button>
+      <div class="accBody">
+        <div class="accInner">
+          <div id="normInfo" class="hint" style="margin-top:0;">
+            Cliquez sur une flèche pour afficher sa norme.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="accordion" data-acc="mesure">
+      <button class="accHeader">
+        <span>Mesure</span>
+        <span class="chevron">›</span>
+      </button>
+      <div class="accBody">
+        <div class="accInner">
+          <div id="tauLine" style="font-size:13px;margin-bottom:10px;color:#5c6b78;"></div>
+          <button id="btnMesure" disabled>Mesure distance</button>
+          <div id="result"></div>
+          <div class="hint">
+            Cliquez sur un point, puis sur un second point, puis sur « Mesure distance ».
+            Cliquer sur un nouveau point efface la mesure en cours.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="accordion" data-acc="vecteur">
+      <button class="accHeader">
+        <span>Vecteur tangent</span>
+        <span class="chevron">›</span>
+      </button>
+      <div class="accBody">
+        <div class="accInner">
+          <div id="vecSelInfo" class="hint" style="margin-top:0;margin-bottom:10px;"></div>
+          <button id="btnVector" class="btnSecondary" disabled>Tracer vecteur tangent</button>
+          <div id="vectorInfo"></div>
+
+          <label for="vecScale" style="display:block;font-size:12px;color:#5c6b78;margin-top:14px;">
+            Échelle des vecteurs (logarithmique)
+          </label>
+          <input type="range" id="vecScale" min="-4" max="6" step="0.02" value="0" style="width:100%;">
+          <div id="vectorScaleLine"></div>
+          <button id="btnAutoScale" class="btnGhost" disabled>Échelle automatique</button>
+
+          <button id="btnDeleteSelectedVector" class="btnGhost" disabled style="color:#c0392b;border-color:#e6b2ab;margin-top:10px;">
+            Supprimer le vecteur sélectionné
+          </button>
+          <button id="btnClearVectors" class="btnGhost">Effacer tous les vecteurs</button>
+          <div class="hint">
+            Sélectionnez 2 points (l'origine du vecteur sera le premier sélectionné), puis
+            cliquez sur « Tracer vecteur tangent ». Tous les vecteurs (v2, v3, v4…) partagent
+            la même échelle, réglable ci-dessus. Cliquez directement sur une flèche pour la
+            sélectionner et la supprimer.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="accordion" data-acc="delta">
+      <button class="accHeader">
+        <span>Variation de vecteur</span>
+        <span class="chevron">›</span>
+      </button>
+      <div class="accBody">
+        <div class="accInner">
+          <button id="btnDelta" class="btnSecondary" disabled>Tracer Δv (variation)</button>
+          <div id="deltaInfo"></div>
+          <div class="hint">
+            Cliquez sur une flèche déjà tracée (ex. v2), puis sur une seconde (ex. v3),
+            puis sur « Tracer Δv ». Le résultat est Δv = dernier sélectionné − premier
+            sélectionné (ici v3 − v2), tracé en vert depuis l'origine du second vecteur.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modalOverlay" class="modalOverlay">
+  <div id="modalCard" class="modalCard">
+    <h4>Vecteur tangent</h4>
+    <label for="mvName">Nom du vecteur</label>
+    <input type="text" id="mvName">
+    <label for="mvValue">Longueur</label>
+    <input type="number" id="mvValue" step="any" min="0">
+    <label for="mvUnit">Unité</label>
+    <input type="text" id="mvUnit">
+    <button id="mvDelete" class="btnGhost" style="display:none;width:100%;color:#c0392b;border-color:#e6b2ab;">
+      Supprimer ce vecteur
+    </button>
+    <div class="row">
+      <button id="mvCancel" class="btnSecondary">Annuler</button>
+      <button id="mvOk">Valider</button>
+    </div>
+  </div>
+</div>
+
+<div id="importOverlay" class="modalOverlay">
+  <div id="importCard" class="modalCard wide">
+    <h4>Importer des données</h4>
+    <label for="impData">Points (un par ligne : t x y). Colle directement depuis un tableau (Moodle, Word...) : les colonnes tabulées et les virgules décimales sont reconnues automatiquement.</label>
+    <textarea id="impData" rows="10" placeholder="0	0	0&#10;1	0,52	0,31&#10;2	1,02	0,66&#10;..."></textarea>
+    <div id="importNote"></div>
+    <label for="impPrefix">Préfixe des points</label>
+    <input type="text" id="impPrefix" value="M">
+    <label for="impUnit">Unité de temps</label>
+    <input type="text" id="impUnit" value="s">
+    <label for="impLengthUnit">Unité de distance</label>
+    <input type="text" id="impLengthUnit" value="m">
+    <div class="row">
+      <button id="impCancel" class="btnSecondary">Annuler</button>
+      <button id="impOk">Charger</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* =========================================================
+     1. Décodage des paramètres (XOR + base64 url-safe)
+     Clé spécifique à cette animation — ne pas réutiliser ailleurs.
+     ========================================================= */
+  const XOR_KEY = "M9K7QZ-chronophoto-2026";
+
+  function fromBase64Url(s){
+    s = s.replace(/-/g,'+').replace(/_/g,'/');
+    while(s.length % 4) s += '=';
+    const bin = atob(s);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function xorBytes(bytes, keyStr){
+    const key = new TextEncoder().encode(keyStr);
+    const out = new Uint8Array(bytes.length);
+    for(let i=0;i<bytes.length;i++) out[i] = bytes[i] ^ key[i % key.length];
+    return out;
+  }
+  function decodeParams(str, key){
+    const bytes = fromBase64Url(str);
+    const x = xorBytes(bytes, key);
+    const jsonStr = new TextDecoder().decode(x);
+    return JSON.parse(jsonStr);
+  }
+
+  /* =========================================================
+     2. Paramètres par défaut + lecture URL
+        - ?p=...        -> bloc codé (points, prefix)
+        - ?prefix=...   -> surcharge en clair (prioritaire), pratique en local
+     ========================================================= */
+  // Jeu de test : vrai mouvement parabolique (tir avec vitesse initiale),
+  // v0 = 10 m/s, angle = 50°, g = 9.8 m/s², dt = 0.15 s -> [t, x, y]
+  const DEFAULT_POINTS = [
+    [0.0, 0.0, 0.0],
+    [0.15, 0.964, 1.039],
+    [0.3, 1.928, 1.857],
+    [0.45, 2.893, 2.455],
+    [0.6, 3.857, 2.832],
+    [0.75, 4.821, 2.989],
+    [0.9, 5.785, 2.925],
+    [1.05, 6.749, 2.641],
+    [1.2, 7.713, 2.137],
+    [1.35, 8.678, 1.411],
+    [1.5, 9.642, 0.466]
+  ];
+
+  let params = { points: DEFAULT_POINTS, prefix: "M" };
+
+  const qs = new URLSearchParams(location.search);
+  if (qs.has("p")) {
+    try {
+      const decoded = decodeParams(qs.get("p"), XOR_KEY);
+      if (decoded && Array.isArray(decoded.points)) {
+        params.points = decoded.points.slice(0, 20);
+      }
+      if (decoded && typeof decoded.prefix === "string") {
+        params.prefix = decoded.prefix;
+      }
+      if (decoded && typeof decoded.tUnit === "string") {
+        params.tUnit = decoded.tUnit;
+      }
+      if (decoded && typeof decoded.lengthUnit === "string") {
+        params.lengthUnit = decoded.lengthUnit;
+      }
+    } catch(e) {
+      console.warn("Paramètre p invalide, valeurs par défaut utilisées.", e);
+    }
+  }
+  if (qs.has("prefix")) params.prefix = qs.get("prefix"); // surcharge en clair
+  if (qs.has("tUnit")) params.tUnit = qs.get("tUnit");
+  if (qs.has("lengthUnit")) params.lengthUnit = qs.get("lengthUnit");
+  let tUnit = params.tUnit || "s";
+  let lengthUnit = params.lengthUnit || "m"; // unité des positions x/y (m, UA, km...)
+
+  // indices en chiffres unicode "en indice" (rendu identique sur canvas et en HTML)
+  const SUB_DIGITS = "₀₁₂₃₄₅₆₇₈₉";
+  function toSubscript(n){
+    return String(n).split("").map(d => SUB_DIGITS[+d]).join("");
+  }
+
+  // Formatage des valeurs affichées : notation scientifique automatique pour les
+  // très petites ou très grandes valeurs (ex. données en UA, en km, en secondes...),
+  // sinon décimales classiques. Utilisé partout où un nombre est montré à l'écran.
+  function fmtNum(v, decimals){
+    if (decimals === undefined) decimals = 3;
+    if (!isFinite(v)) return String(v);
+    if (v === 0) return (0).toFixed(decimals);
+    const abs = Math.abs(v);
+    if (abs < 1e-3 || abs >= 1e5) return v.toExponential(2);
+    return v.toFixed(decimals);
+  }
+
+  // POINTS/TAU sont reconstruits à l'import de nouvelles données (ex. éphémérides),
+  // d'où buildPoints() plutôt qu'un calcul figé une fois pour toutes.
+  let POINTS = [];
+  let TAU = null;
+  let currentPrefix = params.prefix || "M";
+  function buildPoints(rawPoints, prefix){
+    currentPrefix = prefix || "M";
+    POINTS = rawPoints.map((p, i) => ({
+      t: p[0], x: p[1], y: p[2],
+      label: currentPrefix + toSubscript(i),        // pour le canvas
+      labelHTML: currentPrefix + "<sub>" + i + "</sub>" // pour les éléments HTML
+    }));
+    TAU = POINTS.length > 1 ? (POINTS[1].t - POINTS[0].t) : null;
+  }
+  buildPoints(params.points, params.prefix);
+
+  /* =========================================================
+     3. Repère graphique : mise à l'échelle automatique
+     ========================================================= */
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const tooltip = document.getElementById('tooltip');
+  const stage = document.getElementById('stage');
+
+  const W = 620, H = 460;
+  cv.width = W; cv.height = H;
+
+  const MARGIN = { left: 50, right: 30, top: 24, bottom: 44 };
+
+  function niceStep(maxVal, targetTicks){
+    if (maxVal <= 0) return 1;
+    const raw = maxVal / targetTicks;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    let step;
+    if (norm < 1.5) step = 1;
+    else if (norm < 3) step = 2;
+    else if (norm < 7) step = 5;
+    else step = 10;
+    return step * mag;
+  }
+
+  // recalculée à chaque import de nouvelles données (échelle "equal", comme matplotlib :
+  // même nombre de px par mètre en x et en y, sinon les distances à l'écran mentent).
+  // Gère les coordonnées négatives (ex. orbite d'une planète autour du Soleil pris comme
+  // origine) : le repère n'est plus limité au premier quadrant, 0 est toujours inclus
+  // dans l'intervalle affiché pour que les axes restent visibles.
+  let xs, ys, gridXMin, gridXMax, gridYMin, gridYMax, stepX, stepY,
+      plotW, plotH, SCALE, xExtentPx, yExtentPx;
+
+  function recomputeScale(){
+    xs = POINTS.map(p => p.x);
+    ys = POINTS.map(p => p.y);
+
+    const xMinData = Math.min(0, ...xs);
+    const xMaxData = Math.max(0, ...xs);
+    const yMinData = Math.min(0, ...ys);
+    const yMaxData = Math.max(0, ...ys);
+
+    const xSpanRaw = Math.max(0.001, xMaxData - xMinData);
+    const ySpanRaw = Math.max(0.001, yMaxData - yMinData);
+    const pad = 0.12;
+
+    const xMin = xMinData - xSpanRaw * pad;
+    const xMax = xMaxData + xSpanRaw * pad;
+    const yMin = yMinData - ySpanRaw * pad;
+    const yMax = yMaxData + ySpanRaw * pad;
+
+    stepX = niceStep(xMax - xMin, 6);
+    stepY = niceStep(yMax - yMin, 6);
+
+    gridXMin = Math.floor(xMin / stepX) * stepX;
+    gridXMax = Math.ceil(xMax / stepX) * stepX;
+    gridYMin = Math.floor(yMin / stepY) * stepY;
+    gridYMax = Math.ceil(yMax / stepY) * stepY;
+
+    plotW = W - MARGIN.left - MARGIN.right;
+    plotH = H - MARGIN.top - MARGIN.bottom;
+
+    SCALE = Math.min(plotW / (gridXMax - gridXMin), plotH / (gridYMax - gridYMin));
+    xExtentPx = (gridXMax - gridXMin) * SCALE;
+    yExtentPx = (gridYMax - gridYMin) * SCALE;
+  }
+  recomputeScale();
+
+  function toPx(x, y){
+    return {
+      px: MARGIN.left + (x - gridXMin) * SCALE,
+      py: H - MARGIN.bottom - (y - gridYMin) * SCALE
+    };
+  }
+
+  /* =========================================================
+     4. Dessin
+     ========================================================= */
+  const R = 6;          // rayon des points
+  const HIT = 10;        // rayon de détection souris
+  let hovered = null;
+  let selected = [];      // indices des points sélectionnés (max 2)
+  let measured = null;    // {a,b,dist} une fois "Mesure distance" cliqué
+
+  // vecteurs tangents tracés : tous de même "genre" (type v), même échelle,
+  // réglable via le curseur #vecScale. Persistent tant que "Effacer les vecteurs"
+  // n'est pas cliqué (contrairement à la mesure de distance, qui s'efface au reclic).
+  let vectors = [];        // {name, originIdx, dirIdx, value, unit, color, isDelta, ux, uy, annotation}
+  let vectorScale = 1;     // m sur le graphique par unité physique (réglé par le curseur)
+  let selectedVectors = []; // indices (ordre de clic) des vecteurs sélectionnés en cliquant sur les flèches, max 2
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    // axes : passent par (0,0), qui est toujours dans l'intervalle affiché (4 quadrants
+    // possibles, utile pour des données centrées sur une origine comme une orbite).
+    const leftPx = MARGIN.left;
+    const rightPx = MARGIN.left + xExtentPx;
+    const topPx = H - MARGIN.bottom - yExtentPx;
+    const bottomPx = H - MARGIN.bottom;
+    const origin = toPx(0, 0);
+    const xAxisY = origin.py;   // ligne horizontale (axe des x)
+    const yAxisX = origin.px;   // ligne verticale (axe des y)
+    const xAxisEndPx = rightPx + 14;
+    const yAxisEndPy = topPx - 14;
+
+    ctx.strokeStyle = "#26313d";
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(leftPx - 6, xAxisY);
+    ctx.lineTo(xAxisEndPx, xAxisY);
+    ctx.moveTo(yAxisX, bottomPx + 6);
+    ctx.lineTo(yAxisX, yAxisEndPy);
+    ctx.stroke();
+
+    // flèches
+    ctx.beginPath();
+    ctx.moveTo(xAxisEndPx, xAxisY);
+    ctx.lineTo(xAxisEndPx - 8, xAxisY - 4);
+    ctx.lineTo(xAxisEndPx - 8, xAxisY + 4);
+    ctx.closePath(); ctx.fillStyle = "#26313d"; ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(yAxisX, yAxisEndPy);
+    ctx.lineTo(yAxisX - 4, yAxisEndPy + 8);
+    ctx.lineTo(yAxisX + 4, yAxisEndPy + 8);
+    ctx.closePath(); ctx.fill();
+
+    // graduations X
+    ctx.font = "11px -apple-system,Segoe UI,Arial,sans-serif";
+    ctx.fillStyle = "#5c6b78";
+    ctx.strokeStyle = "#dbe2e8";
+    ctx.textAlign = "center";
+    for(let v = gridXMin; v <= gridXMax + 1e-9; v += stepX){
+      const {px} = toPx(v, 0);
+      ctx.beginPath();
+      ctx.moveTo(px, topPx);
+      ctx.lineTo(px, bottomPx);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(px, xAxisY - 3);
+      ctx.lineTo(px, xAxisY + 3);
+      ctx.strokeStyle = "#26313d";
+      ctx.stroke();
+      ctx.strokeStyle = "#dbe2e8";
+      if (Math.abs(v) > 1e-9){
+        ctx.fillText(v.toFixed(stepX < 1 ? 1 : 0), px, xAxisY + 16);
+      }
+    }
+    // graduations Y
+    ctx.textAlign = "right";
+    for(let v = gridYMin; v <= gridYMax + 1e-9; v += stepY){
+      const {py} = toPx(0, v);
+      ctx.beginPath();
+      ctx.moveTo(leftPx, py);
+      ctx.lineTo(rightPx, py);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(yAxisX - 3, py);
+      ctx.lineTo(yAxisX + 3, py);
+      ctx.strokeStyle = "#26313d";
+      ctx.stroke();
+      ctx.strokeStyle = "#dbe2e8";
+      if (Math.abs(v) > 1e-9){
+        ctx.fillText(v.toFixed(stepY < 1 ? 1 : 0), yAxisX - 8, py + 4);
+      }
+    }
+
+    // labels axes
+    ctx.fillStyle = "#26313d";
+    ctx.font = "13px -apple-system,Segoe UI,Arial,sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("x (" + lengthUnit + ")", xAxisEndPx + 4, xAxisY + 4);
+    ctx.fillText("y (" + lengthUnit + ")", yAxisX - 4, yAxisEndPy - 6);
+    ctx.fillText("O", yAxisX - 14, xAxisY + 16);
+
+    // segment de mesure (si présent)
+    if (measured){
+      const A = toPx(measured.a.x, measured.a.y);
+      const B = toPx(measured.b.x, measured.b.y);
+      ctx.strokeStyle = "#c0392b";
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(A.px, A.py);
+      ctx.lineTo(B.px, B.py);
+      ctx.stroke();
+
+      // libellés des points mesurés
+      ctx.fillStyle = "#c0392b";
+      ctx.font = "bold 12px -apple-system,Segoe UI,Arial,sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(measured.a.label, A.px, A.py - 12);
+      ctx.fillText(measured.b.label, B.px, B.py - 12);
+    }
+
+    // vecteurs tangents
+    vectors.forEach((v, i) => drawVector(v, selectedVectors.includes(i)));
+
+    // points
+    POINTS.forEach((p, i) => {
+      const {px, py} = toPx(p.x, p.y);
+      const isSelected = selected.includes(i);
+      const isHovered = hovered === i;
+
+      ctx.beginPath();
+      ctx.arc(px, py, isHovered ? R + 1.5 : R, 0, Math.PI*2);
+      ctx.fillStyle = isSelected ? "#e08a1e" : "#26313d";
+      ctx.fill();
+      if (isSelected){
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#c06e0a";
+        ctx.stroke();
+
+        // libellé affiché tant que le point est sélectionné
+        ctx.fillStyle = "#c06e0a";
+        ctx.font = "bold 12px -apple-system,Segoe UI,Arial,sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(p.label, px, py - 12);
+      }
+    });
+  }
+
+  const VECTOR_COLOR = "#7b3fbf";
+  const VECTOR_COLOR_SEL = "#c0392b";
+  const DELTA_COLOR = "#2e9e5b";
+
+  // notation vectorielle en HTML : span stylé avec une vraie flèche dessinée en CSS
+  // (le caractère combinant "flèche au-dessus" n'est pas fiable, notamment en canvas).
+  function htmlVectorLabel(name){
+    return `<span class="vecArrow">${name}</span>`;
+  }
+
+  // équivalent canvas : dessine une vraie petite flèche au-dessus du texte, à la main.
+  function drawVectorLabel(text, cx, y, font){
+    ctx.font = font;
+    ctx.textAlign = "center";
+    const w = ctx.measureText(text).width;
+    const arrowY = y - 13;
+    const halfW = Math.max(6, w / 2 - 1);
+
+    ctx.save();
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfW, arrowY);
+    ctx.lineTo(cx + halfW, arrowY);
+    ctx.stroke();
+    // pointe
+    ctx.beginPath();
+    ctx.moveTo(cx + halfW, arrowY);
+    ctx.lineTo(cx + halfW - 4, arrowY - 3);
+    ctx.lineTo(cx + halfW - 4, arrowY + 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillText(text, cx, y);
+  }
+
+  // vecteur "physique" (composantes valeur*direction, dans l'unité du vecteur) —
+  // sert de base au calcul de la variation Δv = v_dernier - v_premier
+  function vectorComponents(v){
+    if (v.isDelta){
+      return { x: v.value * v.ux, y: v.value * v.uy };
+    }
+    const O = POINTS[v.originIdx];
+    const D = POINTS[v.dirIdx];
+    const dx = D.x - O.x, dy = D.y - O.y;
+    const norm = Math.hypot(dx, dy);
+    if (norm === 0) return { x: 0, y: 0 };
+    return { x: v.value * dx / norm, y: v.value * dy / norm };
+  }
+
+  function vectorEndpoints(v){
+    if (v.isDelta){
+      const O = POINTS[v.originIdx];
+      const lengthMeters = v.value * vectorScale;
+      const endX = O.x + v.ux * lengthMeters;
+      const endY = O.y + v.uy * lengthMeters;
+      return { A: toPx(O.x, O.y), B: toPx(endX, endY) };
+    }
+    const O = POINTS[v.originIdx];
+    const D = POINTS[v.dirIdx];
+    const dx = D.x - O.x, dy = D.y - O.y;
+    const norm = Math.hypot(dx, dy);
+    if (norm === 0) return null;
+    const ux = dx / norm, uy = dy / norm;
+    const lengthMeters = v.value * vectorScale;
+    const endX = O.x + ux * lengthMeters;
+    const endY = O.y + uy * lengthMeters;
+    return { A: toPx(O.x, O.y), B: toPx(endX, endY) };
+  }
+
+  function drawVector(v, isSelected){
+    const pts = vectorEndpoints(v);
+    if (!pts) return;
+    const { A, B } = pts;
+    const baseColor = v.color || VECTOR_COLOR;
+    const color = isSelected ? VECTOR_COLOR_SEL : baseColor;
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = isSelected ? 3.2 : 2.2;
+    ctx.beginPath();
+    ctx.moveTo(A.px, A.py);
+    ctx.lineTo(B.px, B.py);
+    ctx.stroke();
+
+    // pointe de flèche
+    const angle = Math.atan2(B.py - A.py, B.px - A.px);
+    const headLen = 9;
+    ctx.beginPath();
+    ctx.moveTo(B.px, B.py);
+    ctx.lineTo(B.px - headLen * Math.cos(angle - Math.PI/6), B.py - headLen * Math.sin(angle - Math.PI/6));
+    ctx.lineTo(B.px - headLen * Math.cos(angle + Math.PI/6), B.py - headLen * Math.sin(angle + Math.PI/6));
+    ctx.closePath();
+    ctx.fill();
+
+    // origine marquée
+    ctx.beginPath();
+    ctx.arc(A.px, A.py, 3, 0, Math.PI*2);
+    ctx.fill();
+
+    // nom du vecteur, avec une vraie flèche dessinée au-dessus
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    const labelOffsetX = (B.px - A.px) >= 0 ? 16 : -16;
+    drawVectorLabel(v.name, B.px + labelOffsetX, B.py - 4, "bold 12px -apple-system,Segoe UI,Arial,sans-serif");
+
+    // annotation (ex. "(= v3 - v2)") pour les vecteurs Δv
+    if (v.annotation){
+      ctx.font = "10px -apple-system,Segoe UI,Arial,sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(v.annotation, B.px + labelOffsetX, B.py + 11);
+    }
+  }
+
+  /* =========================================================
+     5. Interactions souris
+     ========================================================= */
+  function pointerPos(evt){
+    const rect = cv.getBoundingClientRect();
+    return {
+      x: (evt.clientX - rect.left) * (W / rect.width),
+      y: (evt.clientY - rect.top) * (H / rect.height)
+    };
+  }
+
+  const coordInfo = document.getElementById('coordInfo');
+  function updateCoordInfo(){
+    if (selected.length === 0){
+      coordInfo.innerHTML = "Cliquez sur un point pour afficher ses coordonnées.";
+      return;
+    }
+    coordInfo.innerHTML = selected.map(i => {
+      const p = POINTS[i];
+      return `<div style="margin-bottom:6px;">
+        <span class="val" style="color:var(--blue-dark);font-weight:700;">${p.labelHTML}</span> :
+        x = ${fmtNum(p.x)} ${lengthUnit} ; y = ${fmtNum(p.y)} ${lengthUnit} ; t = ${fmtNum(p.t)} ${tUnit}
+      </div>`;
+    }).join("");
+  }
+  function hitTest(mx, my){
+    for(let i = POINTS.length - 1; i >= 0; i--){
+      const {px, py} = toPx(POINTS[i].x, POINTS[i].y);
+      if (Math.hypot(mx - px, my - py) <= HIT) return i;
+    }
+    return null;
+  }
+
+  // distance point -> segment [A,B], pour sélectionner une flèche au clic
+  function distToSegment(px, py, ax, ay, bx, by){
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx*dx + dy*dy;
+    let t = lenSq === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx, cy = ay + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  }
+  function hitTestVector(mx, my){
+    const HIT_VEC = 7;
+    for(let i = vectors.length - 1; i >= 0; i--){
+      const pts = vectorEndpoints(vectors[i]);
+      if (!pts) continue;
+      if (distToSegment(mx, my, pts.A.px, pts.A.py, pts.B.px, pts.B.py) <= HIT_VEC) return i;
+    }
+    return null;
+  }
+
+  cv.addEventListener('mousemove', (evt) => {
+    const {x, y} = pointerPos(evt);
+    const idx = hitTest(x, y);
+    hovered = idx;
+    cv.style.cursor = idx !== null ? "pointer" : "default";
+    if (idx !== null){
+      const rect = cv.getBoundingClientRect();
+      tooltip.style.left = (evt.clientX - rect.left) + "px";
+      tooltip.style.top = (evt.clientY - rect.top) + "px";
+      tooltip.innerHTML = POINTS[idx].labelHTML;
+      tooltip.style.display = "block";
+    } else {
+      tooltip.style.display = "none";
+    }
+    draw();
+  });
+  cv.addEventListener('mouseleave', () => {
+    hovered = null;
+    tooltip.style.display = "none";
+    draw();
+  });
+
+  cv.addEventListener('click', (evt) => {
+    const {x, y} = pointerPos(evt);
+    const idx = hitTest(x, y);
+
+    if (idx === null){
+      // pas de point touché -> on regarde si une flèche de vecteur est cliquée
+      const vIdx = hitTestVector(x, y);
+      if (vIdx === null){
+        selectedVectors = [];
+      } else if (selectedVectors.length >= 2){
+        selectedVectors = [vIdx];
+      } else if (selectedVectors.length === 1 && selectedVectors[0] === vIdx){
+        selectedVectors = [];
+      } else if (selectedVectors.length === 1){
+        selectedVectors.push(vIdx);
+      } else {
+        selectedVectors = [vIdx];
+      }
+      btnDeleteSelectedVector.disabled = selectedVectors.length !== 1;
+      btnDelta.disabled = selectedVectors.length !== 2;
+      updateDeltaInfo();
+      updateNormInfo();
+      draw();
+      return;
+    }
+
+    // un point est cliqué -> on quitte le mode "sélection de vecteur"
+    selectedVectors = [];
+    btnDeleteSelectedVector.disabled = true;
+    btnDelta.disabled = true;
+    updateDeltaInfo();
+    updateNormInfo();
+
+    if (selected.length >= 2){
+      // une paire (mesurée ou non) existait déjà -> on repart à zéro
+      measured = null;
+      selected = [idx];
+    } else if (selected.length === 1 && selected[0] === idx){
+      // reclic sur l'unique point sélectionné -> désélection
+      selected = [];
+    } else if (selected.length === 1){
+      selected.push(idx);
+    } else {
+      selected = [idx];
+    }
+    btnMesure.disabled = selected.length !== 2;
+    btnVector.disabled = selected.length !== 2;
+    resultDiv.textContent = "";
+    updateCoordInfo();
+    updateVectorSelInfo();
+    draw();
+  });
+
+  /* =========================================================
+     6. Bouton "Mesure distance"
+     ========================================================= */
+  const btnMesure = document.getElementById('btnMesure');
+  const resultDiv = document.getElementById('result');
+
+  btnMesure.addEventListener('click', () => {
+    if (selected.length !== 2) return;
+    const a = POINTS[selected[0]];
+    const b = POINTS[selected[1]];
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    measured = { a, b, dist };
+    resultDiv.innerHTML = `Distance ${a.labelHTML}${b.labelHTML} : <span class="val">${fmtNum(dist, 2)}</span> ${lengthUnit}`;
+    draw();
+  });
+
+  /* =========================================================
+     Accordéon (sections repliables de la sidebar)
+     ========================================================= */
+  // accordéon "vrai" : un seul bloc ouvert à la fois, pour garder la barre latérale
+  // compacte et laisser toute la place au graphique.
+  const allAccordions = Array.from(document.querySelectorAll('.sidebar > .accordion'));
+  allAccordions.forEach(acc => {
+    const header = acc.querySelector('.accHeader');
+    header.addEventListener('click', () => {
+      const wasOpen = acc.classList.contains('open');
+      allAccordions.forEach(a => a.classList.remove('open'));
+      if (!wasOpen) acc.classList.add('open');
+    });
+  });
+  // "Coordonnées point" ouvert par défaut : le graphique reste visible, un seul
+  // panneau prend de la place au chargement.
+  const firstDataAcc = document.querySelector('.accordion[data-acc="coord"]');
+  if (firstDataAcc) firstDataAcc.classList.add('open');
+
+  const tauLine = document.getElementById('tauLine');
+  function updateTauLine(){
+    if (TAU !== null) {
+      tauLine.textContent = "Pas de temps : τ = " + fmtNum(TAU) + " " + tUnit;
+    } else {
+      tauLine.textContent = "";
+    }
+  }
+  updateTauLine();
+
+  /* =========================================================
+     7. Vecteur tangent (bouton, modal, curseur d'échelle)
+     ========================================================= */
+  const btnVector = document.getElementById('btnVector');
+  const vectorInfo = document.getElementById('vectorInfo');
+  const vecSelInfo = document.getElementById('vecSelInfo');
+  const btnClearVectors = document.getElementById('btnClearVectors');
+  const btnDeleteSelectedVector = document.getElementById('btnDeleteSelectedVector');
+  const vecScaleInput = document.getElementById('vecScale');
+  const vectorScaleLine = document.getElementById('vectorScaleLine');
+  const btnAutoScale = document.getElementById('btnAutoScale');
+  const btnDelta = document.getElementById('btnDelta');
+  const deltaInfo = document.getElementById('deltaInfo');
+  const normInfo = document.getElementById('normInfo');
+
+  const modalOverlay = document.getElementById('modalOverlay');
+  const mvName = document.getElementById('mvName');
+  const mvValue = document.getElementById('mvValue');
+  const mvUnit = document.getElementById('mvUnit');
+  const mvOk = document.getElementById('mvOk');
+  const mvCancel = document.getElementById('mvCancel');
+  const mvDelete = document.getElementById('mvDelete');
+
+  // unité par défaut d'un nouveau vecteur : [unité de distance]/[unité de temps]
+  // (ex. "m/s", ou "UA/j" pour des éphémérides) — recalculée à chaque import.
+  let lastVectorUnit = lengthUnit + "/" + tUnit;
+  let editingVectorIndex = null; // index dans `vectors` si la paire sélectionnée a déjà un vecteur
+
+  // échelle des vecteurs pilotée par un curseur LOGARITHMIQUE : vectorScale = 10^slider.
+  // Nécessaire car la valeur d'un vecteur peut aller de 0.01 (ex. UA/j) à des milliers
+  // (ex. m/s) — une échelle linéaire ne peut pas couvrir des ordres de grandeur pareils.
+  function formatScaleValue(v){
+    if (v === 0) return "0";
+    const abs = Math.abs(v);
+    if (abs < 0.001 || abs >= 10000) return v.toExponential(2);
+    return parseFloat(v.toPrecision(3)).toString();
+  }
+  function updateVectorScaleLine(){
+    vectorScaleLine.textContent = "1 " + lastVectorUnit + " → " + formatScaleValue(vectorScale) + " " + lengthUnit + " sur le graphique";
+    btnAutoScale.disabled = vectors.length === 0;
+  }
+  updateVectorScaleLine();
+
+  vecScaleInput.addEventListener('input', () => {
+    vectorScale = Math.pow(10, parseFloat(vecScaleInput.value));
+    updateVectorScaleLine();
+    draw();
+  });
+
+  // Échelle automatique : dimensionne le plus grand vecteur tracé pour qu'il occupe
+  // ~30 % de la plus petite étendue du repère, quelle que soit l'unité des données.
+  btnAutoScale.addEventListener('click', () => {
+    if (vectors.length === 0) return;
+    const maxValue = Math.max(...vectors.map(v => v.value));
+    if (!(maxValue > 0)) return;
+    const spanX = gridXMax - gridXMin;
+    const spanY = gridYMax - gridYMin;
+    const targetLength = 0.3 * Math.min(spanX, spanY);
+    vectorScale = targetLength / maxValue;
+    vecScaleInput.value = Math.log10(vectorScale);
+    updateVectorScaleLine();
+    draw();
+  });
+
+  function findVectorIndex(originIdx, dirIdx){
+    return vectors.findIndex(v => !v.isDelta && v.originIdx === originIdx && v.dirIdx === dirIdx);
+  }
+
+  // rappel de la sélection en cours dans le bloc "Vecteur tangent"
+  function updateVectorSelInfo(){
+    if (selected.length === 0){
+      vecSelInfo.innerHTML = "Aucun point sélectionné.";
+    } else if (selected.length === 1){
+      vecSelInfo.innerHTML = `Point sélectionné : ${POINTS[selected[0]].labelHTML}. Sélectionnez un second point.`;
+    } else {
+      vecSelInfo.innerHTML = `Vecteur tangent entre ${POINTS[selected[0]].labelHTML} et ${POINTS[selected[1]].labelHTML}.`;
+    }
+  }
+  updateVectorSelInfo();
+
+  // norme des vecteurs sélectionnés (comme "Coordonnées point", mais pour les vecteurs)
+  function updateNormInfo(){
+    if (selectedVectors.length === 0){
+      normInfo.innerHTML = "Cliquez sur une flèche pour afficher sa norme.";
+      return;
+    }
+    normInfo.innerHTML = selectedVectors.map(i => {
+      const v = vectors[i];
+      return `<div style="margin-bottom:6px;">
+        <span class="val" style="color:var(--blue-dark);font-weight:700;">${htmlVectorLabel(v.name)}</span> :
+        norme = ${fmtNum(v.value)} ${v.unit}
+      </div>`;
+    }).join("");
+  }
+  updateNormInfo();
+
+  // rappel de la sélection en cours dans le bloc "Variation de vecteur"
+  function updateDeltaInfo(){
+    if (selectedVectors.length === 0){
+      deltaInfo.innerHTML = "Aucun vecteur sélectionné.";
+    } else if (selectedVectors.length === 1){
+      deltaInfo.innerHTML = `Vecteur sélectionné : ${htmlVectorLabel(vectors[selectedVectors[0]].name)}. Sélectionnez un second vecteur.`;
+    } else {
+      const nameA = vectors[selectedVectors[0]].name;
+      const nameB = vectors[selectedVectors[1]].name;
+      deltaInfo.innerHTML = `Δv = ${htmlVectorLabel(nameB)} − ${htmlVectorLabel(nameA)}`;
+    }
+  }
+  updateDeltaInfo();
+
+  function openVectorModal(){
+    if (selected.length !== 2) return;
+    editingVectorIndex = findVectorIndex(selected[0], selected[1]);
+
+    if (editingVectorIndex !== -1){
+      const v = vectors[editingVectorIndex];
+      mvName.value = v.name;
+      mvValue.value = v.value;
+      mvUnit.value = v.unit;
+      mvDelete.style.display = "block";
+    } else {
+      editingVectorIndex = null;
+      mvName.value = "v" + selected[0];
+      mvValue.value = "";
+      mvUnit.value = lastVectorUnit;
+      mvDelete.style.display = "none";
+    }
+    modalOverlay.style.display = "flex";
+    mvValue.focus();
+  }
+
+  // Δv est une construction géométrique (v_dernier - v_premier) : tout est calculé
+  // automatiquement (direction ET longueur), pas de saisie manuelle contrairement
+  // aux vecteurs tangents.
+  function createDeltaVector(){
+    if (selectedVectors.length !== 2) return;
+    const vA = vectors[selectedVectors[0]]; // premier sélectionné
+    const vB = vectors[selectedVectors[1]]; // dernier sélectionné
+    const compA = vectorComponents(vA);
+    const compB = vectorComponents(vB);
+    const dx = compB.x - compA.x, dy = compB.y - compA.y;
+    const norm = Math.hypot(dx, dy);
+    if (norm < 1e-9){
+      alert("Les deux vecteurs sélectionnés sont identiques : la variation Δv est nulle.");
+      return;
+    }
+    const unit = (vA.unit === vB.unit) ? vA.unit : vB.unit;
+    const suffix = (vA.name.match(/\d+/) || [""])[0];
+    const name = "Δv" + suffix;
+
+    vectors.push({
+      name: name,
+      isDelta: true,
+      originIdx: vB.originIdx, // Δv est tracé depuis l'origine du 2e vecteur (point "d'arrivée")
+      ux: dx / norm,
+      uy: dy / norm,
+      value: norm,             // longueur calculée automatiquement, pas saisie
+      unit: unit,
+      color: DELTA_COLOR,
+      annotation: `(= ${vB.name} − ${vA.name})`
+    });
+
+    vectorInfo.innerHTML = `Variation tracée : <span class="val">${htmlVectorLabel(name)}</span> = ${fmtNum(norm, 2)} ${unit} (= ${htmlVectorLabel(vB.name)} − ${htmlVectorLabel(vA.name)})`;
+    selectedVectors = [];
+    btnDeleteSelectedVector.disabled = true;
+    btnDelta.disabled = true;
+    updateDeltaInfo();
+    updateNormInfo();
+    updateVectorScaleLine();
+    draw();
+  }
+
+  function closeVectorModal(){
+    modalOverlay.style.display = "none";
+    editingVectorIndex = null;
+  }
+
+  btnVector.addEventListener('click', openVectorModal);
+  btnDelta.addEventListener('click', createDeltaVector);
+  mvCancel.addEventListener('click', closeVectorModal);
+  modalOverlay.addEventListener('click', (evt) => {
+    if (evt.target === modalOverlay) closeVectorModal();
+  });
+
+  mvOk.addEventListener('click', () => {
+    const name = (mvName.value || "").trim();
+    const value = parseFloat(mvValue.value);
+    const unit = (mvUnit.value || "").trim();
+    if (!name || !isFinite(value) || value <= 0 || !unit){
+      mvValue.focus();
+      return;
+    }
+    lastVectorUnit = unit;
+
+    if (editingVectorIndex !== null && editingVectorIndex !== -1){
+      const v = vectors[editingVectorIndex];
+      v.name = name; v.value = value; v.unit = unit;
+      vectorInfo.innerHTML = `Vecteur modifié : <span class="val">${htmlVectorLabel(name)}</span> = ${value} ${unit}`;
+    } else {
+      vectors.push({
+        name: name,
+        originIdx: selected[0],
+        dirIdx: selected[1],
+        value: value,
+        unit: unit
+      });
+      vectorInfo.innerHTML = `Dernier vecteur : <span class="val">${htmlVectorLabel(name)}</span> = ${value} ${unit}`;
+    }
+    updateVectorScaleLine();
+    closeVectorModal();
+    draw();
+  });
+
+  mvDelete.addEventListener('click', () => {
+    if (editingVectorIndex === null || editingVectorIndex === -1) return;
+    const removed = vectors[editingVectorIndex];
+    vectors.splice(editingVectorIndex, 1);
+    vectorInfo.innerHTML = `Vecteur <span class="val">${htmlVectorLabel(removed.name)}</span> supprimé.`;
+    updateVectorScaleLine();
+    closeVectorModal();
+    draw();
+  });
+
+  btnClearVectors.addEventListener('click', () => {
+    vectors = [];
+    selectedVectors = [];
+    btnDeleteSelectedVector.disabled = true;
+    btnDelta.disabled = true;
+    vectorInfo.textContent = "";
+    updateDeltaInfo();
+    updateNormInfo();
+    updateVectorScaleLine();
+    draw();
+  });
+
+  btnDeleteSelectedVector.addEventListener('click', () => {
+    if (selectedVectors.length !== 1) return;
+    const idx = selectedVectors[0];
+    const removed = vectors[idx];
+    vectors.splice(idx, 1);
+    selectedVectors = [];
+    btnDeleteSelectedVector.disabled = true;
+    btnDelta.disabled = true;
+    vectorInfo.innerHTML = `Vecteur <span class="val">${htmlVectorLabel(removed.name)}</span> supprimé.`;
+    updateDeltaInfo();
+    updateNormInfo();
+    updateVectorScaleLine();
+    draw();
+  });
+
+  /* =========================================================
+     8. Importer des données (ex. éphémérides de planètes)
+     ========================================================= */
+  const btnImport = document.getElementById('btnImport');
+  const importOverlay = document.getElementById('importOverlay');
+  const impData = document.getElementById('impData');
+  const impPrefix = document.getElementById('impPrefix');
+  const impUnit = document.getElementById('impUnit');
+  const impLengthUnit = document.getElementById('impLengthUnit');
+  const impOk = document.getElementById('impOk');
+  const impCancel = document.getElementById('impCancel');
+  const importNote = document.getElementById('importNote');
+  const MAX_IMPORT_POINTS = 300;
+
+  function openImportModal(){
+    impData.value = "";
+    impPrefix.value = currentPrefix;
+    impUnit.value = tUnit;
+    impLengthUnit.value = lengthUnit;
+    importNote.textContent = "";
+    importOverlay.style.display = "flex";
+    impData.focus();
+  }
+  function closeImportModal(){
+    importOverlay.style.display = "none";
+  }
+  btnImport.addEventListener('click', openImportModal);
+  impCancel.addEventListener('click', closeImportModal);
+  importOverlay.addEventListener('click', (evt) => {
+    if (evt.target === importOverlay) closeImportModal();
+  });
+
+  // Format attendu : une ligne par point. Les valeurs viennent le plus souvent d'un
+  // copier-coller depuis un tableau de l'énoncé Moodle (table HTML/Word) : dans ce cas
+  // le navigateur sépare les colonnes par des TABULATIONS et les décimales sont à la
+  // française (virgule). On détecte donc le séparateur de colonnes en priorité
+  // tabulation > point-virgule > espace, et on ne traite JAMAIS la virgule comme un
+  // séparateur (uniquement comme décimale) pour ne pas casser "0,52".
+  function splitColumns(line){
+    if (line.indexOf('\t') !== -1) return line.split('\t');
+    if (line.indexOf(';') !== -1) return line.split(';');
+    return line.split(/\s+/);
+  }
+  function toNumber(token){
+    return Number(token.trim().replace(',', '.'));
+  }
+  function parseImportedData(text){
+    const lines = text.split(/\r?\n/);
+    const rows = [];
+    let errors = 0;
+    for (const raw of lines){
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      const cols = splitColumns(line).map(s => s.trim()).filter(s => s.length > 0);
+      const parts = cols.map(toNumber);
+      if (parts.some(v => !isFinite(v))){ errors++; continue; }
+      if (parts.length === 3){
+        rows.push(parts);
+      } else if (parts.length === 2){
+        rows.push([rows.length, parts[0], parts[1]]);
+      } else {
+        errors++;
+      }
+    }
+    return { rows, errors };
+  }
+
+  impOk.addEventListener('click', () => {
+    const { rows, errors } = parseImportedData(impData.value);
+    if (rows.length < 2){
+      importNote.textContent = "Il faut au moins 2 points valides (format : t x y, ou x y).";
+      importNote.style.color = "#c0392b";
+      return;
+    }
+
+    let truncatedMsg = "";
+    let finalRows = rows;
+    if (rows.length > MAX_IMPORT_POINTS){
+      finalRows = rows.slice(0, MAX_IMPORT_POINTS);
+      truncatedMsg = ` (${rows.length} lignes lues, tronqué à ${MAX_IMPORT_POINTS})`;
+    }
+
+    const prefix = (impPrefix.value || "M").trim() || "M";
+    const unit = (impUnit.value || "s").trim() || "s";
+    const distUnit = (impLengthUnit.value || "m").trim() || "m";
+
+    tUnit = unit;
+    lengthUnit = distUnit;
+    buildPoints(finalRows, prefix);
+    recomputeScale();
+
+    // reset complet de l'état interactif : les anciens indices de points n'ont plus de sens
+    selected = [];
+    measured = null;
+    vectors = [];
+    selectedVectors = [];
+    hovered = null;
+    editingVectorIndex = null;
+
+    // unité de vecteur par défaut = [distance]/[temps] des données tout juste importées
+    lastVectorUnit = lengthUnit + "/" + tUnit;
+    vectorScale = 1;
+    vecScaleInput.value = 0;
+
+    btnMesure.disabled = true;
+    btnVector.disabled = true;
+    btnDeleteSelectedVector.disabled = true;
+    btnDelta.disabled = true;
+    resultDiv.textContent = "";
+    vectorInfo.textContent = "";
+
+    updateTauLine();
+    updateCoordInfo();
+    updateVectorSelInfo();
+    updateNormInfo();
+    updateDeltaInfo();
+    updateVectorScaleLine();
+
+    closeImportModal();
+    draw();
+
+    if (errors > 0 || truncatedMsg){
+      alert(`Import terminé : ${finalRows.length} points chargés.` +
+            (errors > 0 ? ` ${errors} ligne(s) ignorée(s) (format invalide).` : "") +
+            truncatedMsg);
+    }
+  });
+
+  draw();
+})();
+</script>
+</body>
+</html>
