@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chronophotographie — Mesure de distance</title>
+<title>Chronophotographie</title>
 <style>
   :root{
     --blue:#2b5f9e;
@@ -27,23 +27,87 @@
     font-weight:600;
     letter-spacing:.2px;
   }
-  .wrap{
-    display:flex;
-    gap:16px;
-    padding:16px;
-    align-items:flex-start;
-    flex-wrap:wrap;
+  /* ============ Ruban (type Word) ============ */
+  .ribbon{
+    background:#eef1f4;
+    border-bottom:1px solid var(--gray-border);
   }
+  .ribbonTabs{
+    display:flex;
+    flex-wrap:wrap;
+    background:var(--blue);
+  }
+  .ribbonTab{
+    width:auto;
+    background:transparent;
+    color:#d8e5f5;
+    border:none;
+    border-radius:0;
+    padding:9px 16px;
+    font-size:12px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:.4px;
+    cursor:pointer;
+  }
+  .ribbonTab:hover{
+    background:var(--blue-dark);
+    color:#fff;
+  }
+  .ribbonTab.active{
+    background:#fff;
+    color:var(--blue-dark);
+  }
+  .ribbonPanels{
+    padding:12px 16px;
+  }
+  .ribbonPanel{
+    display:none;
+    flex-wrap:wrap;
+    align-items:flex-start;
+    gap:18px;
+  }
+  .ribbonPanel.active{
+    display:flex;
+  }
+  .ribbonGroup{
+    display:flex;
+    flex-direction:column;
+    gap:5px;
+    min-width:150px;
+  }
+  .ribbonGroup label{
+    font-size:11px;
+    color:#5c6b78;
+    text-transform:uppercase;
+    letter-spacing:.3px;
+  }
+  .ribbonPanel button{
+    width:auto;
+    white-space:nowrap;
+  }
+  .ribbonInfo{
+    font-size:13px;
+    line-height:1.5;
+    color:var(--text);
+    min-width:170px;
+    max-width:320px;
+  }
+  .ribbonHint{
+    flex-basis:100%;
+    font-size:11px;
+    color:#8a97a3;
+    line-height:1.4;
+    margin-top:2px;
+  }
+  /* ============ Zone graphique (pleine largeur, sous le ruban) ============ */
   #stage{
     position:relative;
     background:#fff;
+    margin:16px;
     border:1px solid var(--gray-border);
     border-radius:6px;
-    flex:1 1 auto;
-    min-width:380px;
-    max-width:620px; /* = résolution native du canvas : ne grandit jamais au-delà,
-                         même en plein écran hors iframe (sinon le graphique gonfle
-                         verticalement avec la largeur disponible). */
+    max-width:820px;
   }
   canvas{
     display:block;
@@ -51,50 +115,6 @@
     width:100%;
     height:auto;
     max-width:100%;
-  }
-  .sidebar{
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-    min-width:250px;
-    max-width:260px;
-    max-height:480px;
-    overflow-y:auto;
-    padding-right:2px;
-  }
-  .accordion{
-    background:#fff;
-    border:1px solid var(--gray-border);
-    border-radius:6px;
-    overflow:hidden;
-  }
-  .accHeader{
-    width:100%;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    background:var(--blue);
-    color:#fff;
-    border:none;
-    padding:11px 14px;
-    font-size:13px;
-    font-weight:600;
-    text-transform:uppercase;
-    letter-spacing:.5px;
-    cursor:pointer;
-    border-radius:0;
-  }
-  .accHeader:hover{
-    background:var(--blue-dark);
-  }
-  .accHeader .chevron{
-    display:inline-block;
-    font-size:16px;
-    line-height:1;
-    transition:transform .2s ease;
-  }
-  .accordion.open .accHeader .chevron{
-    transform:rotate(90deg);
   }
   /* flèche dessinée au-dessus d'un nom de vecteur (notation v⃗), en HTML */
   .vecArrow{
@@ -118,17 +138,6 @@
     border:3px solid transparent;
     border-left-color:currentColor;
     border-right:none;
-  }
-  .accBody{
-    max-height:0;
-    overflow:hidden;
-    transition:max-height .25s ease;
-  }
-  .accordion.open .accBody{
-    max-height:600px;
-  }
-  .accInner{
-    padding:14px 16px;
   }
   button{
     background:var(--blue);
@@ -280,128 +289,119 @@
 </head>
 <body>
 
-<div class="bandeau">Chronophotographie — mesure de distance</div>
+<div class="bandeau">Chronophotographie</div>
 
-<div class="wrap">
-  <div id="stage">
-    <canvas id="cv"></canvas>
-    <div id="tooltip"></div>
+<div class="ribbon">
+  <div class="ribbonTabs">
+    <button class="ribbonTab active" data-tab="import">Importer</button>
+    <button class="ribbonTab" data-tab="export">Exporter</button>
+    <button class="ribbonTab" data-tab="coord">Coordonnées</button>
+    <button class="ribbonTab" data-tab="norme">Norme</button>
+    <button class="ribbonTab" data-tab="mesure">Distance</button>
+    <button class="ribbonTab" data-tab="vecteur">Vecteur tangent</button>
+    <button class="ribbonTab" data-tab="delta">Variation Δv</button>
   </div>
 
-  <div class="sidebar">
-    <div class="accordion" data-acc="import">
-      <button class="accHeader">
-        <span>Importer des données</span>
-        <span class="chevron">›</span>
-      </button>
-      <div class="accBody">
-        <div class="accInner">
-          <button id="btnImport" class="btnSecondary">Importer des données</button>
-          <div class="hint">
-            Colle directement le tableau de l'énoncé (Moodle, Word...) et précise
-            l'unité de temps et de distance : origine, échelle, axes et vecteurs
-            s'adaptent automatiquement. Remplace les points actuels.
-          </div>
-        </div>
+  <div class="ribbonPanels">
+    <div class="ribbonPanel active" data-panel="import">
+      <div class="ribbonGroup">
+        <label>Données</label>
+        <button id="btnImport" class="btnSecondary">Importer des données</button>
+      </div>
+      <div class="ribbonHint">
+        Colle directement le tableau de l'énoncé (Moodle, Word...) et précise l'unité de
+        temps et de distance : origine, échelle, axes et vecteurs s'adaptent
+        automatiquement. Remplace les points actuels.
       </div>
     </div>
 
-    <div class="accordion" data-acc="coord">
-      <button class="accHeader">
-        <span>Coordonnées point</span>
-        <span class="chevron">›</span>
-      </button>
-      <div class="accBody">
-        <div class="accInner">
-          <div id="coordInfo" class="hint" style="margin-top:0;">
-            Cliquez sur un point pour afficher ses coordonnées.
-          </div>
-        </div>
+    <div class="ribbonPanel" data-panel="export">
+      <div class="ribbonGroup">
+        <label>Image</label>
+        <button id="btnExportJpg" class="btnSecondary">Exporter en JPG</button>
+      </div>
+      <div class="ribbonHint">
+        Télécharge une image de la chronophotographie telle qu'affichée : points, mesures,
+        vecteurs et Δv actuellement tracés.
       </div>
     </div>
 
-    <div class="accordion" data-acc="norme">
-      <button class="accHeader">
-        <span>Norme vecteur</span>
-        <span class="chevron">›</span>
-      </button>
-      <div class="accBody">
-        <div class="accInner">
-          <div id="normInfo" class="hint" style="margin-top:0;">
-            Cliquez sur une flèche pour afficher sa norme.
-          </div>
-        </div>
+    <div class="ribbonPanel" data-panel="coord">
+      <div class="ribbonInfo" id="coordInfo">
+        Cliquez sur un point pour afficher ses coordonnées.
       </div>
     </div>
 
-    <div class="accordion" data-acc="mesure">
-      <button class="accHeader">
-        <span>Mesure</span>
-        <span class="chevron">›</span>
-      </button>
-      <div class="accBody">
-        <div class="accInner">
-          <div id="tauLine" style="font-size:13px;margin-bottom:10px;color:#5c6b78;"></div>
-          <button id="btnMesure" disabled>Mesure distance</button>
-          <div id="result"></div>
-          <div class="hint">
-            Cliquez sur un point, puis sur un second point, puis sur « Mesure distance ».
-            Cliquer sur un nouveau point efface la mesure en cours.
-          </div>
-        </div>
+    <div class="ribbonPanel" data-panel="norme">
+      <div class="ribbonInfo" id="normInfo">
+        Cliquez sur une flèche pour afficher sa norme.
       </div>
     </div>
 
-    <div class="accordion" data-acc="vecteur">
-      <button class="accHeader">
-        <span>Vecteur tangent</span>
-        <span class="chevron">›</span>
-      </button>
-      <div class="accBody">
-        <div class="accInner">
-          <div id="vecSelInfo" class="hint" style="margin-top:0;margin-bottom:10px;"></div>
-          <button id="btnVector" class="btnSecondary" disabled>Tracer vecteur tangent</button>
-          <div id="vectorInfo"></div>
-
-          <label for="vecScale" style="display:block;font-size:12px;color:#5c6b78;margin-top:14px;">
-            Échelle des vecteurs (logarithmique)
-          </label>
-          <input type="range" id="vecScale" min="-4" max="6" step="0.02" value="0" style="width:100%;">
-          <div id="vectorScaleLine"></div>
-          <button id="btnAutoScale" class="btnGhost" disabled>Échelle automatique</button>
-
-          <button id="btnDeleteSelectedVector" class="btnGhost" disabled style="color:#c0392b;border-color:#e6b2ab;margin-top:10px;">
-            Supprimer le vecteur sélectionné
-          </button>
-          <button id="btnClearVectors" class="btnGhost">Effacer tous les vecteurs</button>
-          <div class="hint">
-            Sélectionnez 2 points (l'origine du vecteur sera le premier sélectionné), puis
-            cliquez sur « Tracer vecteur tangent ». Tous les vecteurs (v2, v3, v4…) partagent
-            la même échelle, réglable ci-dessus. Cliquez directement sur une flèche pour la
-            sélectionner et la supprimer.
-          </div>
-        </div>
+    <div class="ribbonPanel" data-panel="mesure">
+      <div class="ribbonGroup">
+        <label>Pas de temps</label>
+        <div id="tauLine" style="font-size:13px;color:#5c6b78;"></div>
+      </div>
+      <div class="ribbonGroup">
+        <label>Distance</label>
+        <button id="btnMesure" disabled>Distance</button>
+      </div>
+      <div class="ribbonInfo" id="result"></div>
+      <div class="ribbonHint">
+        Cliquez sur un point, puis sur un second point, puis sur « Distance ».
+        Cliquer sur un nouveau point efface la mesure en cours.
       </div>
     </div>
 
-    <div class="accordion" data-acc="delta">
-      <button class="accHeader">
-        <span>Variation de vecteur</span>
-        <span class="chevron">›</span>
-      </button>
-      <div class="accBody">
-        <div class="accInner">
-          <button id="btnDelta" class="btnSecondary" disabled>Tracer Δv (variation)</button>
-          <div id="deltaInfo"></div>
-          <div class="hint">
-            Cliquez sur une flèche déjà tracée (ex. v2), puis sur une seconde (ex. v3),
-            puis sur « Tracer Δv ». Le résultat est Δv = dernier sélectionné − premier
-            sélectionné (ici v3 − v2), tracé en vert depuis l'origine du second vecteur.
-          </div>
-        </div>
+    <div class="ribbonPanel" data-panel="vecteur">
+      <div class="ribbonInfo" id="vecSelInfo"></div>
+      <div class="ribbonGroup">
+        <label>Tracer</label>
+        <button id="btnVector" class="btnSecondary" disabled>Tracer vecteur tangent</button>
+      </div>
+      <div class="ribbonGroup" style="min-width:190px;">
+        <label for="vecScale">Échelle (log)</label>
+        <input type="range" id="vecScale" min="-4" max="6" step="0.02" value="0">
+        <button id="btnAutoScale" class="btnGhost" disabled>Échelle automatique</button>
+      </div>
+      <div class="ribbonGroup">
+        <label>Supprimer</label>
+        <button id="btnDeleteSelectedVector" class="btnGhost" disabled style="color:#c0392b;border-color:#e6b2ab;">
+          Vecteur sélectionné
+        </button>
+        <button id="btnClearVectors" class="btnGhost">Tous les vecteurs</button>
+      </div>
+      <div class="ribbonInfo">
+        <div id="vectorInfo"></div>
+        <div id="vectorScaleLine"></div>
+      </div>
+      <div class="ribbonHint">
+        Sélectionnez 2 points (l'origine du vecteur sera le premier sélectionné), puis
+        cliquez sur « Tracer vecteur tangent ». Tous les vecteurs (v2, v3, v4…) partagent
+        la même échelle, réglable ci-dessus. Cliquez directement sur une flèche pour la
+        sélectionner et la supprimer.
+      </div>
+    </div>
+
+    <div class="ribbonPanel" data-panel="delta">
+      <div class="ribbonGroup">
+        <label>Variation</label>
+        <button id="btnDelta" class="btnSecondary" disabled>Tracer Δv (variation)</button>
+      </div>
+      <div class="ribbonInfo" id="deltaInfo"></div>
+      <div class="ribbonHint">
+        Cliquez sur une flèche déjà tracée (ex. v2), puis sur une seconde (ex. v3), puis sur
+        « Tracer Δv ». Le résultat est Δv = dernier sélectionné − premier sélectionné (ici
+        v3 − v2), tracé en vert depuis l'origine du second vecteur.
       </div>
     </div>
   </div>
+</div>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="tooltip"></div>
 </div>
 
 <div id="modalOverlay" class="modalOverlay">
@@ -564,7 +564,12 @@
   const tooltip = document.getElementById('tooltip');
   const stage = document.getElementById('stage');
 
-  const W = 620, H = 460;
+  // Largeur fixe (adaptée à l'iframe) ; la hauteur s'ajuste à la forme des
+  // données (recomputeScale) pour éviter le grand vide au-dessus des
+  // trajectoires "plates" (ex. mouvement parabolique, bien plus large que haut).
+  const W = 800;
+  let H = 560;
+  const H_MIN = 320, H_MAX = 620;
   cv.width = W; cv.height = H;
 
   const MARGIN = { left: 50, right: 30, top: 24, bottom: 44 };
@@ -617,9 +622,21 @@
     gridYMax = Math.ceil(yMax / stepY) * stepY;
 
     plotW = W - MARGIN.left - MARGIN.right;
-    plotH = H - MARGIN.top - MARGIN.bottom;
 
-    SCALE = Math.min(plotW / (gridXMax - gridXMin), plotH / (gridYMax - gridYMin));
+    // On calcule l'échelle "naturelle" pour occuper toute la largeur, puis on
+    // déduit la hauteur de canvas nécessaire pour cette échelle (repère "equal").
+    // Résultat : une trajectoire plate (parabole) donne un canvas peu haut,
+    // sans bande vide au-dessus ; une trajectoire haute/étroite reste bornée
+    // par H_MAX (dans ce cas on revient à contraindre par la hauteur).
+    const scaleByWidth = plotW / (gridXMax - gridXMin);
+    const marginV = MARGIN.top + MARGIN.bottom;
+    let neededH = marginV + (gridYMax - gridYMin) * scaleByWidth;
+    neededH = Math.max(H_MIN, Math.min(H_MAX, neededH));
+    H = Math.round(neededH);
+    cv.height = H;
+
+    plotH = H - marginV;
+    SCALE = Math.min(scaleByWidth, plotH / (gridYMax - gridYMin));
     xExtentPx = (gridXMax - gridXMin) * SCALE;
     yExtentPx = (gridYMax - gridYMin) * SCALE;
   }
@@ -650,6 +667,10 @@
 
   function draw(){
     ctx.clearRect(0,0,W,H);
+    // fond blanc opaque : indispensable pour l'export JPG (le JPEG ne supporte pas la
+    // transparence, un canvas non rempli exporterait un fond noir).
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0,0,W,H);
 
     // axes : passent par (0,0), qui est toujours dans l'intervalle affiché (4 quadrants
     // possibles, utile pour des données centrées sur une origine comme une orbite).
@@ -1038,23 +1059,17 @@
   });
 
   /* =========================================================
-     Accordéon (sections repliables de la sidebar)
+     Ruban (onglets horizontaux type Word) : un seul panneau actif à la fois.
      ========================================================= */
-  // accordéon "vrai" : un seul bloc ouvert à la fois, pour garder la barre latérale
-  // compacte et laisser toute la place au graphique.
-  const allAccordions = Array.from(document.querySelectorAll('.sidebar > .accordion'));
-  allAccordions.forEach(acc => {
-    const header = acc.querySelector('.accHeader');
-    header.addEventListener('click', () => {
-      const wasOpen = acc.classList.contains('open');
-      allAccordions.forEach(a => a.classList.remove('open'));
-      if (!wasOpen) acc.classList.add('open');
+  const ribbonTabs = Array.from(document.querySelectorAll('.ribbonTab'));
+  const ribbonPanels = Array.from(document.querySelectorAll('.ribbonPanel'));
+  ribbonTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.getAttribute('data-tab');
+      ribbonTabs.forEach(t => t.classList.toggle('active', t === tab));
+      ribbonPanels.forEach(p => p.classList.toggle('active', p.getAttribute('data-panel') === target));
     });
   });
-  // "Coordonnées point" ouvert par défaut : le graphique reste visible, un seul
-  // panneau prend de la place au chargement.
-  const firstDataAcc = document.querySelector('.accordion[data-acc="coord"]');
-  if (firstDataAcc) firstDataAcc.classList.add('open');
 
   const tauLine = document.getElementById('tauLine');
   function updateTauLine(){
@@ -1216,9 +1231,14 @@
     const suffix = (vA.name.match(/\d+/) || [""])[0];
     const name = "Δv" + suffix;
 
-    vectors.push({
+    // Même paire de vecteurs déjà utilisée pour une variation Δv : on met à jour
+    // le Δv existant au lieu d'en empiler un doublon (comme pour les vecteurs tangents).
+    const existingIdx = vectors.findIndex(v => v.isDelta && v.fromA === vA.name && v.fromB === vB.name);
+    const deltaData = {
       name: name,
       isDelta: true,
+      fromA: vA.name,
+      fromB: vB.name,
       originIdx: vB.originIdx, // Δv est tracé depuis l'origine du 2e vecteur (point "d'arrivée")
       ux: dx / norm,
       uy: dy / norm,
@@ -1226,7 +1246,13 @@
       unit: unit,
       color: DELTA_COLOR,
       annotation: `(= ${vB.name} − ${vA.name})`
-    });
+    };
+
+    if (existingIdx !== -1){
+      vectors[existingIdx] = deltaData;
+    } else {
+      vectors.push(deltaData);
+    }
 
     vectorInfo.innerHTML = `Variation tracée : <span class="val">${htmlVectorLabel(name)}</span> = ${fmtNum(norm, 2)} ${unit} (= ${htmlVectorLabel(vB.name)} − ${htmlVectorLabel(vA.name)})`;
     selectedVectors = [];
@@ -1442,6 +1468,18 @@
             (errors > 0 ? ` ${errors} ligne(s) ignorée(s) (format invalide).` : "") +
             truncatedMsg);
     }
+  });
+
+  /* =========================================================
+     9. Exporter en JPG (chronophotographie + mesures + vecteurs affichés)
+     ========================================================= */
+  const btnExportJpg = document.getElementById('btnExportJpg');
+  btnExportJpg.addEventListener('click', () => {
+    draw(); // s'assure que le fond blanc et l'état courant sont bien à jour avant export
+    const link = document.createElement('a');
+    link.download = "chronophotographie.jpg";
+    link.href = cv.toDataURL('image/jpeg', 0.92);
+    link.click();
   });
 
   draw();
