@@ -58,46 +58,119 @@
     display: block;
     cursor: pointer;
   }
+  /* fond assombri derriere l'ecran de fin, par-dessus le jeu */
+  #canvasContainer.paused::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(2,2,12,0.62);
+    z-index: 5;
+  }
+  /* ===== Ecran "borne d'arcade 1985" affiche a la fin de partie, centre
+     par-dessus le plateau de jeu ===== */
   #resultPanel {
     display: none;
-    margin-top: 12px;
-    padding: 14px 16px;
-    background: #eaf4ec;
-    border: 1px solid #bfe0c6;
-    border-radius: 8px;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 10px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    width: min(88%, 420px);
+    box-sizing: border-box;
+    padding: 22px 16px 20px;
+    background: #0a0a16;
+    border: 3px solid #00eaff;
+    border-radius: 10px;
+    overflow: hidden;
+    text-align: center;
+    box-shadow: 0 0 4px rgba(0,234,255,0.6), 0 0 22px rgba(0,234,255,0.35),
+                inset 0 0 30px rgba(0,234,255,0.12);
   }
-  #resultPanel.show { display: flex; }
+  #resultPanel.show { display: block; animation: arcadeFlash 0.5s ease-out; }
+  /* lignes de scanline CRT */
+  #resultPanel::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.06) 0px,
+      rgba(255,255,255,0.06) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+  #resultTitle {
+    position: relative;
+    margin: 0 0 12px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: #ff2e97;
+    text-shadow: 0 0 6px #ff2e97, 0 0 16px rgba(255,46,151,0.8);
+    animation: arcadeBlink 1.1s steps(2) infinite;
+  }
   #resultText {
-    font-size: 14px;
-    color: #24513a;
+    position: relative;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    color: #9be8ff;
+    text-shadow: 0 0 5px rgba(155,232,255,0.7);
+    margin: 0 0 12px;
   }
   #codeValue {
-    font-family: "SFMono-Regular", Consolas, Menlo, monospace;
-    font-size: 17px;
+    display: inline-block;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 30px;
     font-weight: 700;
-    background: #fff;
-    padding: 4px 10px;
+    letter-spacing: 5px;
+    color: #39ff14;
+    background: #000;
+    padding: 8px 20px;
     border-radius: 6px;
-    border: 1px solid #bfe0c6;
-    margin-left: 6px;
-    letter-spacing: 0.5px;
+    border: 2px solid #39ff14;
+    text-shadow: 0 0 6px #39ff14, 0 0 16px #39ff14, 0 0 30px rgba(57,255,20,0.6);
+    animation: arcadeGlow 1.5s ease-in-out infinite alternate;
+    /* le reste de la page bloque la selection (-webkit-user-select:none plus
+       haut) pour eviter les selections parasites pendant le jeu -- mais le
+       code doit rester selectionnable/copiable a la main si le bouton ou le
+       presse-papiers est bloque par SEB */
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: text;
   }
   #copyBtn {
-    background: #2e7d4f;
+    position: relative;
+    display: block;
+    margin: 16px auto 0;
+    background: #ff2e97;
     color: #fff;
-    border: none;
+    border: 2px solid #ff8ac8;
     border-radius: 6px;
-    padding: 8px 14px;
+    padding: 9px 18px;
+    font-family: "Consolas", "Courier New", monospace;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
     cursor: pointer;
     white-space: nowrap;
+    box-shadow: 0 0 10px rgba(255,46,151,0.6);
   }
-  #copyBtn.copied { background: #1f5a37; }
+  #copyBtn.copied { background: #39ff14; color: #06210a; border-color: #39ff14; box-shadow: 0 0 12px rgba(57,255,20,0.7); }
+  @keyframes arcadeFlash {
+    0%   { box-shadow: 0 0 0 rgba(255,255,255,0); filter: brightness(2.2); }
+    12%  { filter: brightness(2.6); box-shadow: 0 0 46px rgba(0,234,255,0.95); }
+    100% { filter: brightness(1); box-shadow: 0 0 4px rgba(0,234,255,0.6), 0 0 22px rgba(0,234,255,0.35), inset 0 0 30px rgba(0,234,255,0.12); }
+  }
+  @keyframes arcadeBlink { 50% { opacity: 0.2; } }
+  @keyframes arcadeGlow {
+    from { text-shadow: 0 0 6px #39ff14, 0 0 16px #39ff14, 0 0 30px rgba(57,255,20,0.6); }
+    to   { text-shadow: 0 0 10px #39ff14, 0 0 24px #39ff14, 0 0 44px rgba(57,255,20,0.9); }
+  }
 </style>
 </head>
 <body>
@@ -109,10 +182,12 @@
   <p id="instructions">Clique sur un gobelet pour y envoyer l'électron suivant de la réserve. Quand la réserve est vide, un code apparaît : recopie-le dans le test Moodle.</p>
   <div id="canvasContainer">
     <canvas id="cv"></canvas>
-  </div>
-  <div id="resultPanel">
-    <div id="resultText">Terminé ! Code à recopier dans Moodle : <span id="codeValue">—</span></div>
-    <button id="copyBtn">Copier le code</button>
+    <div id="resultPanel">
+      <div id="resultTitle">★ Game Over ★</div>
+      <div id="resultText">Code à recopier dans le test Moodle :</div>
+      <span id="codeValue">—</span>
+      <button id="copyBtn">Copier le code</button>
+    </div>
   </div>
 </div>
 
@@ -176,7 +251,7 @@ function getParams(){
   }
 
   if (!Number.isFinite(Z) || Z < 1) Z = 11;
-  if (Z > 28) Z = 28; // capacite totale max des sous-couches modelisees (2+2+6+2+6+10)
+  if (Z > 20) Z = 20; // capacite totale max des sous-couches modelisees (2+2+6+2+6+2), regle de Klechkowski (4s avant 3d)
   if (!Number.isFinite(seed)) seed = 1234;
 
   return { Z: Z, seed: seed, order: order };
@@ -223,7 +298,11 @@ function computeCodeConfelec(counts, seed, Z){
 /* ============================================================
    3) MODELE DU JEU
    ============================================================ */
-var ORDER = ['1s','2s','2p','3s','3p','3d'];
+// Ordre de remplissage reel (regle de Klechkowski) : apres 3p vient 4s, pas
+// 3d -- le 6e gobelet est donc "4s" (petit, capacite 2), pas "3d". Vrai pour
+// Z <= 20 (jusqu'au Calcium inclus) ; le veritable 3d ne sert qu'a partir du
+// Scandium (Z=21), hors du champ de ce jeu.
+var ORDER = ['1s','2s','2p','3s','3p','4s'];
 
 var CUPS = [
   { key:'1s', shelf:1, type:'s' },
@@ -231,7 +310,7 @@ var CUPS = [
   { key:'2p', shelf:2, type:'p' },
   { key:'3s', shelf:3, type:'s' },
   { key:'3p', shelf:3, type:'p' },
-  { key:'3d', shelf:3, type:'d' }
+  { key:'4s', shelf:3, type:'s' }
 ];
 
 var SHELF_Y = { 1: 580, 2: 460, 3: 300 };
@@ -263,7 +342,7 @@ function shuffleInPlace(arr, rng){
 
 // Place les gobelets selon PARAMS.order :
 //  - "order" : aucun melange, chaque gobelet reste sur son etagere logique
-//              (1s / 2s,2p / 3s,3p,3d) dans l'ordre naturel s,p,d.
+//              (1s / 2s,2p / 3s,3p,4s) dans l'ordre naturel s,p,s.
 //  - "mix"   : melange au sein de chaque etagere logique (2p peut passer
 //              avant 2s), mais un gobelet ne change jamais d'etagere.
 //  - "chaos" : les etageres logiques sont ignorees. Les 6 gobelets sont
@@ -616,14 +695,15 @@ function drawCup(c, hovered){
   drawBallsInCup(c);
   drawCupBody(c);
 
-  // etiquette + compteur (police fixe, hors transform du gobelet)
+  // etiquette + compteur (police fixe, hors transform du gobelet -- grossie
+  // pour rester lisible meme dans un embed etroit)
   ctx.fillStyle = "#1f3a5c";
-  ctx.font = "600 13px -apple-system, Segoe UI, Arial, sans-serif";
+  ctx.font = "700 20px -apple-system, Segoe UI, Arial, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(c.key, c.cx, c.botY + 22);
+  ctx.fillText(c.key, c.cx, c.botY + 28);
   ctx.fillStyle = "#5a6b7b";
-  ctx.font = "11px -apple-system, Segoe UI, Arial, sans-serif";
-  ctx.fillText(c.count + " e⁻", c.cx, c.botY + 35);
+  ctx.font = "600 15px -apple-system, Segoe UI, Arial, sans-serif";
+  ctx.fillText(c.count + " e⁻", c.cx, c.botY + 47);
 }
 
 /* ============================================================
@@ -634,7 +714,7 @@ var RESERVE_X = 110, RESERVE_Y = 675;
 
 function drawReserve(){
   ctx.fillStyle = "#1f3a5c";
-  ctx.font = "600 13px -apple-system, Segoe UI, Arial, sans-serif";
+  ctx.font = "700 17px -apple-system, Segoe UI, Arial, sans-serif";
   ctx.textAlign = "left";
   ctx.fillText("Réserve d'électrons : " + reserve, RESERVE_X - 60, RESERVE_Y - 42);
 
@@ -654,7 +734,7 @@ function drawReserve(){
   }
   if (reserve > 6){
     ctx.fillStyle = "#5a6b7b";
-    ctx.font = "12px -apple-system, Segoe UI, Arial, sans-serif";
+    ctx.font = "700 15px -apple-system, Segoe UI, Arial, sans-serif";
     ctx.fillText("+" + (reserve - 6), RESERVE_X + 6*22 + 6, RESERVE_Y - 6);
   }
 }
@@ -742,7 +822,8 @@ function throwBallAt(cupIndex){
     to: { x: c.cx, y: c.topY + 6 },
     t0: performance.now(),
     dur: 520,
-    cupIndex: cupIndex
+    cupIndex: cupIndex,
+    trail: [] // traine de la boule de feu (positions recentes)
   };
   reserve -= 1;
 }
@@ -764,21 +845,147 @@ function updateFlying(now){
   var arcHeight = 140;
   var y = yLin - Math.sin(Math.PI * t) * arcHeight;
   var scale = 1 - 0.35 * t;
+  var r = 10 * scale + Math.sin(now / 35) * 1.4; // flicker de flamme
 
+  // memorise la trajectoire pour la traine
+  flying.trail.push({ x: x, y: y });
+  if (flying.trail.length > 9) flying.trail.shift();
+
+  // ondes de distorsion "espace-temps" : anneaux concentriques qui se
+  // dilatent et s'effacent, decales dans le temps (periode ~330ms)
+  for (var k=0; k<3; k++){
+    var phase = ((now - flying.t0) / 330 + k / 3) % 1;
+    var ringR = 4 + phase * 34;
+    ctx.save();
+    ctx.globalAlpha = (1 - phase) * 0.5;
+    ctx.strokeStyle = "#8be9ff";
+    ctx.lineWidth = 1.6;
+    ctx.shadowColor = "#8be9ff";
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(x, y, ringR, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // traine incandescente (comete), du plus vieux/petit au plus recent/gros
+  for (var i=0; i<flying.trail.length; i++){
+    var p = flying.trail[i];
+    var f = (i + 1) / flying.trail.length; // 0..1, 1 = position actuelle
+    ctx.save();
+    ctx.globalAlpha = f * 0.55;
+    ctx.fillStyle = f > 0.6 ? "#ffd23b" : "#ff6a2b";
+    ctx.shadowColor = "#ff8a3d";
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r * f * 0.85, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // boule de feu principale (halo chaud + coeur clair)
   ctx.save();
-  var grad = ctx.createRadialGradient(x-3, y-3, 1.5, x, y, 9*scale);
-  grad.addColorStop(0, "rgba(255,150,90,0.95)");
-  grad.addColorStop(1, "rgba(200,70,40,0.85)");
+  ctx.shadowColor = "#ff5a1f";
+  ctx.shadowBlur = 22;
+  var halo = ctx.createRadialGradient(x, y, 0, x, y, r * 2.3);
+  halo.addColorStop(0, "rgba(255,210,120,0.55)");
+  halo.addColorStop(0.5, "rgba(255,120,40,0.28)");
+  halo.addColorStop(1, "rgba(255,80,20,0)");
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 2.3, 0, Math.PI*2);
+  ctx.fill();
+
+  var grad = ctx.createRadialGradient(x - r*0.3, y - r*0.3, r*0.15, x, y, r);
+  grad.addColorStop(0, "#fff6d8");
+  grad.addColorStop(0.35, "#ffcf4d");
+  grad.addColorStop(1, "#ff5a1f");
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(x, y, 9*scale, 0, Math.PI*2);
+  ctx.arc(x, y, r, 0, Math.PI*2);
   ctx.fill();
   ctx.restore();
 }
 
 /* ============================================================
-   9) FIN DE PARTIE : CALCUL DU CODE
+   9) FIN DE PARTIE : CALCUL DU CODE + PLUIE DE METEORITES / ECLAIRS
    ============================================================ */
+var celebration = null; // { t0, dur, meteors:[...], bolts:[...] }
+
+function spawnCelebration(){
+  var meteors = [];
+  var colors = ["#39ff14", "#00eaff", "#ff2e97", "#ffe93b"];
+  for (var i=0;i<28;i++){
+    meteors.push({
+      startX: Math.random()*VW,
+      startY: -20 - Math.random()*220,
+      speed: 260 + Math.random()*240,   // px/s de chute
+      drift: (Math.random()-0.5)*90,    // derive horizontale px/s
+      size: 6 + Math.random()*9,
+      color: colors[i % colors.length],
+      delay: Math.random()*500,         // ms avant l'apparition
+      spin: (Math.random()-0.5)*6
+    });
+  }
+  var bolts = [];
+  for (var b=0;b<4;b++){
+    bolts.push({ time: 60 + Math.random()*900, x: 60 + Math.random()*(VW-120) });
+  }
+  celebration = { t0: performance.now(), dur: 2400, meteors: meteors, bolts: bolts };
+}
+
+function drawCelebration(now){
+  if (!celebration) return;
+  var elapsed = now - celebration.t0;
+  if (elapsed > celebration.dur){ celebration = null; return; }
+  var fadeStart = celebration.dur - 500;
+  var fade = elapsed > fadeStart ? Math.max(0, 1 - (elapsed - fadeStart) / 500) : 1;
+
+  // meteorites neon qui tombent (style pixel-art, trainee lumineuse)
+  celebration.meteors.forEach(function(m){
+    var te = elapsed - m.delay;
+    if (te < 0) return;
+    var t = te / 1000;
+    var y = m.startY + m.speed * t;
+    if (y > VH + 30) return;
+    var x = m.startX + m.drift * t;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.translate(x, y);
+    ctx.rotate(m.spin * t);
+    ctx.shadowColor = m.color;
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = m.color;
+    ctx.fillRect(-m.size/2, -m.size/2, m.size, m.size);
+    ctx.globalAlpha = fade * 0.35;
+    ctx.fillRect(-m.size/2, -m.size/2 - m.size*1.6, m.size, m.size*1.4);
+    ctx.restore();
+  });
+
+  // eclairs (flashs en zigzag, tres brefs)
+  celebration.bolts.forEach(function(b){
+    var since = elapsed - b.time;
+    if (since < 0 || since > 140) return;
+    var a = 1 - since/140;
+    ctx.save();
+    ctx.globalAlpha = a * fade;
+    ctx.strokeStyle = "#eafcff";
+    ctx.shadowColor = "#7fe9ff";
+    ctx.shadowBlur = 18;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    var x = b.x, y = 0;
+    ctx.moveTo(x, y);
+    for (var s=0; s<6; s++){
+      x += (Math.random()-0.5)*46;
+      y += VH/6;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
 function finishGame(){
   finished = true;
   var counts = ORDER.map(function(key){
@@ -788,6 +995,8 @@ function finishGame(){
   var code = computeCodeConfelec(counts, PARAMS.seed, PARAMS.Z);
   document.getElementById('codeValue').textContent = code;
   document.getElementById('resultPanel').classList.add('show');
+  container.classList.add('paused'); // assombrit le plateau derriere l'ecran de fin
+  spawnCelebration();
 }
 
 function resetGame(){
@@ -798,6 +1007,8 @@ function resetGame(){
   document.getElementById('resultPanel').classList.remove('show');
   document.getElementById('copyBtn').classList.remove('copied');
   document.getElementById('copyBtn').textContent = "Copier le code";
+  container.classList.remove('paused');
+  celebration = null;
 }
 
 document.getElementById('resetBtn').addEventListener('click', resetGame);
@@ -846,6 +1057,7 @@ function render(now){
   drawReserve();
   drawHand();
   updateFlying(now);
+  drawCelebration(now);
   requestAnimationFrame(render);
 }
 requestAnimationFrame(render);
