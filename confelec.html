@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confélec — jeu de la configuration électronique</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f4f6f9;
+    color: #24313f;
+    -webkit-user-select: none; user-select: none;
+  }
+  #wrap {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 10px 10px 16px;
+    box-sizing: border-box;
+  }
+  #header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  #header h1 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+    color: #1f3a5c;
+  }
+  #resetBtn {
+    background: #2e6da4;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #resetBtn:active { transform: translateY(1px); }
+  #instructions {
+    font-size: 13px;
+    color: #5a6b7b;
+    margin: 0 0 8px;
+  }
+  #canvasContainer {
+    position: relative;
+    width: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #d3dbe4;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  canvas {
+    display: block;
+    cursor: pointer;
+  }
+  #resultPanel {
+    display: none;
+    margin-top: 12px;
+    padding: 14px 16px;
+    background: #eaf4ec;
+    border: 1px solid #bfe0c6;
+    border-radius: 8px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  #resultPanel.show { display: flex; }
+  #resultText {
+    font-size: 14px;
+    color: #24513a;
+  }
+  #codeValue {
+    font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+    font-size: 17px;
+    font-weight: 700;
+    background: #fff;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #bfe0c6;
+    margin-left: 6px;
+    letter-spacing: 0.5px;
+  }
+  #copyBtn {
+    background: #2e7d4f;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #copyBtn.copied { background: #1f5a37; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="header">
+    <h1>Confélec — jeu de la configuration électronique</h1>
+    <button id="resetBtn">↺ Recommencer</button>
+  </div>
+  <p id="instructions">Clique sur un gobelet pour y envoyer l'électron suivant de la réserve. Quand la réserve est vide, un code apparaît : recopie-le dans le test Moodle.</p>
+  <div id="canvasContainer">
+    <canvas id="cv"></canvas>
+  </div>
+  <div id="resultPanel">
+    <div id="resultText">Terminé ! Code à recopier dans Moodle : <span id="codeValue">—</span></div>
+    <button id="copyBtn">Copier le code</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   1) DECODAGE DU PARAMETRE URL (XOR + base64, cle specifique)
+   ============================================================ */
+var KEY = "CFE26-fj-confelec";
+
+function b64urlToBytes(b64){
+  var s = b64.replace(/-/g,'+').replace(/_/g,'/');
+  while (s.length % 4) s += '=';
+  var bin = atob(s);
+  return bin;
+}
+
+function decodeParam(p){
+  try {
+    var raw = b64urlToBytes(p);
+    var out = '';
+    for (var i=0;i<raw.length;i++){
+      out += String.fromCharCode(raw.charCodeAt(i) ^ KEY.charCodeAt(i % KEY.length));
+    }
+    return out; // "Z:seed:order"
+  } catch(e){
+    return null;
+  }
+}
+
+var VALID_ORDERS = ['order', 'mix', 'chaos'];
+
+function getParams(){
+  var qs = new URLSearchParams(window.location.search);
+  var Z = 11, seed = 1234, order = 'mix'; // valeurs par defaut si aucun parametre
+
+  if (qs.has('p')){
+    var dec = decodeParam(qs.get('p'));
+    if (dec){
+      var parts = dec.split(':');
+      var zz = parseInt(parts[0], 10);
+      var ss = parseInt(parts[1], 10);
+      if (Number.isFinite(zz)) Z = zz;
+      if (Number.isFinite(ss)) seed = ss;
+      if (parts[2] && VALID_ORDERS.indexOf(parts[2]) >= 0) order = parts[2];
+    }
+  }
+  // parametres en clair prioritaires (tests locaux rapides)
+  if (qs.has('z')){
+    var zc = parseInt(qs.get('z'), 10);
+    if (Number.isFinite(zc)) Z = zc;
+  }
+  if (qs.has('seed')){
+    var sc = parseInt(qs.get('seed'), 10);
+    if (Number.isFinite(sc)) seed = sc;
+  }
+  if (qs.has('order') && VALID_ORDERS.indexOf(qs.get('order')) >= 0){
+    order = qs.get('order');
+  }
+
+  if (!Number.isFinite(Z) || Z < 1) Z = 11;
+  if (Z > 28) Z = 28; // capacite totale max des sous-couches modelisees (2+2+6+2+6+10)
+  if (!Number.isFinite(seed)) seed = 1234;
+
+  return { Z: Z, seed: seed, order: order };
+}
+
+var PARAMS = getParams();
+
+/* ============================================================
+   2) HASH6 + CODE PONDERE (identique au module Python jumeau)
+   ============================================================ */
+function hash6(s){
+  var h = 2166136261;
+  for (var i=0;i<s.length;i++){
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  if (h === 0) return "000000";
+  var digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  var out = "";
+  var n = h;
+  while (n){
+    out = digits[n % 36] + out;
+    n = Math.floor(n / 36);
+  }
+  while (out.length < 6) out = "0" + out;
+  return out.slice(0,6);
+}
+
+function weightedValue(counts){
+  var W = 0, base = 1;
+  for (var i=0;i<counts.length;i++){
+    W += counts[i] * base;
+    base *= 100;
+  }
+  return W;
+}
+
+function computeCodeConfelec(counts, seed, Z){
+  var W = weightedValue(counts);
+  var payload = W + "|" + seed + "|" + Z;
+  return "E-" + hash6(payload);
+}
+
+/* ============================================================
+   3) MODELE DU JEU
+   ============================================================ */
+var ORDER = ['1s','2s','2p','3s','3p','3d'];
+
+var CUPS = [
+  { key:'1s', shelf:1, type:'s' },
+  { key:'2s', shelf:2, type:'s' },
+  { key:'2p', shelf:2, type:'p' },
+  { key:'3s', shelf:3, type:'s' },
+  { key:'3p', shelf:3, type:'p' },
+  { key:'3d', shelf:3, type:'d' }
+];
+
+var SHELF_Y = { 1: 580, 2: 460, 3: 300 };
+
+// Emplacements (x) disponibles par NOMBRE de gobelets a placer sur une
+// etagere (1, 2 ou 3) -- espaces assez large pour accueillir n'importe quel
+// type de gobelet (s/p/d) sans chevauchement, quelle que soit l'etagere et
+// quel que soit l'ordre tire au sort.
+var SLOTS_FOR_COUNT = { 1:[375], 2:[290,460], 3:[205,375,545] };
+
+// PRNG deterministe (mulberry32), seede par PARAMS.seed : meme lien = meme
+// disposition, une autre graine donne une autre disposition.
+function mulberry32(seed){
+  var a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function shuffleInPlace(arr, rng){
+  for (var i=arr.length-1;i>0;i--){
+    var j = Math.floor(rng() * (i+1));
+    var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+  return arr;
+}
+
+// Place les gobelets selon PARAMS.order :
+//  - "order" : aucun melange, chaque gobelet reste sur son etagere logique
+//              (1s / 2s,2p / 3s,3p,3d) dans l'ordre naturel s,p,d.
+//  - "mix"   : melange au sein de chaque etagere logique (2p peut passer
+//              avant 2s), mais un gobelet ne change jamais d'etagere.
+//  - "chaos" : les etageres logiques sont ignorees. Les 6 gobelets sont
+//              redistribues au hasard sur 3 etageres, avec entre 1 et 3
+//              gobelets par etagere.
+function layoutCups(){
+  var rng = mulberry32(PARAMS.seed);
+  var order = PARAMS.order;
+
+  if (order === 'chaos'){
+    var sizes;
+    do {
+      sizes = [1+Math.floor(rng()*3), 1+Math.floor(rng()*3), 1+Math.floor(rng()*3)];
+    } while (sizes[0]+sizes[1]+sizes[2] !== 6);
+
+    var pool = shuffleInPlace(CUPS.slice(), rng);
+    var idx = 0;
+    [1,2,3].forEach(function(lvl, li){
+      var n = sizes[li];
+      var group = pool.slice(idx, idx+n);
+      idx += n;
+      var slots = SLOTS_FOR_COUNT[n];
+      group.forEach(function(c, i){
+        c.shelf = lvl; // reaffecte l'etagere d'affichage (purement visuel)
+        c.cx = slots[i];
+      });
+    });
+    return;
+  }
+
+  // "order" et "mix" : chaque gobelet reste sur son etagere logique d'origine.
+  [1,2,3].forEach(function(lvl){
+    var group = CUPS.filter(function(c){ return c.shelf === lvl; });
+    if (order === 'mix') shuffleInPlace(group, rng);
+    var slots = SLOTS_FOR_COUNT[group.length];
+    group.forEach(function(c, i){ c.cx = slots[i]; });
+  });
+}
+layoutCups();
+
+// Gabarit du gobelet repris du SVG fourni par Frederic (coordonnees brutes du
+// path/ellipses, transform translate(0,20) deja incorporee). Le gobelet est
+// dessine a l'echelle CUP_HEIGHT[type]/CUP_TEMPLATE.H, translate/scale pour
+// que (400,657) [centre base] tombe sur (c.cx, c.botY).
+var CUP_TEMPLATE = {
+  H: 457,          // hauteur totale (bord haut y=200 -> bas base y=657)
+  RIM_W: 420,      // largeur totale au bord (rx=210 *2)
+  rimOuter: { cy:200, rx:210, ry:45 },
+  rimInner: { cy:203, rx:190, ry:36 },
+  baseOuter:{ cy:635, rx:125, ry:22 },
+  baseInner:{ cy:638, rx:120, ry:18 },
+  bodyPath: "M 210 203 C 215 340, 240 520, 275 620 C 285 645, 320 655, 400 655 C 480 655, 515 645, 525 620 C 560 520, 585 340, 590 203 Z",
+  highlight: { x0:310, y0:220, cx1:305, cy1:340, cx2:315, cy2:520, x1:330, y1:600 },
+  ridges: [
+    { ox:"M 235 270 C 290 282, 510 282, 565 270", ix:"M 234 280 C 290 292, 510 292, 566 280" },
+    { ox:"M 245 315 C 295 327, 505 327, 555 315", ix:"M 244 325 C 295 337, 505 337, 556 325" },
+    { ox:"M 253 360 C 300 372, 500 372, 547 360", ix:"M 252 370 C 300 382, 500 382, 548 370" },
+    { ox:"M 260 405 C 305 417, 495 417, 540 405", ix:"M 259 415 C 305 427, 495 427, 541 415" },
+    { ox:"M 266 450 C 310 462, 490 462, 534 450", ix:"M 265 460 C 310 472, 490 472, 535 460" },
+    { ox:"M 270 495 C 315 507, 485 507, 530 495", ix:"M 269 505 C 315 517, 485 517, 531 505" },
+    { ox:"M 273 540 C 318 552, 482 552, 527 540", ix:"M 272 550 C 318 562, 482 562, 528 550" }
+  ]
+};
+var CUP_HEIGHT = { s:70, p:105, d:145 };   // hauteur finale a l'ecran par type
+var CUP_RIDGES = { s:3, p:5, d:7 };        // nb de nervures affichees (evite le fouillis en petit)
+
+CUPS.forEach(function(c){
+  c.count = 0;
+  var h = CUP_HEIGHT[c.type];
+  c.scale = h / CUP_TEMPLATE.H;
+  c.h = h;
+  c.w = CUP_TEMPLATE.RIM_W * c.scale; // largeur max (au bord), pour hitbox/halo
+  c.botY = SHELF_Y[c.shelf];
+  c.topY = c.botY - c.h;
+});
+
+var reserve = PARAMS.Z;
+var finished = false;
+
+/* ============================================================
+   4) CANVAS + SCALING RESPONSIVE
+   ============================================================ */
+var VW = 750, VH = 760;
+var canvas = document.getElementById('cv');
+var ctx = canvas.getContext('2d');
+var container = document.getElementById('canvasContainer');
+
+function resize(){
+  var dpr = window.devicePixelRatio || 1;
+  var displayWidth = container.clientWidth;
+  var displayHeight = displayWidth * (VH / VW);
+  canvas.style.width = displayWidth + 'px';
+  canvas.style.height = displayHeight + 'px';
+  canvas.width = Math.round(displayWidth * dpr);
+  canvas.height = Math.round(displayHeight * dpr);
+  var scale = (displayWidth / VW) * dpr;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ============================================================
+   5) DECOR (mur, sol, etageres en bois)
+   ============================================================ */
+function drawDecor(){
+  var g = ctx.createLinearGradient(0,0,0,VH);
+  g.addColorStop(0, "#e9eff6");
+  g.addColorStop(1, "#d7e1ec");
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,VW,VH);
+
+  // plinthe / sol
+  var floorY = 715;
+  var fg = ctx.createLinearGradient(0, floorY, 0, VH);
+  fg.addColorStop(0, "#c9a06a");
+  fg.addColorStop(1, "#a9793f");
+  ctx.fillStyle = fg;
+  ctx.fillRect(0, floorY, VW, VH - floorY);
+  ctx.strokeStyle = "rgba(0,0,0,0.08)";
+  ctx.lineWidth = 1;
+  for (var fx = 20; fx < VW; fx += 70){
+    ctx.beginPath();
+    ctx.moveTo(fx, floorY);
+    ctx.lineTo(fx - 10, VH);
+    ctx.stroke();
+  }
+
+  // petite decoration murale (etagere deco / cadre) pour habiller le fond
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = "#c3d2e0";
+  ctx.beginPath();
+  ctx.ellipse(80, 60, 34, 34, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = "#f7d774";
+  ctx.beginPath();
+  ctx.arc(80, 55, 14, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  [1,2,3].forEach(function(lvl){
+    drawShelf(SHELF_Y[lvl]);
+  });
+}
+
+function drawShelf(y){
+  var x0 = 110, x1 = 640, thick = 16;
+  var g = ctx.createLinearGradient(0, y, 0, y+thick);
+  g.addColorStop(0, "#9a6a3f");
+  g.addColorStop(1, "#7a4e2b");
+  ctx.fillStyle = g;
+  roundRect(ctx, x0, y, x1-x0, thick, 3);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.15)";
+  ctx.lineWidth = 1;
+  roundRect(ctx, x0, y, x1-x0, thick, 3);
+  ctx.stroke();
+
+  // equerres de support
+  ctx.fillStyle = "#6b4423";
+  ctx.beginPath();
+  ctx.moveTo(x0+6, y+thick);
+  ctx.lineTo(x0+6, y+thick+22);
+  ctx.lineTo(x0+26, y+thick);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x1-6, y+thick);
+  ctx.lineTo(x1-6, y+thick+22);
+  ctx.lineTo(x1-26, y+thick);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+/* ============================================================
+   6) DESSIN D'UN GOBELET (forme de vrai gobelet + billes visibles)
+   ============================================================ */
+function ballRadiusFor(innerW, innerH, count){
+  if (count <= 0) return 7;
+  var area = innerW * innerH;
+  var r = Math.sqrt(area / count) * 0.42;
+  return Math.max(2.6, Math.min(8, r));
+}
+
+// Convertit une coordonnee Y du gabarit SVG (repere local du gobelet) en
+// coordonnee canvas globale, pour un gobelet c donne (cx, botY, scale).
+function templateY(c, ty){
+  return c.botY + (ty - 657) * c.scale;
+}
+
+function drawBallsInCup(c){
+  var s = c.scale;
+  var topHalfW = CUP_TEMPLATE.rimInner.rx * s;
+  var botHalfW = CUP_TEMPLATE.baseInner.rx * s;
+  var innerTop = templateY(c, CUP_TEMPLATE.rimInner.cy) + 4;
+  var innerBot = templateY(c, CUP_TEMPLATE.baseInner.cy) - 4;
+  var innerPad = 3;
+  var innerH = innerBot - innerTop;
+  var innerW = topHalfW + botHalfW; // approx moyenne de largeur utile
+
+  if (c.count <= 0) return;
+  var r = ballRadiusFor(innerW - innerPad*2, innerH - innerPad*2, c.count);
+  var cols = Math.max(1, Math.floor((innerW - innerPad*2) / (2*r)));
+  var placed = 0;
+  var row = 0;
+  ctx.save();
+  // clip approx a la cavite interieure (trapeze base sur bord/base internes)
+  ctx.beginPath();
+  ctx.moveTo(c.cx - topHalfW, innerTop);
+  ctx.lineTo(c.cx + topHalfW, innerTop);
+  ctx.lineTo(c.cx + botHalfW, innerBot);
+  ctx.lineTo(c.cx - botHalfW, innerBot);
+  ctx.closePath();
+  ctx.clip();
+
+  while (placed < c.count){
+    var y = innerBot - r - row * (2*r - 1);
+    var rowW = topHalfW - (topHalfW - botHalfW) * ((innerBot - y) / (innerBot - innerTop));
+    var rowCols = Math.max(1, Math.min(cols, Math.floor((2*rowW - innerPad*2) / (2*r))));
+    var startX = c.cx - (rowCols-1) * r;
+    for (var i=0;i<rowCols && placed < c.count; i++, placed++){
+      var bx = startX + i * 2 * r;
+      var grad = ctx.createRadialGradient(bx - r*0.3, y - r*0.3, r*0.15, bx, y, r);
+      grad.addColorStop(0, "rgba(255,150,90,0.95)");
+      grad.addColorStop(1, "rgba(200,70,40,0.85)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(bx, y, r, 0, Math.PI*2);
+      ctx.fill();
+    }
+    row++;
+    if (row > 40) break; // garde-fou
+  }
+  ctx.restore();
+}
+
+// Dessine le gobelet "realiste" repris du SVG (rebord, nervures, base, reflet),
+// translate+scale pour que le repere local (400,657)=centre de la base tombe
+// sur (c.cx, c.botY). Corps volontairement moins opaque que le SVG d'origine
+// pour laisser les billes visibles par transparence.
+function drawCupBody(c){
+  var s = c.scale;
+  ctx.save();
+  ctx.translate(c.cx - 400*s, c.botY - 657*s);
+  ctx.scale(s, s);
+
+  // corps (translucide)
+  var body = new Path2D(CUP_TEMPLATE.bodyPath);
+  var bodyGrad = ctx.createLinearGradient(210, 0, 590, 0);
+  bodyGrad.addColorStop(0,    "rgba(255,255,255,0.42)");
+  bodyGrad.addColorStop(0.3,  "rgba(226,232,240,0.32)");
+  bodyGrad.addColorStop(0.7,  "rgba(255,255,255,0.38)");
+  bodyGrad.addColorStop(1,    "rgba(203,213,225,0.48)");
+  ctx.fillStyle = bodyGrad;
+  ctx.fill(body);
+  ctx.strokeStyle = "rgba(148,163,184,0.9)";
+  ctx.lineWidth = 2/s;
+  ctx.stroke(body);
+
+  // nervures (nombre reduit selon la taille pour rester lisible)
+  var n = CUP_RIDGES[c.type];
+  for (var i=0;i<n;i++){
+    var ridge = CUP_TEMPLATE.ridges[i];
+    ctx.strokeStyle = "rgba(148,163,184,0.7)";
+    ctx.lineWidth = 3/s;
+    ctx.stroke(new Path2D(ridge.ox));
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 2/s;
+    ctx.stroke(new Path2D(ridge.ix));
+  }
+
+  // reflet vertical (leger flou si le navigateur le supporte)
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 15/s;
+  ctx.lineCap = "round";
+  try { ctx.filter = "blur(3px)"; } catch(e){}
+  var hl = CUP_TEMPLATE.highlight;
+  var hlPath = new Path2D("M " + hl.x0 + " " + hl.y0 + " C " + hl.cx1 + " " + hl.cy1 + ", " + hl.cx2 + " " + hl.cy2 + ", " + hl.x1 + " " + hl.y1);
+  ctx.stroke(hlPath);
+  ctx.restore();
+
+  // base
+  var bo = CUP_TEMPLATE.baseOuter, bi = CUP_TEMPLATE.baseInner;
+  ctx.beginPath();
+  ctx.ellipse(400, bo.cy, bo.rx, bo.ry, 0, 0, Math.PI*2);
+  ctx.fillStyle = "#e2e8f0";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(148,163,184,0.9)";
+  ctx.lineWidth = 2/s;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(400, bi.cy, bi.rx, bi.ry, 0, 0, Math.PI*2);
+  ctx.fillStyle = "#cbd5e1";
+  ctx.fill();
+
+  // rebord (dessine en dernier, par-dessus le corps comme dans le SVG source)
+  var ro = CUP_TEMPLATE.rimOuter, ri = CUP_TEMPLATE.rimInner;
+  var rimGrad = ctx.createLinearGradient(400-ro.rx, 0, 400+ro.rx, 0);
+  rimGrad.addColorStop(0, "#ffffff");
+  rimGrad.addColorStop(0.5, "#e2e8f0");
+  rimGrad.addColorStop(1, "#cbd5e1");
+  ctx.beginPath();
+  ctx.ellipse(400, ro.cy, ro.rx, ro.ry, 0, 0, Math.PI*2);
+  ctx.fillStyle = rimGrad;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(148,163,184,0.9)";
+  ctx.lineWidth = 2/s;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.ellipse(400, ri.cy, ri.rx, ri.ry, 0, 0, Math.PI*2);
+  ctx.fillStyle = "rgba(248,250,252,0.55)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(203,213,225,0.9)";
+  ctx.lineWidth = 1/s;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawCup(c, hovered){
+  if (hovered && !finished && reserve > 0){
+    var glow = ctx.createRadialGradient(c.cx, (c.topY+c.botY)/2, 4, c.cx, (c.topY+c.botY)/2, c.w/2 + 26);
+    glow.addColorStop(0, "rgba(255,210,90,0.55)");
+    glow.addColorStop(1, "rgba(255,210,90,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(c.cx, (c.topY+c.botY)/2, c.w/2 + 26, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // ombre au sol
+  var shadowW = CUP_TEMPLATE.baseOuter.rx * c.scale;
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  ctx.beginPath();
+  ctx.ellipse(c.cx, c.botY + 4, shadowW*0.9, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  drawBallsInCup(c);
+  drawCupBody(c);
+
+  // etiquette + compteur (police fixe, hors transform du gobelet)
+  ctx.fillStyle = "#1f3a5c";
+  ctx.font = "600 13px -apple-system, Segoe UI, Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(c.key, c.cx, c.botY + 22);
+  ctx.fillStyle = "#5a6b7b";
+  ctx.font = "11px -apple-system, Segoe UI, Arial, sans-serif";
+  ctx.fillText(c.count + " e⁻", c.cx, c.botY + 35);
+}
+
+/* ============================================================
+   7) RESERVE + MAIN QUI LANCE
+   ============================================================ */
+var HAND_X = 645, HAND_Y = 665;
+var RESERVE_X = 110, RESERVE_Y = 675;
+
+function drawReserve(){
+  ctx.fillStyle = "#1f3a5c";
+  ctx.font = "600 13px -apple-system, Segoe UI, Arial, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("Réserve d'électrons : " + reserve, RESERVE_X - 60, RESERVE_Y - 42);
+
+  var shown = Math.min(reserve, 6);
+  for (var i=0;i<shown;i++){
+    var bx = RESERVE_X + (i % 6) * 22;
+    var by = RESERVE_Y - 10;
+    var grad = ctx.createRadialGradient(bx-3,by-3,1.5,bx,by,9);
+    grad.addColorStop(0, "rgba(255,150,90,0.95)");
+    grad.addColorStop(1, "rgba(200,70,40,0.85)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(bx, by, 9, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,40,20,0.4)";
+    ctx.stroke();
+  }
+  if (reserve > 6){
+    ctx.fillStyle = "#5a6b7b";
+    ctx.font = "12px -apple-system, Segoe UI, Arial, sans-serif";
+    ctx.fillText("+" + (reserve - 6), RESERVE_X + 6*22 + 6, RESERVE_Y - 6);
+  }
+}
+
+function drawHand(){
+  // bras
+  ctx.strokeStyle = "#c99a6b";
+  ctx.lineWidth = 14;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(HAND_X + 40, HAND_Y + 40);
+  ctx.lineTo(HAND_X, HAND_Y);
+  ctx.stroke();
+  // main
+  ctx.fillStyle = "#e0b184";
+  ctx.beginPath();
+  ctx.arc(HAND_X, HAND_Y, 13, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.15)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // balle prete si reserve non vide et pas d'animation en cours
+  if (reserve > 0 && !flying && !finished){
+    var bob = Math.sin(Date.now() / 260) * 2;
+    var grad = ctx.createRadialGradient(HAND_X-3, HAND_Y-16+bob-3, 1.5, HAND_X, HAND_Y-16+bob, 9);
+    grad.addColorStop(0, "rgba(255,150,90,0.95)");
+    grad.addColorStop(1, "rgba(200,70,40,0.85)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(HAND_X, HAND_Y - 16 + bob, 9, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+/* ============================================================
+   8) LANCER (arc) + INTERACTIONS
+   ============================================================ */
+var flying = null; // {from:{x,y}, to:{x,y}, t0, dur, cupIndex}
+var hoveredIndex = -1;
+
+function cupHitBox(c){
+  var halfW = c.w / 2 + 6; // c.w = largeur totale au bord (rim), deja au max
+  return { x: c.cx - halfW, y: c.topY - 8, w: halfW*2, h: (c.botY - c.topY) + 14 };
+}
+
+function pointInCup(px, py, c){
+  var hb = cupHitBox(c);
+  return px >= hb.x && px <= hb.x + hb.w && py >= hb.y && py <= hb.y + hb.h;
+}
+
+function toVirtualCoords(evt){
+  var rect = canvas.getBoundingClientRect();
+  var clientX = (evt.touches ? evt.touches[0].clientX : evt.clientX);
+  var clientY = (evt.touches ? evt.touches[0].clientY : evt.clientY);
+  var x = (clientX - rect.left) / rect.width * VW;
+  var y = (clientY - rect.top) / rect.height * VH;
+  return { x:x, y:y };
+}
+
+canvas.addEventListener('mousemove', function(evt){
+  var p = toVirtualCoords(evt);
+  hoveredIndex = -1;
+  for (var i=0;i<CUPS.length;i++){
+    if (pointInCup(p.x, p.y, CUPS[i])){ hoveredIndex = i; break; }
+  }
+  canvas.style.cursor = (hoveredIndex >= 0 && reserve > 0 && !finished) ? "pointer" : "default";
+});
+
+canvas.addEventListener('click', function(evt){
+  if (finished || reserve <= 0 || flying) return;
+  var p = toVirtualCoords(evt);
+  for (var i=0;i<CUPS.length;i++){
+    if (pointInCup(p.x, p.y, CUPS[i])){
+      throwBallAt(i);
+      break;
+    }
+  }
+});
+
+function throwBallAt(cupIndex){
+  var c = CUPS[cupIndex];
+  flying = {
+    from: { x: HAND_X, y: HAND_Y - 16 },
+    to: { x: c.cx, y: c.topY + 6 },
+    t0: performance.now(),
+    dur: 520,
+    cupIndex: cupIndex
+  };
+  reserve -= 1;
+}
+
+function updateFlying(now){
+  if (!flying) return;
+  var t = (now - flying.t0) / flying.dur;
+  if (t >= 1){
+    CUPS[flying.cupIndex].count += 1;
+    flying = null;
+    if (reserve <= 0 && !finished){
+      finishGame();
+    }
+    return;
+  }
+  // interpolation + arc parabolique
+  var x = flying.from.x + (flying.to.x - flying.from.x) * t;
+  var yLin = flying.from.y + (flying.to.y - flying.from.y) * t;
+  var arcHeight = 140;
+  var y = yLin - Math.sin(Math.PI * t) * arcHeight;
+  var scale = 1 - 0.35 * t;
+
+  ctx.save();
+  var grad = ctx.createRadialGradient(x-3, y-3, 1.5, x, y, 9*scale);
+  grad.addColorStop(0, "rgba(255,150,90,0.95)");
+  grad.addColorStop(1, "rgba(200,70,40,0.85)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, 9*scale, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/* ============================================================
+   9) FIN DE PARTIE : CALCUL DU CODE
+   ============================================================ */
+function finishGame(){
+  finished = true;
+  var counts = ORDER.map(function(key){
+    var cup = CUPS.filter(function(c){ return c.key === key; })[0];
+    return cup ? cup.count : 0;
+  });
+  var code = computeCodeConfelec(counts, PARAMS.seed, PARAMS.Z);
+  document.getElementById('codeValue').textContent = code;
+  document.getElementById('resultPanel').classList.add('show');
+}
+
+function resetGame(){
+  finished = false;
+  flying = null;
+  reserve = PARAMS.Z;
+  CUPS.forEach(function(c){ c.count = 0; });
+  document.getElementById('resultPanel').classList.remove('show');
+  document.getElementById('copyBtn').classList.remove('copied');
+  document.getElementById('copyBtn').textContent = "Copier le code";
+}
+
+document.getElementById('resetBtn').addEventListener('click', resetGame);
+
+document.getElementById('copyBtn').addEventListener('click', function(){
+  var code = document.getElementById('codeValue').textContent;
+  var btn = document.getElementById('copyBtn');
+  function markCopied(){
+    btn.classList.add('copied');
+    btn.textContent = "Copié !";
+    setTimeout(function(){
+      btn.classList.remove('copied');
+      btn.textContent = "Copier le code";
+    }, 1500);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(markCopied).catch(function(){
+      fallbackCopy(code, markCopied);
+    });
+  } else {
+    fallbackCopy(code, markCopied);
+  }
+});
+
+function fallbackCopy(text, cb){
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch(e){}
+  document.body.removeChild(ta);
+  if (cb) cb();
+}
+
+/* ============================================================
+   10) BOUCLE DE RENDU
+   ============================================================ */
+function render(now){
+  ctx.clearRect(0,0,VW,VH);
+  drawDecor();
+  CUPS.forEach(function(c, i){
+    drawCup(c, i === hoveredIndex);
+  });
+  drawReserve();
+  drawHand();
+  updateFlying(now);
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+})();
+</script>
+</body>
+</html>
