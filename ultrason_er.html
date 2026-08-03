@@ -512,7 +512,7 @@ function loop(now){
   document.getElementById('ddt').textContent=Math.abs(C2-C1).toFixed(3);
   const att=(Math.min(1,Math.max(0.08,10/D_cm))*100).toFixed(0);
   document.getElementById('dinfo').textContent=
-    `D = ${D_cm} cm  |  τ = ${getTau().toFixed(3)} ms  |  att. R = ${att}%`;
+    `D = ${D_cm} cm  |  att. R = ${att}%`;
 }
 
 requestAnimationFrame(now=>{lastT=now;lastPkt=now-1000/FS;loop(now);});
