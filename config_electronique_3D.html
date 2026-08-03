@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modèle 3D atomique</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: #eef2f7;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+  #wrap { position: relative; width: 100%; height: 100%; }
+  canvas {
+    display: block; width: 100%; height: 100%;
+    touch-action: none; cursor: grab;
+  }
+  canvas.dragging { cursor: grabbing; }
+
+  #topbar {
+    position: absolute; top: 10px; left: 12px;
+    font-size: 14px; color: #33475b; font-weight: 600;
+    letter-spacing: 0.02em; pointer-events: none;
+  }
+  #hint {
+    position: absolute; bottom: 10px; left: 0; right: 0;
+    text-align: center; font-size: 12px; color: #8a97a6;
+    pointer-events: none;
+  }
+  #controls { position: absolute; top: 10px; right: 12px; display: flex; gap: 8px; }
+  #controls button {
+    border: 1px solid #cdd6e0; background: #ffffff; color: #33475b;
+    border-radius: 6px; width: 34px; height: 30px; font-size: 14px; cursor: pointer;
+  }
+  #controls button:hover { background: #eef2f7; }
+  #controls button:active { background: #dfe7ee; }
+
+  #zoomWrap {
+    position: absolute; left: 0; right: 0; bottom: 42px;
+    display: flex; justify-content: center; pointer-events: none;
+  }
+  #btnZoom {
+    display: none; pointer-events: auto;
+    border: none; background: #2f6aa8; color: #ffffff;
+    font-size: 14px; font-weight: 600; padding: 10px 20px;
+    border-radius: 999px; cursor: pointer;
+    box-shadow: 0 3px 10px rgba(47, 106, 168, 0.35);
+  }
+  #btnZoom:hover { background: #285d92; }
+  #btnZoom:active { background: #204c78; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="scene"></canvas>
+  <div id="topbar"></div>
+  <div id="controls">
+    <button id="btnPlay" title="Lecture / pause">⏸</button>
+    <button id="btnReset" title="Réinitialiser la vue">⟳</button>
+  </div>
+  <div id="zoomWrap"><button id="btnZoom">🔍 Zoomer</button></div>
+  <div id="hint">Cliquer-glisser pour faire tourner le modèle</div>
+</div>
+
+<script>
+/* =========================================================================
+   Modèle 3D : cube de matière -> atomes -> zoom -> orbitales s/p/d
+   Frédéric Jakubcik — Physique-Chimie — configuration électronique (notation spdf)
+   Règle stricte : aucune information écrite n'est affichée (pas d'occupation
+   chiffrée, pas de configuration électronique en texte). L'élève compte
+   lui-même les points sur chaque forme (s, p, d) pour en déduire la
+   configuration.
+   ========================================================================= */
+
+/* ---------- 1. Décodage des paramètres (XOR + base64url, clé dédiée) ---- */
+
+const XOR_KEY = "C05ELEC3D"; // clé spécifique à cette animation, ne pas réutiliser ailleurs
+
+function b64urlDecodeToBytes(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  const bytes = new Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function xorBytes(bytes, key) {
+  const k = [];
+  for (let i = 0; i < key.length; i++) k.push(key.charCodeAt(i));
+  return bytes.map((c, i) => c ^ k[i % k.length]);
+}
+function decodeParam(p) {
+  try {
+    const xored = b64urlDecodeToBytes(p);
+    const bytes = xorBytes(xored, XOR_KEY);
+    const str = new TextDecoder("utf-8").decode(new Uint8Array(bytes));
+    return JSON.parse(str);
+  } catch (e) { return null; }
+}
+
+const urlParams = new URLSearchParams(window.location.search);
+let cfg = { z: 11, move: 1 };
+
+const pParam = urlParams.get("p");
+if (pParam) {
+  const decoded = decodeParam(pParam);
+  if (decoded && typeof decoded === "object") {
+    if (typeof decoded.z === "number") cfg.z = decoded.z;
+    if (typeof decoded.move === "number") cfg.move = decoded.move;
+  }
+}
+if (urlParams.has("z")) {
+  const zClear = parseInt(urlParams.get("z"), 10);
+  if (!isNaN(zClear)) cfg.z = zClear;
+}
+if (urlParams.has("move")) {
+  const mClear = parseInt(urlParams.get("move"), 10);
+  if (!isNaN(mClear)) cfg.move = mClear;
+}
+cfg.z = Math.max(1, Math.min(36, Math.round(cfg.z)));
+const LOCKED = cfg.move === 0;
+
+/* ---------- 2. Configuration électronique en notation spdf (Aufbau + Hund) */
+
+const ORBITAL_ORDER = [
+  { n: 1, l: "s", cap: 2, orbitals: 1 },
+  { n: 2, l: "s", cap: 2, orbitals: 1 },
+  { n: 2, l: "p", cap: 6, orbitals: 3 },
+  { n: 3, l: "s", cap: 2, orbitals: 1 },
+  { n: 3, l: "p", cap: 6, orbitals: 3 },
+  { n: 4, l: "s", cap: 2, orbitals: 1 },
+  { n: 3, l: "d", cap: 10, orbitals: 5 },
+  { n: 4, l: "p", cap: 6, orbitals: 3 }
+];
+
+function fillSubshells(z) {
+  let remaining = z;
+  const subshells = [];
+  for (const orb of ORBITAL_ORDER) {
+    if (remaining <= 0) break;
+    const count = Math.min(orb.cap, remaining);
+    subshells.push({ n: orb.n, l: orb.l, orbitals: orb.orbitals, count });
+    remaining -= count;
+  }
+  return subshells;
+}
+
+const RADIUS_BY_N = [0.55, 0.95, 1.35, 1.75]; // rayon relatif par couche n=1..4
+
+// Représentation simplifiée : toutes les sous-couches d'une même couche n
+// sont COPLANAIRES (même inclinaison), et distinguées par un léger écart de
+// rayon entre cercles voisins plutôt que par une forme différente. Tous les
+// électrons partagent la même couleur — seule la géométrie (cercle, rayon,
+// écart) porte l'information à compter.
+const subshells = fillSubshells(cfg.z);
+const RING_GAP = 0.085;
+const groupsByN = {};
+subshells.forEach(sub => { (groupsByN[sub.n] = groupsByN[sub.n] || []).push(sub); });
+
+const subshellData = subshells.map(sub => {
+  const group = groupsByN[sub.n];
+  const idxInGroup = group.indexOf(sub);
+  const groupSize = group.length;
+  const radius = RADIUS_BY_N[sub.n - 1] + (idxInGroup - (groupSize - 1) / 2) * RING_GAP;
+  const tilt = 0.2 + (sub.n - 1) * 0.35;
+  return { n: sub.n, l: sub.l, radius, tilt, count: sub.count };
+});
+
+/* ---------- 3. Mise en place canvas / DOM -------------------------------- */
+
+const canvas = document.getElementById("scene");
+const ctx = canvas.getContext("2d");
+const topbar = document.getElementById("topbar");
+const btnPlay = document.getElementById("btnPlay");
+const btnReset = document.getElementById("btnReset");
+const btnZoom = document.getElementById("btnZoom");
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", resize);
+resize();
+
+/* ---------- 4. Couleurs --------------------------------------------------
+   Noyau : nucléons mats, packés et jointifs, palette rouge/blanc cassé,
+   purement décorative — seul le nombre total de sphères (= Z) est une
+   information réelle. Halo autour du noyau = évocation de la fonction
+   d'onde, pas une donnée.
+   Orbitales : cercles coplanaires par couche n, tous les électrons dans la
+   même couleur — seule la géométrie (cercle, rayon, écart entre sous-
+   couches voisines) porte l'information à compter.                        */
+
+const COLORS = {
+  bg: "#eef2f7",
+  nucleusA: "#b8483f",
+  nucleusAHi: "#e0a89a",
+  nucleusB: "#e9e2d6",
+  nucleusBHi: "#fbfaf7",
+  nucleusGlow: "rgba(215, 195, 175, 0.4)",
+  ring: "rgba(120, 135, 155, 0.5)",
+  ringDeep: "rgba(120, 135, 155, 0.2)"
+};
+
+const ELECTRON_COLOR = { near: "#2f6aa8", hi: "#a9cdf0", glow: "rgba(70, 140, 210, 0.8)" };
+
+// Couleur aléatoire du cube / des atomes de matière (décorative, tirée à
+// chaque chargement de page).
+const CUBE_HUE = Math.floor(Math.random() * 360);
+const HUE_COLORS = {
+  near: `hsl(${CUBE_HUE}, 50%, 42%)`,
+  far: `hsl(${CUBE_HUE}, 62%, 80%)`,
+  glow: `hsla(${CUBE_HUE}, 60%, 60%, 0.5)`
+};
+
+/* ---------- 5. Rotation / projection 3D partagées ------------------------ */
+
+let rotY = 0.5;
+let rotX = -0.35;
+let autoRotate = true;
+let dragging = false;
+let lastX = 0, lastY = 0;
+
+function rotateVec(x, y, z) {
+  const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+  const x1 = x * cosY - z * sinY;
+  const z1 = x * sinY + z * cosY;
+  const y1 = y;
+  const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+  const y2 = y1 * cosX - z1 * sinX;
+  const z2 = y1 * sinX + z1 * cosX;
+  return { x: x1, y: y2, z: z2 };
+}
+function project(x, y, z, cx, cy, scale, focal) {
+  const r = rotateVec(x, y, z);
+  const perspective = focal / (focal + r.z);
+  return { x: cx + r.x * scale * perspective, y: cy + r.y * scale * perspective, depth: r.z, scale: perspective };
+}
+function dot3(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+function normalizeVec(x, y, z) { const len = Math.hypot(x, y, z) || 1; return { x: x / len, y: y / len, z: z / len }; }
+const LIGHT_DIR = normalizeVec(-0.5, -0.7, -0.4);
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+function ringPoint(r, tilt, angle) {
+  const rx = Math.cos(angle) * r;
+  const rz0 = Math.sin(angle) * r;
+  return { x: rx, y: rz0 * Math.sin(tilt), z: rz0 * Math.cos(tilt) };
+}
+
+/* ---------- 6. Noyau : sphère de Fibonacci, nucléons jointifs ------------ */
+
+function pseudoRandom(i) {
+  const s = Math.sin(i * 99.123 + 4.55) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+// Un seul amas régulier (spirale de Fibonacci) à la surface d'une sphère de
+// rayon nucleusRadius. Comme la sphère est vue de face, l'hémisphère avant
+// masque l'arrière : ça se lit comme un noyau plein, sans le bruit d'un
+// remplissage volumique aléatoire (qui donnait un rendu sale).
+function buildNucleus(z) {
+  const points = [];
+  const n = Math.max(1, z);
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < n; i++) {
+    const tt = n === 1 ? 0 : i / (n - 1);
+    const yv = 1 - tt * 2;
+    const radiusAtY = Math.sqrt(Math.max(0, 1 - yv * yv));
+    const theta = golden * i;
+    const x = Math.cos(theta) * radiusAtY;
+    const z2 = Math.sin(theta) * radiusAtY;
+    const tone = pseudoRandom(i * 7 + 3) > 0.42 ? "A" : "B";
+    points.push({ x, y: yv, z: z2, tone });
+  }
+  return points;
+}
+
+const nucleusRadius = 0.14 + Math.min(0.09, cfg.z * 0.0025);
+const nucleusPoints = buildNucleus(cfg.z);
+// Rayon (unités 3D) de chaque nucléon, calibré pour qu'ils se touchent tout
+// juste : distance moyenne au plus proche voisin sur une spirale de
+// Fibonacci à n points ≈ 3.6/√n (en radians) ; on prend un peu plus large
+// (x1.1) pour garantir un contact visible même là où l'écart local dépasse
+// la moyenne.
+const NUCLEON_R3 = ((nucleusRadius * 1.9) / Math.sqrt(Math.max(1, cfg.z))) * 1.1;
+
+let t = 0;
+
+/* ---------- 7. Primitives de rendu --------------------------------------- */
+
+function drawRing(radius, tiltAngle, cx, cy, scale, focal, tintColor) {
+  const segs = 72;
+  const pts = [];
+  let avgDepth = 0;
+  for (let i = 0; i <= segs; i++) {
+    const a = (2 * Math.PI * i) / segs;
+    const p = project(Math.cos(a) * radius, Math.sin(a) * radius * Math.sin(tiltAngle), Math.sin(a) * radius * Math.cos(tiltAngle), cx, cy, scale, focal);
+    pts.push(p);
+    avgDepth += p.depth;
+  }
+  avgDepth /= pts.length;
+  ctx.save();
+  ctx.shadowColor = "rgba(150, 170, 195, 0.5)";
+  ctx.shadowBlur = 4;
+  ctx.beginPath();
+  ctx.strokeStyle = tintColor || (avgDepth > 0 ? COLORS.ringDeep : COLORS.ring);
+  ctx.lineWidth = tintColor ? 1.4 : 1.1;
+  pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSphere(px, py, r, colorNear, colorFar, glowColor, opts) {
+  if (r < 0.4) return;
+  opts = opts || {};
+  if (glowColor && !opts.matte) {
+    ctx.save();
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = r * 1.8;
+    ctx.beginPath();
+    ctx.fillStyle = glowColor;
+    ctx.globalAlpha = ctx.globalAlpha * 0.35;
+    ctx.arc(px, py, r * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const grad = ctx.createRadialGradient(px - r * 0.35, py - r * 0.35, Math.max(0.01, r * 0.05), px, py, r * 1.05);
+  if (opts.matte) {
+    grad.addColorStop(0, colorFar);
+    grad.addColorStop(0.62, colorNear);
+    grad.addColorStop(1, "rgba(70, 55, 45, 0.4)");
+  } else {
+    grad.addColorStop(0, colorFar);
+    grad.addColorStop(0.55, colorNear);
+    grad.addColorStop(1, "rgba(20, 30, 45, 0.35)");
+  }
+  ctx.beginPath();
+  ctx.fillStyle = grad;
+  ctx.arc(px, py, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  const specAlpha = opts.matte ? 0.3 : 0.75;
+  const specR = opts.matte ? r * 0.26 : r * 0.22;
+  ctx.beginPath();
+  ctx.fillStyle = `rgba(255, 255, 255, ${specAlpha})`;
+  ctx.arc(px - r * 0.32, py - r * 0.34, Math.max(0.4, specR), 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawNucleusHalo(cx, cy, baseScale, focal, scaleMult) {
+  const center = project(0, 0, 0, cx, cy, baseScale, focal);
+  const R = Math.max(4, nucleusRadius * scaleMult * baseScale * center.scale * 2.4);
+  const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, R);
+  grad.addColorStop(0, COLORS.nucleusGlow);
+  grad.addColorStop(1, "rgba(210, 190, 170, 0)");
+  ctx.save();
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/* ---------- 8. Cube de matière (scène de départ) -------------------------- */
+
+const CUBE_FACES = [
+  { idx: [0, 1, 2, 3], n: { x: 0, y: 0, z: -1 } },
+  { idx: [4, 5, 6, 7], n: { x: 0, y: 0, z: 1 } },
+  { idx: [0, 1, 5, 4], n: { x: 0, y: -1, z: 0 } },
+  { idx: [2, 3, 7, 6], n: { x: 0, y: 1, z: 0 } },
+  { idx: [1, 2, 6, 5], n: { x: 1, y: 0, z: 0 } },
+  { idx: [0, 3, 7, 4], n: { x: -1, y: 0, z: 0 } }
+];
+
+function drawCube(cx, cy, baseScale, focal, alpha, scaleMult) {
+  if (alpha <= 0.002) return;
+  const s = 0.8 * scaleMult;
+  const verts = [
+    [-s, -s, -s], [s, -s, -s], [s, s, -s], [-s, s, -s],
+    [-s, -s, s], [s, -s, s], [s, s, s], [-s, s, s]
+  ];
+  const projectedVerts = verts.map(v => project(v[0], v[1], v[2], cx, cy, baseScale, focal));
+
+  const faceData = CUBE_FACES.map(f => {
+    const rn = rotateVec(f.n.x, f.n.y, f.n.z);
+    const diffuse = Math.max(0.18, dot3(rn, LIGHT_DIR) * -1);
+    const pts = f.idx.map(i => projectedVerts[i]);
+    const avgDepth = pts.reduce((sum, p) => sum + p.depth, 0) / pts.length;
+    return { pts, diffuse, avgDepth };
+  });
+  faceData.sort((a, b) => b.avgDepth - a.avgDepth);
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  faceData.forEach(f => {
+    const light = 32 + f.diffuse * 42;
+    ctx.beginPath();
+    f.pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+    ctx.closePath();
+    ctx.fillStyle = `hsl(${CUBE_HUE}, 55%, ${light}%)`;
+    ctx.fill();
+    ctx.strokeStyle = `hsla(${CUBE_HUE}, 45%, 18%, 0.4)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+/* ---------- 9. Réseau de "petits atomes" (matière granulaire) ------------ */
+
+const LATTICE_OFFSETS = [
+  { x: 0, y: 0, z: 0 },
+  { x: 1, y: 0, z: 0 }, { x: -1, y: 0, z: 0 },
+  { x: 0, y: 1, z: 0 }, { x: 0, y: -1, z: 0 },
+  { x: 0, y: 0, z: 1 }, { x: 0, y: 0, z: -1 }
+];
+const LATTICE_SPACING = 1.15;
+const LATTICE_SPHERE_R = 0.55;
+const SHELL_SPHERE_R = 1.95;
+const SHELL_ALPHA_TARGET = 0.2;
+
+function drawLattice(cx, cy, baseScale, focal, alpha, spacingScale) {
+  if (alpha <= 0.002) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const drawables = LATTICE_OFFSETS.map(o => {
+    const lx = o.x * LATTICE_SPACING * spacingScale, ly = o.y * LATTICE_SPACING * spacingScale, lz = o.z * LATTICE_SPACING * spacingScale;
+    const p = project(lx, ly, lz, cx, cy, baseScale, focal);
+    const r = Math.max(1, LATTICE_SPHERE_R * baseScale * p.scale);
+    return { depth: p.depth, draw: () => drawSphere(p.x, p.y, r, HUE_COLORS.near, HUE_COLORS.far, HUE_COLORS.glow) };
+  });
+  drawables.sort((a, b) => a.depth - b.depth);
+  drawables.forEach(d => d.draw());
+  ctx.restore();
+}
+
+function drawLatticeNeighborsFading(cx, cy, baseScale, focal, e) {
+  const a = Math.max(0, 1 - e);
+  if (a <= 0.01) return;
+  const drift = 1 + e * 3.2;
+  const drawables = LATTICE_OFFSETS.slice(1).map(o => {
+    const lx = o.x * LATTICE_SPACING * drift, ly = o.y * LATTICE_SPACING * drift, lz = o.z * LATTICE_SPACING * drift;
+    const p = project(lx, ly, lz, cx, cy, baseScale, focal);
+    const r = Math.max(1, LATTICE_SPHERE_R * (1 - e * 0.3) * baseScale * p.scale);
+    return { depth: p.depth, draw: () => { ctx.save(); ctx.globalAlpha = a; drawSphere(p.x, p.y, r, HUE_COLORS.near, HUE_COLORS.far, HUE_COLORS.glow); ctx.restore(); } };
+  });
+  drawables.sort((x, y) => x.depth - y.depth);
+  drawables.forEach(d => d.draw());
+}
+
+function drawShellAt(cx, cy, baseScale, focal, radius3D, fillAlpha, glow) {
+  if (fillAlpha <= 0.002) return;
+  const p = project(0, 0, 0, cx, cy, baseScale, focal);
+  const rpx = Math.max(1, radius3D * baseScale * p.scale);
+  ctx.save();
+  ctx.globalAlpha = fillAlpha;
+  drawSphere(p.x, p.y, rpx, HUE_COLORS.near, HUE_COLORS.far, glow || null);
+  ctx.restore();
+}
+
+/* ---------- 10. Scène atomique (noyau + orbitales s/p/d) ----------------- */
+
+function pushElectron(drawables, localPt, col, cx, cy, baseScale, focal, scaleMult) {
+  const p = project(localPt.x, localPt.y, localPt.z, cx, cy, baseScale, focal);
+  const pulse = 1 + 0.08 * Math.sin(t * 1.4 + (localPt.x * 13 + localPt.y * 7 + localPt.z * 5));
+  drawables.push({
+    depth: p.depth,
+    draw: () => drawSphere(p.x, p.y, Math.max(0.5, 7.5 * p.scale * scaleMult * pulse), col.near, col.hi, col.glow)
+  });
+}
+
+function drawAtomScene(cx, cy, baseScale, focal, alpha, scaleMult) {
+  if (alpha <= 0.002) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  drawNucleusHalo(cx, cy, baseScale, focal, scaleMult);
+
+  const drawables = [];
+
+  // Un cercle coplanaire par sous-couche ; les sous-couches d'une même
+  // couche n partagent le même plan (même inclinaison), juste un rayon
+  // légèrement différent pour les distinguer. Électrons également espacés
+  // sur leur cercle, tous dans la même couleur.
+  subshellData.forEach(sub => {
+    const r3 = sub.radius * scaleMult;
+    drawRing(r3, sub.tilt, cx, cy, baseScale, focal);
+    for (let i = 0; i < sub.count; i++) {
+      const angle = (2 * Math.PI * i) / sub.count;
+      pushElectron(drawables, ringPoint(r3, sub.tilt, angle), ELECTRON_COLOR, cx, cy, baseScale, focal, scaleMult);
+    }
+  });
+
+  const effNucleusRadius = nucleusRadius * scaleMult;
+  const nucleonPixelR = NUCLEON_R3 * scaleMult * baseScale;
+  nucleusPoints.forEach(pt => {
+    const p = project(pt.x * effNucleusRadius, pt.y * effNucleusRadius, pt.z * effNucleusRadius, cx, cy, baseScale, focal);
+    const isA = pt.tone === "A";
+    drawables.push({
+      depth: p.depth,
+      draw: () => drawSphere(
+        p.x, p.y, Math.max(0.6, nucleonPixelR * p.scale),
+        isA ? COLORS.nucleusA : COLORS.nucleusB,
+        isA ? COLORS.nucleusAHi : COLORS.nucleusBHi,
+        COLORS.nucleusGlow,
+        { matte: true }
+      )
+    });
+  });
+
+  drawables.sort((a, b) => a.depth - b.depth);
+  drawables.forEach(d => d.draw());
+
+  ctx.restore();
+}
+
+/* ---------- 11. Machine à états : cube -> réseau -> zoom -> atome -------- */
+
+const T_CUBE_TO_LATTICE = 1300;
+const T_LATTICE_TO_SHELL = 1700;
+const T_SHELL_TO_ATOM = 1000;
+
+let phase = LOCKED ? "atom" : "cube";
+let zoomStartTime = 0;
+
+function onAtomPhaseReached() {
+  topbar.textContent = "Z = " + cfg.z;
+}
+
+function updateZoomButton() {
+  if (LOCKED) { btnZoom.style.display = "none"; return; }
+  if (phase === "cube") {
+    btnZoom.textContent = "🔍 Zoomer";
+    btnZoom.dataset.next = "toLattice";
+    btnZoom.style.display = "inline-flex";
+  } else if (phase === "lattice") {
+    btnZoom.textContent = "🔍 Zoomer sur un atome";
+    btnZoom.dataset.next = "toShell";
+    btnZoom.style.display = "inline-flex";
+  } else if (phase === "shell") {
+    btnZoom.textContent = "🔬 Entrer dans l'atome";
+    btnZoom.dataset.next = "toAtom";
+    btnZoom.style.display = "inline-flex";
+  } else {
+    btnZoom.style.display = "none";
+  }
+}
+
+if (LOCKED) {
+  onAtomPhaseReached();
+} else {
+  topbar.textContent = "Un échantillon de matière…";
+}
+
+function render(now) {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const cx = w / 2, cy = h / 2;
+  const baseScale = Math.min(w, h) * 0.34;
+  const focal = 6;
+
+  if (autoRotate && !dragging) rotY += 0.0035;
+  if (!LOCKED) t += 0.016;
+
+  switch (phase) {
+    case "cube":
+      drawCube(cx, cy, baseScale, focal, 1, 1);
+      break;
+    case "toLattice": {
+      const p = Math.min(1, (now - zoomStartTime) / T_CUBE_TO_LATTICE);
+      const e = easeInOutCubic(p);
+      drawCube(cx, cy, baseScale, focal, 1 - e, 1 + e * 0.5);
+      drawLattice(cx, cy, baseScale, focal, e, 1);
+      if (p >= 1) { phase = "lattice"; updateZoomButton(); }
+      break;
+    }
+    case "lattice":
+      drawLattice(cx, cy, baseScale, focal, 1, 1);
+      break;
+    case "toShell": {
+      const p = Math.min(1, (now - zoomStartTime) / T_LATTICE_TO_SHELL);
+      const e = easeInOutCubic(p);
+      drawLatticeNeighborsFading(cx, cy, baseScale, focal, e);
+      drawAtomScene(cx, cy, baseScale, focal, e, e);
+      drawShellAt(cx, cy, baseScale, focal, lerp(LATTICE_SPHERE_R, SHELL_SPHERE_R, e), lerp(1, SHELL_ALPHA_TARGET, e), e < 0.4 ? HUE_COLORS.glow : null);
+      if (p >= 1) { phase = "shell"; updateZoomButton(); }
+      break;
+    }
+    case "shell":
+      drawAtomScene(cx, cy, baseScale, focal, 1, 1);
+      drawShellAt(cx, cy, baseScale, focal, SHELL_SPHERE_R, SHELL_ALPHA_TARGET, null);
+      break;
+    case "toAtom": {
+      const p = Math.min(1, (now - zoomStartTime) / T_SHELL_TO_ATOM);
+      const e = easeInOutCubic(p);
+      drawAtomScene(cx, cy, baseScale, focal, 1, 1);
+      drawShellAt(cx, cy, baseScale, focal, SHELL_SPHERE_R, SHELL_ALPHA_TARGET * (1 - e), null);
+      if (p >= 1) { phase = "atom"; onAtomPhaseReached(); updateZoomButton(); }
+      break;
+    }
+    case "atom":
+      drawAtomScene(cx, cy, baseScale, focal, 1, 1);
+      break;
+  }
+}
+
+function loop(now) {
+  render(now || performance.now());
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 12. Interaction souris / tactile ------------------------------ */
+
+if (!LOCKED) {
+  canvas.addEventListener("pointerdown", (ev) => {
+    dragging = true;
+    autoRotate = false;
+    canvas.classList.add("dragging");
+    lastX = ev.clientX; lastY = ev.clientY;
+    canvas.setPointerCapture(ev.pointerId);
+  });
+  canvas.addEventListener("pointermove", (ev) => {
+    if (!dragging) return;
+    const dx = ev.clientX - lastX, dy = ev.clientY - lastY;
+    rotY += dx * 0.006;
+    rotX += dy * 0.006;
+    rotX = Math.max(-1.3, Math.min(1.3, rotX));
+    lastX = ev.clientX; lastY = ev.clientY;
+  });
+  window.addEventListener("pointerup", () => {
+    dragging = false;
+    canvas.classList.remove("dragging");
+  });
+
+  btnPlay.addEventListener("click", () => {
+    autoRotate = !autoRotate;
+    btnPlay.textContent = autoRotate ? "⏸" : "▶";
+  });
+  btnReset.addEventListener("click", () => { rotY = 0.5; rotX = -0.35; });
+
+  btnZoom.addEventListener("click", () => {
+    const next = btnZoom.dataset.next;
+    if (!next) return;
+    phase = next;
+    zoomStartTime = performance.now();
+    btnZoom.style.display = "none";
+  });
+} else {
+  document.getElementById("hint").style.display = "none";
+  document.getElementById("controls").style.display = "none";
+  document.getElementById("zoomWrap").style.display = "none";
+}
+
+updateZoomButton();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
