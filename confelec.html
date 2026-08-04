@@ -820,7 +820,19 @@ canvas.addEventListener('mousemove', function(evt){
 });
 
 canvas.addEventListener('click', function(evt){
-  if (finished || reserve <= 0 || flying) return;
+  if (finished || reserve <= 0) return;
+  // Filet de securite : si une balle est "en vol" depuis anormalement
+  // longtemps (throttling du navigateur, onglet mis en arriere-plan,
+  // frame manquee...), on la considere bloquee et on la fait atterrir
+  // immediatement plutot que de laisser le jeu bloque pour toujours.
+  if (flying){
+    if (performance.now() - flying.t0 > flying.dur * 6){
+      CUPS[flying.cupIndex].count += 1;
+      flying = null;
+    } else {
+      return;
+    }
+  }
   var p = toVirtualCoords(evt);
   for (var i=0;i<CUPS.length;i++){
     if (pointInCup(p.x, p.y, CUPS[i])){
@@ -845,7 +857,10 @@ function throwBallAt(cupIndex){
 
 function updateFlying(now){
   if (!flying) return;
-  var t = (now - flying.t0) / flying.dur;
+  // Math.max : si "now" (fourni par requestAnimationFrame) se retrouve
+  // legerement avant flying.t0 (rare glitch d'horloge/de frame), on force
+  // t a 0 plutot que d'obtenir un t negatif qui bloquerait la resolution.
+  var t = Math.max(0, (now - flying.t0) / flying.dur);
   if (t >= 1){
     CUPS[flying.cupIndex].count += 1;
     flying = null;
@@ -1065,15 +1080,24 @@ function fallbackCopy(text, cb){
    10) BOUCLE DE RENDU
    ============================================================ */
 function render(now){
-  ctx.clearRect(0,0,VW,VH);
-  drawDecor();
-  CUPS.forEach(function(c, i){
-    drawCup(c, i === hoveredIndex);
-  });
-  drawReserve();
-  drawHand();
-  updateFlying(now);
-  drawCelebration(now);
+  // Le rendu est protege par un try/catch : si une frame plante pour une
+  // raison quelconque (navigateur/webview capricieux type SEB, glitch de
+  // timing...), la boucle requestAnimationFrame doit malgre tout continuer
+  // -- sinon toute l'animation se figerait definitivement (plus aucun
+  // clic ne fonctionnerait) a la moindre erreur ponctuelle sur une frame.
+  try {
+    ctx.clearRect(0,0,VW,VH);
+    drawDecor();
+    CUPS.forEach(function(c, i){
+      drawCup(c, i === hoveredIndex);
+    });
+    drawReserve();
+    drawHand();
+    updateFlying(now);
+    drawCelebration(now);
+  } catch(e){
+    if (window.console && console.warn) console.warn("Confelec: erreur de rendu ignoree pour ne pas bloquer le jeu", e);
+  }
   requestAnimationFrame(render);
 }
 requestAnimationFrame(render);
