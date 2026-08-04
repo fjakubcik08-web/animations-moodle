@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lentille mince - banc optique</title>
+<style>
+  :root{
+    --bleu:#3b82f6;
+    --bleu-fonce:#93c5fd;
+    --gris:#94a3b8;
+    --gris-clair:#334155;
+    --fond:#0f172a;
+    --panel:#1e293b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin:0; padding:0; height:100%;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--fond);
+    color:#e2e8f0;
+    overflow:hidden;
+  }
+  #wrap {
+    display:flex; flex-direction:column;
+    width:100%; height:100vh;
+  }
+  #bar {
+    display:flex; align-items:center; gap:18px;
+    padding:8px 14px;
+    background: var(--panel);
+    border-bottom:1px solid var(--gris-clair);
+    font-size:13px;
+    color: var(--gris);
+    flex-wrap: wrap;
+  }
+  #bar b { color: var(--bleu-fonce); }
+  .legende { display:flex; align-items:center; gap:6px; }
+  .puce { width:12px; height:12px; border-radius:3px; display:inline-block; }
+  #stage { flex:1; position:relative; min-height:0; }
+  canvas { display:block; width:100%; height:100%; touch-action:none; cursor:default; }
+  #hint {
+    position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+    background: rgba(30,58,95,0.9); color:#fff; padding:6px 14px;
+    border-radius:20px; font-size:12px; pointer-events:none;
+    opacity:0; transition:opacity .25s;
+  }
+  #hint.show { opacity:1; }
+  .toolbar { display:flex; align-items:center; gap:6px; margin-left:auto; }
+  .toolbtn {
+    width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center;
+    background:#334155; border:1px solid #475569; border-radius:6px; cursor:pointer;
+    color:#cbd5e1; padding:0;
+  }
+  .toolbtn:hover { background:#3f4f68; }
+  .toolbtn.active { background:#3b82f6; border-color:#93c5fd; color:#fff; }
+  .toolbtn.plain { width:auto; padding:0 10px; font-size:12px; }
+  #commentsLayer { position:absolute; inset:0; pointer-events:none; }
+  .comment-bubble {
+    position:absolute; min-width:80px; max-width:220px;
+    background:rgba(30,41,59,0.96); border:1.5px solid #a78bfa; border-radius:8px;
+    pointer-events:auto; box-shadow:0 3px 10px rgba(0,0,0,0.45); font-size:13px;
+  }
+  .cb-head { height:14px; background:rgba(167,139,250,0.35); border-radius:6px 6px 0 0; cursor:move; position:relative; }
+  .cb-head .del {
+    position:absolute; right:2px; top:-1px; width:14px; height:14px; line-height:14px;
+    text-align:center; color:#fda4af; cursor:pointer; font-size:13px; font-weight:bold;
+  }
+  .cb-txt { padding:5px 8px; color:#f1f5f9; outline:none; white-space:pre-wrap; word-break:break-word; }
+  .cb-txt:empty::before { content: attr(data-ph); color:#64748b; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="bar">
+    <b>Banc optique &mdash; lentille mince convergente</b>
+    <span class="legende"><span class="puce" style="background:#f59e0b"></span>objet</span>
+    <span class="legende"><span class="puce" style="background:#60a5fa"></span>lentille</span>
+    <span class="legende"><span class="puce" style="background:#2dd4bf"></span>mur (écran)</span>
+    <div class="toolbar">
+      <button id="lineToolBtn" class="toolbtn" title="Tracer des lignes à la main" type="button">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <circle cx="3.2" cy="14.8" r="2" fill="currentColor"/>
+          <line x1="3.2" y1="14.8" x2="14.8" y2="3.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="14.8" cy="3.2" r="2" fill="currentColor"/>
+        </svg>
+      </button>
+      <button id="clearLinesBtn" class="toolbtn plain" title="Effacer les traits" type="button">effacer</button>
+      <span style="width:1px; height:22px; background:#475569; margin:0 2px;"></span>
+      <button id="styleArrowBtn" class="toolbtn" title="Objet/image = flèche seule (mesure précise)" type="button">
+        <svg width="16" height="16" viewBox="0 0 16 16">
+          <line x1="8" y1="14" x2="8" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M8 1 L4.2 6.5 L11.8 6.5 Z" fill="currentColor"/>
+        </svg>
+      </button>
+      <button id="styleCandleBtn" class="toolbtn active" title="Objet/image = bougie (réaliste)" type="button">
+        <svg width="16" height="16" viewBox="0 0 16 16">
+          <rect x="6.3" y="6" width="3.2" height="8" fill="currentColor"/>
+          <ellipse cx="8" cy="14.3" rx="4" ry="1.2" fill="currentColor"/>
+          <path d="M8 1 C10.2 3.2 10.2 5 8 6.2 C5.8 5 5.8 3.2 8 1 Z" fill="currentColor"/>
+        </svg>
+      </button>
+      <span style="width:1px; height:22px; background:#475569; margin:0 2px;"></span>
+      <button id="commentToolBtn" class="toolbtn" title="Ajouter un commentaire (bulle déplaçable)" type="button">
+        <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
+          <path d="M2 2.5h13v8.5H8.5L5 14.5V11H2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <button id="exportBtn" class="toolbtn plain" title="Exporter en image JPG" type="button">exporter JPG</button>
+    </div>
+  </div>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="commentsLayer"></div>
+    <div id="hint"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ===================== Décodage des paramètres ===================== */
+  var XOR_KEY = "LENTM26";
+
+  function xorBytes(bytes, key){
+    var kb = [];
+    for (var i=0;i<key.length;i++) kb.push(key.charCodeAt(i));
+    var out = new Uint8Array(bytes.length);
+    for (var i=0;i<bytes.length;i++) out[i] = bytes[i] ^ kb[i % kb.length];
+    return out;
+  }
+  function b64urlDecode(s){
+    s = s.replace(/-/g,'+').replace(/_/g,'/');
+    while (s.length % 4) s += '=';
+    var bin = atob(s);
+    var bytes = new Uint8Array(bin.length);
+    for (var i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function decodeP(p){
+    try{
+      var bytes = b64urlDecode(p);
+      var xored = xorBytes(bytes, XOR_KEY);
+      var str = "";
+      for (var i=0;i<xored.length;i++) str += String.fromCharCode(xored[i]);
+      // UTF-8 -> JS string (payload est ASCII, escape/decodeURIComponent suffit)
+      str = decodeURIComponent(escape(str));
+      var obj = {};
+      str.split(';').forEach(function(kv){
+        var parts = kv.split('=');
+        if (parts.length === 2) obj[parts[0]] = parseFloat(parts[1]);
+      });
+      return obj;
+    }catch(e){ return null; }
+  }
+
+  function getParams(){
+    var qs = new URLSearchParams(window.location.search);
+    // valeurs par défaut
+    var cfg = { f: 8, xA: 6, hA: 3, xL0: 30, xE0: 46, lo: 0, hi: 60, move: 1 };
+
+    if (qs.has('p')){
+      var dec = decodeP(qs.get('p'));
+      if (dec){
+        Object.keys(dec).forEach(function(k){ cfg[k] = dec[k]; });
+      }
+    }
+    // les paramètres en clair passent au-dessus du "p" codé (pratique pour les tests locaux)
+    ['f','xA','hA','xL0','xE0','lo','hi','move'].forEach(function(k){
+      if (qs.has(k)) cfg[k] = parseFloat(qs.get(k));
+    });
+    return cfg;
+  }
+
+  var CFG = getParams();
+  var LOCKED = CFG.move === 0;
+
+  /* ===================== Canvas / échelle ===================== */
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var hint = document.getElementById('hint');
+  var stage = document.getElementById('stage');
+  var lineToolBtn = document.getElementById('lineToolBtn');
+  var clearLinesBtn = document.getElementById('clearLinesBtn');
+
+  // outil "tracer des lignes à la main" (façon outil ligne d'un logiciel de dessin) :
+  // l'élève dessine lui-même ses propres traits (ex. sa construction de rayons) —
+  // l'appli ne calcule ni ne suggère rien, elle enregistre juste ce qui est tracé.
+  var lineMode = false;
+  var lines = [];       // segments finalisés, en coordonnées cm (x) / cm depuis l'axe (y)
+  var pendingLine = null;
+  lineToolBtn.addEventListener('click', function(){
+    lineMode = !lineMode;
+    lineToolBtn.classList.toggle('active', lineMode);
+    if (lineMode){ commentMode = false; commentToolBtn.classList.remove('active'); }
+    canvas.style.cursor = lineMode ? 'crosshair' : 'default';
+    draw();
+  });
+  clearLinesBtn.addEventListener('click', function(){
+    lines = [];
+    draw();
+  });
+
+  // bascule flèche seule (mesure précise) / bougie (réaliste) — segmented control
+  var styleArrowBtn = document.getElementById('styleArrowBtn');
+  var styleCandleBtn = document.getElementById('styleCandleBtn');
+  styleArrowBtn.addEventListener('click', function(){
+    objectStyle = 'fleche';
+    styleArrowBtn.classList.add('active');
+    styleCandleBtn.classList.remove('active');
+    draw();
+  });
+  styleCandleBtn.addEventListener('click', function(){
+    objectStyle = 'bougie';
+    styleCandleBtn.classList.add('active');
+    styleArrowBtn.classList.remove('active');
+    draw();
+  });
+
+  /* ===================== Commentaires (bulles déplaçables) ===================== */
+  // annotation libre en HTML par-dessus le canvas : l'élève clique pour poser une
+  // bulle, tape son texte, peut la déplacer par sa poignée. Rien n'est calculé ni
+  // suggéré par l'appli, c'est un pense-bête, comme un post-it.
+  var commentToolBtn = document.getElementById('commentToolBtn');
+  var exportBtn = document.getElementById('exportBtn');
+  var commentsLayer = document.getElementById('commentsLayer');
+  var commentMode = false;
+
+  commentToolBtn.addEventListener('click', function(){
+    commentMode = !commentMode;
+    commentToolBtn.classList.toggle('active', commentMode);
+    if (commentMode){ lineMode = false; lineToolBtn.classList.remove('active'); }
+    canvas.style.cursor = commentMode ? 'copy' : 'default';
+  });
+
+  function addCommentBubble(x, y){
+    var b = document.createElement('div');
+    b.className = 'comment-bubble';
+    b.style.left = x + 'px';
+    b.style.top = y + 'px';
+    b.innerHTML =
+      '<div class="cb-head"><span class="del">&times;</span></div>' +
+      '<div class="cb-txt" contenteditable="true" spellcheck="false" data-ph="commentaire…"></div>';
+    commentsLayer.appendChild(b);
+
+    b.querySelector('.del').addEventListener('click', function(){ b.remove(); });
+
+    var head = b.querySelector('.cb-head');
+    var dragOff = null;
+    head.addEventListener('mousedown', function(evt){
+      var r = b.getBoundingClientRect();
+      var sr = stage.getBoundingClientRect();
+      dragOff = { dx: evt.clientX - r.left, dy: evt.clientY - r.top };
+      function onDrag(e){
+        b.style.left = Math.max(0, e.clientX - sr.left - dragOff.dx) + 'px';
+        b.style.top  = Math.max(0, e.clientY - sr.top  - dragOff.dy) + 'px';
+      }
+      function onStop(){
+        window.removeEventListener('mousemove', onDrag);
+        window.removeEventListener('mouseup', onStop);
+      }
+      window.addEventListener('mousemove', onDrag);
+      window.addEventListener('mouseup', onStop);
+      evt.preventDefault();
+    });
+
+    var txt = b.querySelector('.cb-txt');
+    setTimeout(function(){ txt.focus(); }, 0);
+  }
+
+  /* ===================== Export JPG ===================== */
+  // recopie le canvas + les bulles de commentaire (HTML, donc absentes du canvas)
+  // sur un canvas hors-écran, pour exporter une image complète et fidèle.
+  exportBtn.addEventListener('click', function(){
+    var dpr = window.devicePixelRatio || 1;
+    var off = document.createElement('canvas');
+    off.width = canvas.width;
+    off.height = canvas.height;
+    var octx = off.getContext('2d');
+    octx.drawImage(canvas, 0, 0);
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var stageRect = stage.getBoundingClientRect();
+    document.querySelectorAll('.comment-bubble').forEach(function(b){
+      var r = b.getBoundingClientRect();
+      var x = r.left - stageRect.left, y = r.top - stageRect.top;
+      var w = r.width, h = r.height;
+      octx.save();
+      octx.beginPath();
+      var rad = 6;
+      octx.moveTo(x+rad, y);
+      octx.arcTo(x+w, y, x+w, y+h, rad);
+      octx.arcTo(x+w, y+h, x, y+h, rad);
+      octx.arcTo(x, y+h, x, y, rad);
+      octx.arcTo(x, y, x+w, y, rad);
+      octx.closePath();
+      octx.fillStyle = 'rgba(30,41,59,0.96)';
+      octx.fill();
+      octx.strokeStyle = '#a78bfa';
+      octx.lineWidth = 1.5;
+      octx.stroke();
+      octx.fillStyle = '#f1f5f9';
+      octx.font = '13px system-ui, sans-serif';
+      octx.textAlign = 'left';
+      var txt = (b.querySelector('.cb-txt').innerText || '').split('\n');
+      txt.forEach(function(line, i){ octx.fillText(line, x + 8, y + 22 + 16*i); });
+      octx.restore();
+    });
+
+    var url = off.toDataURL('image/jpeg', 0.92);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'lentille_mince.jpg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+
+  var W, H, axisY, pxPerCm, originX;
+  var BENCH_LO = CFG.lo, BENCH_HI = CFG.hi;
+
+  function resize(){
+    var rect = stage.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    W = rect.width; H = rect.height;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+
+    axisY = H * 0.56;
+    var margin = 60;
+    pxPerCm = (W - 2*margin) / (BENCH_HI - BENCH_LO);
+    originX = margin;
+    draw();
+  }
+  window.addEventListener('resize', resize);
+
+  function xToPx(xCm){ return originX + (xCm - BENCH_LO) * pxPerCm; }
+  function pxToX(px){ return BENCH_LO + (px - originX) / pxPerCm; }
+
+  /* ===================== État ===================== */
+  var xA = CFG.xA;         // position objet (déplaçable)
+  var hA = CFG.hA;         // hauteur objet (cm)
+  var xL = CFG.xL0;        // position lentille (déplaçable)
+  var xE = CFG.xE0;        // position écran (déplaçable)
+  var f  = CFG.f;          // distance focale (cachée, jamais affichée)
+
+  var drag = null; // 'object' | 'lens' | 'screen' | null
+  var nudgeButtons = []; // boutons cliquables (réglage fin + zoom), recalculés chaque frame
+  var frontZoom = 1;
+  var FRONT_ZOOM_MIN = 0.4, FRONT_ZOOM_MAX = 5;
+  var isAnimating = false; // true seulement pendant le halo ou la dérive de l'image
+                            // virtuelle : sinon la boucle s'arrête (évite de tourner
+                            // à 60 im/s avec filtres/ombres coûteux pour rien)
+
+  /* ===================== Boutons de réglage fin ===================== */
+  function roundRectPath(x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y, x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x, y+h, r);
+    ctx.arcTo(x, y+h, x, y, r);
+    ctx.arcTo(x, y, x+w, y, r);
+    ctx.closePath();
+  }
+
+  function drawLabelPill(cx, cy, text, color){
+    ctx.save();
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    var w = ctx.measureText(text).width + 16;
+    roundRectPath(cx - w/2, cy - 11, w, 22, 6);
+    ctx.fillStyle = 'rgba(15,23,42,0.85)';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fillText(text, cx, cy + 4);
+    ctx.restore();
+  }
+
+  function drawNudgeButton(cx, cy, label, color, w, h){
+    w = w || 30; h = h || 24;
+    ctx.save();
+    roundRectPath(cx - w/2, cy - h/2, w, h, 6);
+    ctx.fillStyle = 'rgba(30,41,59,0.9)';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.fillText(label, cx, cy + 4);
+    ctx.restore();
+    return { cx: cx, cy: cy, w: w, h: h };
+  }
+
+  // enregistre un bouton cliquable (callback générique) dans nudgeButtons
+  function registerButton(cx, cy, label, color, onClick, w, h){
+    var rect = drawNudgeButton(cx, cy, label, color, w, h);
+    rect.onClick = onClick;
+    nudgeButtons.push(rect);
+  }
+
+  // dessine (éventuellement) un label et ses 4 boutons -1/-0.1/+0.1/+1 sur une ligne
+  // séparée — position FIXE à l'écran (ne suit plus le curseur objet/écran). Si
+  // text est null, aucun label n'est affiché (rien n'est nommé, juste les boutons).
+  function drawNudgeCluster(cx, labelY, text, color, target, stackDir){
+    var btnY = labelY;
+    if (text){
+      drawLabelPill(cx, labelY, text, color);
+      btnY = labelY + stackDir * 28;
+    }
+    var deltas = [-1, -0.1, 0.1, 1];
+    var offsets = [-57, -19, 19, 57];
+    deltas.forEach(function(d, i){
+      var bx = cx + offsets[i];
+      var label = (d > 0 ? '+' : '') + d;
+      registerButton(bx, btnY, label, color, function(){
+        if (target === 'object'){
+          xA = Math.max(BENCH_LO, Math.min(xL - 0.3, xA + d));
+        } else if (target === 'screen'){
+          xE = Math.max(xL + 0.3, Math.min(BENCH_HI, xE + d));
+        } else if (target === 'vcursor'){
+          yCursor = Math.max(-40, Math.min(40, yCursor + d));
+        }
+      }, 30, 24);
+    });
+  }
+
+  /* ===================== Optique ===================== */
+  function imagePos(){
+    // convention algébrique: OA = xA - xL (négatif, objet toujours à gauche de la lentille)
+    var OA = xA - xL;
+    if (Math.abs(OA + f) < 1e-6) return null; // cas dégénéré
+    var OAprime = (OA * f) / (OA + f);
+    return xL + OAprime;
+  }
+  function grandissement(){
+    var OA = xA - xL;
+    var OAprime = imagePos();
+    if (OAprime === null) return null;
+    return (OAprime - xL) / OA;
+  }
+
+  /* ===================== Décor ===================== */
+  function drawBackground(){
+    ctx.save();
+    ctx.fillStyle = '#0b1220';
+    ctx.fillRect(0, 0, W, H);
+
+    // murs latéraux (perspective très légère, flat, pas de dégradé)
+    var wallW = Math.min(70, W * 0.06);
+    ctx.fillStyle = 'rgba(148,163,184,0.07)';
+    ctx.beginPath();
+    ctx.moveTo(0,0); ctx.lineTo(wallW,0); ctx.lineTo(wallW*0.55,H); ctx.lineTo(0,H);
+    ctx.closePath(); ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(W,0); ctx.lineTo(W-wallW,0); ctx.lineTo(W-wallW*0.55,H); ctx.lineTo(W,H);
+    ctx.closePath(); ctx.fill();
+
+    // ligne de sol discrète
+    ctx.strokeStyle = 'rgba(148,163,184,0.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, H*0.86); ctx.lineTo(W, H*0.86);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawAxis(){
+    ctx.save();
+    // axe pointillé orange
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([7,6]);
+    ctx.beginPath();
+    ctx.moveTo(xToPx(BENCH_LO), axisY);
+    ctx.lineTo(xToPx(BENCH_HI), axisY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // graduations discrètes, ancrées sur la lentille (O = graduation 0) : la règle
+    // suit la lentille quand on la déplace, comme la convention algébrique OA / OA'.
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 1;
+    var relMin = Math.ceil(BENCH_LO - xL);
+    var relMax = Math.floor(BENCH_HI - xL);
+    for (var rel = relMin; rel <= relMax; rel += 1){
+      var cmAbs = xL + rel;
+      var px = xToPx(cmAbs);
+      var big = (rel % 5 === 0);
+      var isZero = (rel === 0);
+      ctx.strokeStyle = isZero ? '#60a5fa' : '#475569';
+      ctx.fillStyle = isZero ? '#93c5fd' : '#94a3b8';
+      ctx.beginPath();
+      ctx.moveTo(px, axisY + (big?7:4));
+      ctx.lineTo(px, axisY - (big?7:4));
+      ctx.stroke();
+      if (big || isZero){
+        ctx.font = isZero ? 'bold 11px system-ui, sans-serif' : '10px system-ui, sans-serif';
+        ctx.fillText(String(rel), px, axisY + 22);
+      }
+    }
+    ctx.restore();
+  }
+
+  // segments dessinés à la main par l'élève (aucun calcul, aucune suggestion — juste
+  // ce qu'il trace lui-même à la souris)
+  function drawLines(){
+    ctx.save();
+    ctx.strokeStyle = '#f1f5f9';
+    ctx.lineWidth = 1.6;
+    lines.forEach(function(ln){
+      ctx.beginPath();
+      ctx.moveTo(xToPx(ln.x1), axisY - ln.y1*pxPerCm);
+      ctx.lineTo(xToPx(ln.x2), axisY - ln.y2*pxPerCm);
+      ctx.stroke();
+    });
+    if (pendingLine){
+      ctx.setLineDash([5,4]);
+      ctx.beginPath();
+      ctx.moveTo(xToPx(pendingLine.x1), axisY - pendingLine.y1*pxPerCm);
+      ctx.lineTo(xToPx(pendingLine.x2), axisY - pendingLine.y2*pxPerCm);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  /* ===================== Curseur de mesure verticale ===================== */
+  // ligne horizontale déplaçable verticalement, pour mesurer une hauteur (objet ou
+  // image) en cm à l'œil — utile pour calculer le grandissement soi-même.
+  var yCursor = 3;
+  function vCursorPx(){ return axisY - yCursor * pxPerCm; }
+  function drawVCursor(){
+    var py = vCursorPx();
+    ctx.save();
+    ctx.strokeStyle = '#a78bfa';
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([5,4]);
+    ctx.beginPath();
+    ctx.moveTo(0, py);
+    ctx.lineTo(W, py);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // juste après le cluster écran (même ligne, position fixe)
+    drawNudgeCluster(560, 50, 'mesure = ' + yCursor.toFixed(1) + ' cm', '#a78bfa', 'vcursor', 1);
+  }
+
+  /* ===================== Bougie / flèche (objet / image) ===================== */
+  // objectStyle bascule le rendu : 'bougie' = réaliste (mais imprécis à mesurer à
+  // cause du volume de la flamme/socle), 'fleche' = juste la flèche AB, précise
+  // pour repérer la pointe exacte au curseur de mesure.
+  var objectStyle = 'bougie';
+
+  // dessine l'objet/image, base en (px, baseY), pointant vers le haut si
+  // heightPx > 0, vers le bas (image renversée) si heightPx < 0.
+  function drawCandle(px, baseY, heightPx, colors, alpha){
+    var dir = heightPx >= 0 ? 1 : -1;
+    var hAbs = Math.max(4, Math.abs(heightPx));
+    var w = Math.max(3, hAbs * 0.13);
+
+    ctx.save();
+    ctx.globalAlpha = (alpha === undefined) ? 1 : alpha;
+    ctx.translate(px, baseY);
+    ctx.scale(1, dir);
+
+    if (objectStyle === 'bougie'){
+      // petit socle / bougeoir doré (plat, pas trop large)
+      ctx.fillStyle = colors.base;
+      ctx.beginPath();
+      ctx.ellipse(0, -hAbs*0.03, w*1.4, w*0.6, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // corps de la bougie (bâton noir)
+      ctx.fillStyle = colors.body;
+      ctx.fillRect(-w*0.5, -hAbs*0.9, w, hAbs*0.78);
+
+      // petite bague dorée à la base de la mèche
+      ctx.fillStyle = colors.base;
+      ctx.fillRect(-w*0.6, -hAbs*0.92, w*1.1, hAbs*0.05);
+
+      // flamme : fine et effilée, à peine plus large que le bâton
+      ctx.fillStyle = colors.flame;
+      ctx.beginPath();
+      ctx.moveTo(0, -hAbs*0.92);
+      ctx.quadraticCurveTo(w*0.85, -hAbs*0.97, 0, -hAbs);
+      ctx.quadraticCurveTo(-w*0.85, -hAbs*0.97, 0, -hAbs*0.92);
+      ctx.closePath();
+      ctx.fill();
+      if (colors.flameCore){
+        ctx.fillStyle = colors.flameCore;
+        ctx.beginPath();
+        ctx.ellipse(0, -hAbs*0.96, w*0.28, w*0.55, 0, 0, Math.PI*2);
+        ctx.fill();
+      }
+    } else if (colors.arrow){
+      // la fameuse flèche AB des modélisations physiques : de l'axe jusqu'en haut,
+      // pointe vers le haut (donc vers le bas une fois l'image renversée) — rien
+      // d'autre, pour une pointe précise à mesurer.
+      var aw = Math.max(3, w*0.9);
+      ctx.strokeStyle = colors.arrow;
+      ctx.fillStyle = colors.arrow;
+      ctx.lineWidth = Math.max(1.5, w*0.22);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -hAbs);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, -hAbs);
+      ctx.lineTo(-aw, -hAbs + aw*1.6);
+      ctx.lineTo(aw, -hAbs + aw*1.6);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  /* ===================== Dessin des éléments ===================== */
+  function drawObject(){
+    var px = xToPx(xA);
+
+    // curseur vertical pointillé repérant la position de l'objet, comme le trait du mur
+    ctx.save();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6,5]);
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, H);
+    ctx.stroke();
+    ctx.restore();
+
+    var heightPx = hA * pxPerCm;
+    drawCandle(px, axisY, heightPx, { base:'#d97706', body:'#1e293b', flame:'#f59e0b', flameCore:'#fef3c7', arrow:'#f8fafc' }, 1);
+
+    // repère + réglage fin, en bas, position FIXE (ne suit plus le curseur objet)
+    var oa = xA - xL;
+    drawNudgeCluster(120, 50, 'OA = ' + oa.toFixed(1) + ' cm', '#f59e0b', 'object', 1);
+  }
+
+  function drawLens(){
+    var px = xToPx(xL);
+    var halfH = H * 0.30;
+    var bulge = 15;
+
+    // axe de symétrie de la lentille, pointillé, reste à l'intérieur de la lentille
+    ctx.save();
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6,5]);
+    ctx.beginPath();
+    ctx.moveTo(px, axisY - halfH);
+    ctx.lineTo(px, axisY + halfH);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+
+    // forme biconvexe symétrique (vésica verticale), courbes cubiques pour un
+    // galbe régulier au lieu du profil pincé/asymétrique de l'ancienne version
+    ctx.beginPath();
+    ctx.moveTo(px, axisY - halfH);
+    ctx.bezierCurveTo(px + bulge, axisY - halfH*0.52, px + bulge, axisY + halfH*0.52, px, axisY + halfH);
+    ctx.bezierCurveTo(px - bulge, axisY + halfH*0.52, px - bulge, axisY - halfH*0.52, px, axisY - halfH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(59,130,246,0.32)';
+    ctx.fill();
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#bfdbfe';
+    ctx.fillText('O', px + 5, axisY + halfH + 22);
+    ctx.restore();
+  }
+
+  function drawScreen(){
+    // mur d'observation ("MUR") : grand pan sombre en perspective, comme le fond de
+    // la pièce, plutôt qu'une simple plaque fine — l'image se forme sur sa face avant.
+    var pxFace = xToPx(xE);
+    var skew = Math.min(50, (W - pxFace) * 0.18);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(pxFace, 0);
+    ctx.lineTo(W, -skew*0.2);
+    ctx.lineTo(W, H + skew*0.2);
+    ctx.lineTo(pxFace, H);
+    ctx.closePath();
+    ctx.fillStyle = '#334155';
+    ctx.fill();
+    ctx.strokeStyle = '#2dd4bf';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6,5]);
+    ctx.beginPath();
+    ctx.moveTo(pxFace, 0); ctx.lineTo(pxFace, H);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.textAlign = 'left';
+    ctx.fillText('ÉCRAN', pxFace + 18, 34);
+    ctx.restore();
+
+    // réglage fin, en haut à droite, position FIXE — nommé par sa propre abscisse
+    // ("Écran"), jamais "OA'" (qui appartient à la formule que l'élève doit trouver)
+    var oaPrime = xE - xL;
+    drawNudgeCluster(340, 50, 'Écran = ' + oaPrime.toFixed(1) + ' cm', '#2dd4bf', 'screen', 1);
+  }
+
+  // halo lumineux (bandes concentriques) utilisé quand l'agrandissement devient
+  // extrême (objet proche du plan focal) : une forme reconnaissable agrandie à l'infini
+  // n'a rien de réaliste, un halo qui grossit et se dilue est bien plus honnête.
+  function drawExtremeGlow(px, py, gammaAbs, maxR){
+    var t = Math.min(1, (gammaAbs - GAMMA_THRESH) / 25);
+    var pulse = 1 + 0.05 * Math.sin(Date.now()/260);
+    var R = (34 + t * (maxR - 34)) * pulse;
+    var bands = [
+      [1.00, 'rgba(100,116,139,0.10)'],
+      [0.78, 'rgba(120,53,15,0.22)'],
+      [0.58, 'rgba(217,119,6,0.38)'],
+      [0.36, 'rgba(250,204,21,0.55)'],
+      [0.16, 'rgba(255,247,237,0.85)']
+    ];
+    ctx.save();
+    ctx.filter = 'blur(3px)';
+    bands.forEach(function(b){
+      ctx.beginPath();
+      ctx.fillStyle = b[1];
+      ctx.arc(px, py, R*b[0], 0, Math.PI*2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  var GAMMA_THRESH = 6; // au-delà, on bascule sur le halo plutôt qu'une forme agrandie
+
+  function drawImageOnScreen(){
+    var pxE = xToPx(xE);
+    var OA = xA - xL;
+    var prox = Math.abs(OA + f); // proche de 0 -> objet proche du plan focal, |gamma| -> ∞
+    var gammaAbs = prox > 1e-9 ? Math.abs(f / (OA + f)) : Infinity;
+
+    ctx.save();
+
+    if (gammaAbs >= GAMMA_THRESH){
+      // grossissement extrême : jamais une forme nette et lisible dans la réalité
+      isAnimating = true;
+      drawExtremeGlow(pxE, axisY, gammaAbs, 190);
+      ctx.restore();
+      return;
+    }
+
+    var xI = imagePos();
+    if (xI === null){ ctx.restore(); return; }
+
+    // l'image réelle ne se forme que du côté opposé à l'objet par rapport à la lentille
+    var estReelle = (xI - xL) > 0; // objet toujours à gauche (xA < xL) dans ce montage
+
+    if (!estReelle){
+      // image virtuelle : jamais projetable -> tache diffuse et dérivante, sans donner
+      // la moindre valeur exploitable (ni position, ni netteté franche)
+      isAnimating = true;
+      var t = Date.now()/450;
+      var blobR = 22;
+      ctx.filter = 'blur(9px)';
+      ctx.globalAlpha = 0.4;
+      var driftX = pxE + Math.sin(t)*5;
+      var driftY = axisY + Math.cos(t*0.7)*3;
+      drawCandle(driftX, driftY, blobR*1.6, { base:'#2dd4bf', body:'#2dd4bf', flame:'#2dd4bf', arrow:'#2dd4bf' }, 1);
+      ctx.restore();
+      return;
+    }
+
+    var ecart = Math.abs(xE - xI);
+    var netteté = Math.max(0, 1 - ecart / 6);       // pilote le flou
+    var visibilite = Math.max(0, 1 - ecart / 10);    // pilote la disparition : en vrai, loin
+                                                      // du point net, on ne voit plus rien
+    var gamma = grandissement();
+    var heightPx = gamma * hA * pxPerCm; // signée : négative -> image renversée
+
+    if (visibilite <= 0.01){ ctx.restore(); return; }
+
+    var blurPx = (1 - netteté) * 7;
+    ctx.filter = blurPx > 0.4 ? ('blur(' + blurPx.toFixed(1) + 'px)') : 'none';
+    // le halo grandit avec le flou et disparaît complètement au point net (sinon
+    // l'image "brille" même nette, ce qui brouille le repérage de la mise au point)
+    ctx.shadowColor = 'rgba(251,191,36,0.55)';
+    ctx.shadowBlur = (1 - netteté) * 16;
+    ctx.globalAlpha = visibilite * (0.35 + 0.65 * netteté);
+
+    drawCandle(pxE, axisY, heightPx, { base:'#b45309', body:'#78350f', flame:'#f59e0b', flameCore:'#fff7ed', arrow:'#f8fafc' }, 1);
+
+    ctx.restore();
+  }
+
+  function drawFrontView(){
+    // encart "ce que l'on voit en regardant l'écran de face" (vue de face, pas de profil)
+    var boxW = 140, boxH = 140;
+    var margin = 14;
+    var bx = W - boxW - margin;
+    var by = margin;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(226,232,240,0.05)';
+    ctx.fillRect(bx, by, boxW, boxH);
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(bx, by, boxW, boxH);
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'center';
+    ctx.fillText('vue de face (écran)', bx + boxW/2, by - 6);
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bx, by, boxW, boxH);
+    ctx.clip();
+
+    var cx = bx + boxW/2;
+    var OAf = xA - xL;
+    var proxF = Math.abs(OAf + f);
+    var gammaAbsF = proxF > 1e-9 ? Math.abs(f / (OAf + f)) : Infinity;
+
+    if (gammaAbsF >= GAMMA_THRESH){
+      isAnimating = true;
+      drawExtremeGlow(cx, by + boxH*0.5, gammaAbsF, boxW*0.65*frontZoom);
+      ctx.restore();
+      drawZoomButtons(bx, by, boxW, boxH);
+      return;
+    }
+
+    var xI = imagePos();
+    if (xI !== null){
+      var estReelle = (xI - xL) > 0;
+      if (!estReelle){
+        // image virtuelle : jamais projetable -> lueur diffuse dérivante, aucune valeur lisible
+        isAnimating = true;
+        var cyBlob = by + boxH*0.5;
+        var t = Date.now()/450;
+        ctx.filter = 'blur(10px)';
+        ctx.globalAlpha = 0.3;
+        drawCandle(cx + Math.sin(t)*4, cyBlob + Math.cos(t*0.6)*3, 34*frontZoom, { base:'#2dd4bf', body:'#2dd4bf', flame:'#2dd4bf', arrow:'#2dd4bf' }, 1);
+      } else {
+        var ecart = Math.abs(xE - xI);
+        var nettete = Math.max(0, 1 - ecart / 6);
+        var visibiliteF = Math.max(0, 1 - ecart / 10);
+        if (visibiliteF > 0.01){
+          var gamma = grandissement();
+          var heightPx = gamma * hA * pxPerCm;
+          var maxH = boxH * 0.62;
+          var scale = Math.min(1, maxH / Math.max(4, Math.abs(heightPx))) * frontZoom;
+          // l'image renversée (cas standard) doit s'ancrer en haut de l'encart pour
+          // rester centrée au lieu de déborder en bas ; l'image droite s'ancre en bas.
+          var cy = (heightPx >= 0) ? (by + boxH*0.62) : (by + boxH*0.38);
+          var blurPx = (1 - nettete) * 7;
+          ctx.filter = blurPx > 0.4 ? ('blur(' + blurPx.toFixed(1) + 'px)') : 'none';
+          ctx.shadowColor = 'rgba(251,191,36,0.55)';
+          ctx.shadowBlur = (1 - nettete) * 16;
+          ctx.globalAlpha = visibiliteF * (0.35 + 0.65 * nettete);
+          drawCandle(cx, cy, heightPx * scale, { base:'#b45309', body:'#78350f', flame:'#f59e0b', flameCore:'#fff7ed', arrow:'#f8fafc' }, 1);
+        }
+      }
+    }
+    ctx.restore();
+    drawZoomButtons(bx, by, boxW, boxH);
+  }
+
+  // boutons +/- qui zooment l'image affichée dans la vue de face (n'affecte que le
+  // rendu de cet encart, pas la physique ni les positions réelles)
+  function drawZoomButtons(bx, by, boxW, boxH){
+    if (LOCKED) return;
+    var y = by + boxH + 16;
+    registerButton(bx + boxW/2 - 19, y, '−', '#94a3b8', function(){
+      frontZoom = Math.max(FRONT_ZOOM_MIN, frontZoom / 1.3);
+    }, 26, 20);
+    registerButton(bx + boxW/2 + 19, y, '+', '#94a3b8', function(){
+      frontZoom = Math.min(FRONT_ZOOM_MAX, frontZoom * 1.3);
+    }, 26, 20);
+  }
+
+  function drawHandles(){
+    if (LOCKED) return;
+    [ ['object', xA, '#f59e0b'], ['lens', xL, '#60a5fa'], ['screen', xE, '#2dd4bf'] ].forEach(function(item){
+      var px = xToPx(item[1]);
+      var y = H - 16;
+      ctx.save();
+      ctx.fillStyle = item[2];
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.arc(px, y, 6, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  function draw(){
+    nudgeButtons = [];
+    isAnimating = false;
+    ctx.clearRect(0,0,W,H);
+    drawBackground();
+    drawScreen();      // mur "MUR" en fond, l'image se forme sur sa surface
+    drawAxis();
+    drawObject();
+    drawImageOnScreen();
+    drawLens();
+    drawHandles();
+    drawVCursor();
+    drawLines();
+    drawFrontView();
+  }
+
+  /* ===================== Interaction (glisser objet / lentille / écran) ===================== */
+  function pointerPos(evt){
+    var rect = canvas.getBoundingClientRect();
+    var clientX = (evt.touches ? evt.touches[0].clientX : evt.clientX);
+    return clientX - rect.left;
+  }
+  function pointerXY(evt){
+    var rect = canvas.getBoundingClientRect();
+    var t = evt.touches ? evt.touches[0] : evt;
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+  }
+  function hitButton(pt){
+    for (var i = 0; i < nudgeButtons.length; i++){
+      var b = nudgeButtons[i];
+      if (Math.abs(pt.x - b.cx) <= b.w/2 && Math.abs(pt.y - b.cy) <= b.h/2) return b;
+    }
+    return null;
+  }
+
+  function hitTest(px){
+    var candidates = [
+      ['object', Math.abs(px - xToPx(xA))],
+      ['lens',   Math.abs(px - xToPx(xL))],
+      ['screen', Math.abs(px - xToPx(xE))]
+    ];
+    candidates.sort(function(a,b){ return a[1]-b[1]; });
+    var thresh = 16;
+    return candidates[0][1] < thresh ? candidates[0][0] : null;
+  }
+
+  function showHint(msg){
+    hint.textContent = msg;
+    hint.classList.add('show');
+    clearTimeout(showHint._t);
+    showHint._t = setTimeout(function(){ hint.classList.remove('show'); }, 1400);
+  }
+
+  function onDown(evt){
+    var pt = pointerXY(evt);
+
+    if (commentMode){
+      addCommentBubble(pt.x, pt.y);
+      evt.preventDefault();
+      return;
+    }
+    if (lineMode){
+      pendingLine = { x1: pxToX(pt.x), y1: (axisY - pt.y)/pxPerCm, x2: pxToX(pt.x), y2: (axisY - pt.y)/pxPerCm };
+      ensureLoop();
+      evt.preventDefault();
+      return;
+    }
+    if (LOCKED) return;
+
+    var btn = hitButton(pt);
+    if (btn){
+      btn.onClick();
+      draw();
+      ensureLoop();
+      evt.preventDefault();
+      return;
+    }
+    if (Math.abs(pt.y - vCursorPx()) < 9){
+      drag = 'vcursor';
+      canvas.style.cursor = 'row-resize';
+      ensureLoop();
+      evt.preventDefault();
+      return;
+    }
+    var target = hitTest(pt.x);
+    if (target){
+      drag = target;
+      canvas.style.cursor = 'grabbing';
+      ensureLoop();
+      evt.preventDefault();
+    }
+  }
+  function onMove(evt){
+    if (lineMode){
+      if (pendingLine){
+        var pt2 = pointerXY(evt);
+        pendingLine.x2 = pxToX(pt2.x);
+        pendingLine.y2 = (axisY - pt2.y)/pxPerCm;
+        draw();
+        evt.preventDefault();
+      }
+      return;
+    }
+    if (!drag) {
+      if (!LOCKED){
+        var pt0 = pointerXY(evt);
+        if (Math.abs(pt0.y - vCursorPx()) < 9){
+          canvas.style.cursor = 'row-resize';
+        } else {
+          canvas.style.cursor = hitTest(pt0.x) ? 'grab' : 'default';
+        }
+      }
+      return;
+    }
+    if (drag === 'vcursor'){
+      var ptY = pointerXY(evt).y;
+      yCursor = Math.max(-40, Math.min(40, (axisY - ptY) / pxPerCm));
+      draw();
+      ensureLoop();
+      evt.preventDefault();
+      return;
+    }
+    var px = pointerPos(evt);
+    var xCm = pxToX(px);
+    xCm = Math.max(BENCH_LO, Math.min(BENCH_HI, xCm));
+
+    if (drag === 'object'){
+      // l'objet reste toujours à gauche de la lentille
+      xCm = Math.min(xCm, xL - 0.5);
+      xA = Math.max(BENCH_LO, xCm);
+    } else if (drag === 'lens'){
+      // la lentille reste toujours entre l'objet et l'écran
+      xCm = Math.max(xCm, xA + 0.5);
+      xL = xCm;
+      if (xE < xL + 0.5) xE = Math.min(BENCH_HI, xL + 0.5);
+    } else if (drag === 'screen'){
+      // l'écran reste toujours après la lentille
+      xCm = Math.max(xCm, xL + 0.5);
+      xE = xCm;
+    }
+    draw();
+    ensureLoop();
+    evt.preventDefault();
+  }
+  function onUp(){
+    if (lineMode){
+      if (pendingLine){
+        lines.push(pendingLine);
+        pendingLine = null;
+        draw();
+      }
+      return;
+    }
+    if (drag){
+      drag = null;
+      canvas.style.cursor = lineMode ? 'crosshair' : 'default';
+    }
+  }
+
+  canvas.addEventListener('mousedown', onDown);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  canvas.addEventListener('touchstart', onDown, {passive:false});
+  canvas.addEventListener('touchmove', onMove, {passive:false});
+  canvas.addEventListener('touchend', onUp);
+
+  if (!LOCKED){
+    showHint('Fais glisser l\'objet, la lentille ou l\'écran le long du banc');
+  }
+
+  /* ===================== Boucle ===================== */
+  // ne tourne à 60 im/s que pendant un glissement ou une animation réellement active
+  // (halo, image virtuelle qui dérive) ; sinon un seul redessin par action suffit.
+  var loopActive = false;
+  function loop(){
+    draw();
+    if (isAnimating || drag){
+      requestAnimationFrame(loop);
+    } else {
+      loopActive = false;
+    }
+  }
+  function ensureLoop(){
+    if (!loopActive){
+      loopActive = true;
+      requestAnimationFrame(loop);
+    }
+  }
+
+  resize();
+  ensureLoop();
+})();
+</script>
+</body>
+</html>
