@@ -382,19 +382,43 @@ function layoutCups(){
       var slots = SLOTS_FOR_COUNT[n];
       group.forEach(function(c, i){
         c.shelf = lvl; // reaffecte l'etagere d'affichage (purement visuel)
+        c.baseCx = slots[i];
         c.cx = slots[i];
+        // Mode chaos uniquement : le gobelet fait un lent aller-retour sur
+        // son etagere (ambiance stand de tir de fete foraine). Amplitude
+        // volontairement petite pour ne jamais chevaucher le gobelet
+        // voisin (ecart entre emplacements = 170px, largeur max d'un
+        // gobelet 'p' ~97px -> 28px de marge de chaque cote est sans
+        // risque). Periode et phase tirees du meme PRNG que la disposition
+        // -> reproductible pour un meme lien (Z/seed/order).
+        c.moveAmp = 26;
+        c.movePeriod = 4200 + rng() * 2600; // 4.2s a 6.8s par aller-retour complet
+        c.movePhase = rng() * Math.PI * 2;
       });
     });
     return;
   }
 
-  // "order" et "mix" : chaque gobelet reste sur son etagere logique d'origine.
+  // "order" et "mix" : chaque gobelet reste sur son etagere logique d'origine,
+  // immobile (pas d'aller-retour hors mode chaos).
   [1,2,3].forEach(function(lvl){
     var group = CUPS.filter(function(c){ return c.shelf === lvl; });
     if (order === 'mix') shuffleInPlace(group, rng);
     var slots = SLOTS_FOR_COUNT[group.length];
-    group.forEach(function(c, i){ c.cx = slots[i]; });
+    group.forEach(function(c, i){
+      c.baseCx = slots[i];
+      c.cx = slots[i];
+      c.moveAmp = 0;
+    });
   });
+}
+
+// Position horizontale courante du gobelet a l'instant "now" : immobile
+// (renvoie baseCx) sauf en mode chaos ou il oscille lentement autour de
+// baseCx (mouvement sinusoidal, dephase par gobelet).
+function cupCurrentCx(c, now){
+  if (!c.moveAmp) return c.baseCx;
+  return c.baseCx + c.moveAmp * Math.sin((now / c.movePeriod) * Math.PI * 2 + c.movePhase);
 }
 layoutCups();
 
@@ -485,22 +509,94 @@ function drawDecor(){
     ctx.stroke();
   }
 
-  // petite decoration murale (etagere deco / cadre) pour habiller le fond
-  ctx.save();
-  ctx.globalAlpha = 0.5;
-  ctx.fillStyle = "#c3d2e0";
-  ctx.beginPath();
-  ctx.ellipse(80, 60, 34, 34, 0, 0, Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle = "#f7d774";
-  ctx.beginPath();
-  ctx.arc(80, 55, 14, 0, Math.PI*2);
-  ctx.fill();
-  ctx.restore();
+  // habillage "fete foraine" du haut de la scene (auvent raye + guirlande
+  // de fanions/loupiotes) -- remplace l'ancienne petite deco murale.
+  drawFairgroundTrim();
 
   [1,2,3].forEach(function(lvl){
     drawShelf(SHELF_Y[lvl]);
   });
+}
+
+// Auvent de stand raye (rouge/creme, bord festonne) + guirlande de fanions
+// et loupiotes suspendue juste dessous -- ambiance stand de tir de fete
+// foraine (cf. Carnival, Sega 1980).
+function drawFairgroundTrim(){
+  var awningH = 40;
+  var stripeW = 26;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, VW, awningH);
+  ctx.clip();
+  var stripeColors = ["#d94f3d", "#f3e4c4"];
+  var ci = 0;
+  for (var sx = -stripeW; sx < VW + stripeW; sx += stripeW){
+    ctx.fillStyle = stripeColors[ci % 2];
+    ctx.beginPath();
+    ctx.moveTo(sx, 0);
+    ctx.lineTo(sx + stripeW, 0);
+    ctx.lineTo(sx + stripeW - awningH*0.35, awningH);
+    ctx.lineTo(sx - awningH*0.35, awningH);
+    ctx.closePath();
+    ctx.fill();
+    ci++;
+  }
+  ctx.restore();
+
+  // bord festonne sous l'auvent
+  ctx.fillStyle = "#f3e4c4";
+  for (var fx2 = 6; fx2 < VW; fx2 += 24){
+    ctx.beginPath();
+    ctx.arc(fx2, awningH, 10, 0, Math.PI);
+    ctx.fill();
+  }
+
+  // guirlande (corde qui pend en courbe) + fanions + loupiotes
+  var p0 = { x: 26, y: awningH + 6 };
+  var p1 = { x: VW/2, y: awningH + 34 };
+  var p2 = { x: VW - 26, y: awningH + 6 };
+  function buntingPoint(t){
+    var mt = 1 - t;
+    return {
+      x: mt*mt*p0.x + 2*mt*t*p1.x + t*t*p2.x,
+      y: mt*mt*p0.y + 2*mt*t*p1.y + t*t*p2.y
+    };
+  }
+
+  ctx.strokeStyle = "rgba(90,70,50,0.55)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (var s=0; s<=20; s++){
+    var ptS = buntingPoint(s/20);
+    if (s===0) ctx.moveTo(ptS.x, ptS.y); else ctx.lineTo(ptS.x, ptS.y);
+  }
+  ctx.stroke();
+
+  var buntingColors = ["#e0483c", "#f4c542", "#2e9e6b", "#3f7fbf", "#9b59b6"];
+  var nFlags = 11;
+  for (var i=0;i<nFlags;i++){
+    var ptF = buntingPoint((i+0.5)/nFlags);
+    ctx.fillStyle = buntingColors[i % buntingColors.length];
+    ctx.beginPath();
+    ctx.moveTo(ptF.x - 9, ptF.y);
+    ctx.lineTo(ptF.x + 9, ptF.y);
+    ctx.lineTo(ptF.x, ptF.y + 20);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  var nBulbs = 14;
+  for (var b=0;b<nBulbs;b++){
+    var ptB = buntingPoint(b/(nBulbs-1));
+    ctx.save();
+    ctx.shadowColor = "#ffe9a8";
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = "#ffe9a8";
+    ctx.beginPath();
+    ctx.arc(ptB.x, ptB.y + 3, 3, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawShelf(y){
@@ -1086,6 +1182,11 @@ function render(now){
   // -- sinon toute l'animation se figerait definitivement (plus aucun
   // clic ne fonctionnerait) a la moindre erreur ponctuelle sur une frame.
   try {
+    // Met a jour la position horizontale courante de chaque gobelet (aller-
+    // retour en mode chaos, immobile sinon) -- utilisee a la fois pour le
+    // dessin et pour le hit-test des clics/survols (cupHitBox lit c.cx).
+    CUPS.forEach(function(c){ c.cx = cupCurrentCx(c, now); });
+
     ctx.clearRect(0,0,VW,VH);
     drawDecor();
     CUPS.forEach(function(c, i){
