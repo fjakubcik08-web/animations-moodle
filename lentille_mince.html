@@ -68,6 +68,12 @@
   }
   .cb-txt { padding:5px 8px; color:#f1f5f9; outline:none; white-space:pre-wrap; word-break:break-word; }
   .cb-txt:empty::before { content: attr(data-ph); color:#64748b; }
+  #colorPaletteWrap { display:none; align-items:center; gap:5px; }
+  .colorSwatch {
+    width:20px; height:20px; border-radius:50%; border:2px solid #475569;
+    cursor:pointer; padding:0;
+  }
+  .colorSwatch.selected { border-color:#fff; box-shadow:0 0 0 2px #3b82f6; }
 </style>
 </head>
 <body>
@@ -86,6 +92,15 @@
         </svg>
       </button>
       <button id="clearLinesBtn" class="toolbtn plain" title="Effacer les traits" type="button">effacer</button>
+      <div id="colorPaletteWrap">
+        <button class="colorSwatch selected" data-color="#ffffff" style="background:#ffffff" title="Blanc" type="button"></button>
+        <button class="colorSwatch" data-color="#3b82f6" style="background:#3b82f6" title="Bleu" type="button"></button>
+        <button class="colorSwatch" data-color="#ef4444" style="background:#ef4444" title="Rouge" type="button"></button>
+        <button class="colorSwatch" data-color="#22c55e" style="background:#22c55e" title="Vert" type="button"></button>
+        <button class="colorSwatch" data-color="#a78bfa" style="background:#a78bfa" title="Violet" type="button"></button>
+        <button class="colorSwatch" data-color="#eab308" style="background:#eab308" title="Jaune" type="button"></button>
+        <button class="colorSwatch" data-color="#f97316" style="background:#f97316" title="Orange" type="button"></button>
+      </div>
       <span style="width:1px; height:22px; background:#475569; margin:0 2px;"></span>
       <button id="styleArrowBtn" class="toolbtn" title="Objet/image = flèche seule (mesure précise)" type="button">
         <svg width="16" height="16" viewBox="0 0 16 16">
@@ -198,11 +213,27 @@
   var lineMode = false;
   var lines = [];       // segments finalisés, en coordonnées cm (x) / cm depuis l'axe (y)
   var pendingLine = null;
+  var hoverPt = null;   // dernière position souris (px canvas) en mode ligne, pour la loupe
+
+  // palette de couleurs pour le tracé à la main
+  var colorPaletteWrap = document.getElementById('colorPaletteWrap');
+  var currentLineColor = '#ffffff';
+  var colorSwatches = Array.prototype.slice.call(document.querySelectorAll('.colorSwatch'));
+  colorSwatches.forEach(function(sw){
+    sw.addEventListener('click', function(){
+      currentLineColor = sw.getAttribute('data-color');
+      colorSwatches.forEach(function(s){ s.classList.remove('selected'); });
+      sw.classList.add('selected');
+    });
+  });
+
   lineToolBtn.addEventListener('click', function(){
     lineMode = !lineMode;
     lineToolBtn.classList.toggle('active', lineMode);
     if (lineMode){ commentMode = false; commentToolBtn.classList.remove('active'); }
     canvas.style.cursor = lineMode ? 'crosshair' : 'default';
+    colorPaletteWrap.style.display = lineMode ? 'flex' : 'none';
+    if (!lineMode) hoverPt = null;
     draw();
   });
   clearLinesBtn.addEventListener('click', function(){
@@ -238,8 +269,14 @@
   commentToolBtn.addEventListener('click', function(){
     commentMode = !commentMode;
     commentToolBtn.classList.toggle('active', commentMode);
-    if (commentMode){ lineMode = false; lineToolBtn.classList.remove('active'); }
+    if (commentMode){
+      lineMode = false;
+      lineToolBtn.classList.remove('active');
+      colorPaletteWrap.style.display = 'none';
+      hoverPt = null;
+    }
     canvas.style.cursor = commentMode ? 'copy' : 'default';
+    draw();
   });
 
   function addCommentBubble(x, y){
@@ -330,6 +367,7 @@
     lineToolBtn.style.display = 'none';
     clearLinesBtn.style.display = 'none';
     commentToolBtn.style.display = 'none';
+    colorPaletteWrap.style.display = 'none';
   }
   if (CFG.toolsExport === 0){
     exportBtn.style.display = 'none';
@@ -532,15 +570,16 @@
   // ce qu'il trace lui-même à la souris)
   function drawLines(){
     ctx.save();
-    ctx.strokeStyle = '#f1f5f9';
     ctx.lineWidth = 1.6;
     lines.forEach(function(ln){
+      ctx.strokeStyle = ln.color || '#f1f5f9';
       ctx.beginPath();
       ctx.moveTo(xToPx(ln.x1), axisY - ln.y1*pxPerCm);
       ctx.lineTo(xToPx(ln.x2), axisY - ln.y2*pxPerCm);
       ctx.stroke();
     });
     if (pendingLine){
+      ctx.strokeStyle = pendingLine.color || '#f1f5f9';
       ctx.setLineDash([5,4]);
       ctx.beginPath();
       ctx.moveTo(xToPx(pendingLine.x1), axisY - pendingLine.y1*pxPerCm);
@@ -548,6 +587,49 @@
       ctx.stroke();
       ctx.setLineDash([]);
     }
+    ctx.restore();
+  }
+
+  // loupe fixe (mode tracé) : zoom autour du curseur pour un tracé précis.
+  // fenêtre en position fixe (coin haut-droit), zone source affichée en pointillé.
+  function drawMagnifier(){
+    if (!lineMode || !hoverPt) return;
+    var dpr = window.devicePixelRatio || 1;
+    var zoom = 3;
+    var size = 150;
+    var srcSize = size / zoom;
+    var sx = Math.max(0, Math.min(W - srcSize, hoverPt.x - srcSize/2));
+    var sy = Math.max(0, Math.min(H - srcSize, hoverPt.y - srcSize/2));
+    var dx = W - size - 14, dy = 14;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(dx, dy, size, size);
+    ctx.clip();
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(dx, dy, size, size);
+    ctx.drawImage(canvas, sx*dpr, sy*dpr, srcSize*dpr, srcSize*dpr, dx, dy, size, size);
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(dx, dy, size, size);
+    ctx.strokeStyle = currentLineColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(dx + size/2 - 9, dy + size/2);
+    ctx.lineTo(dx + size/2 + 9, dy + size/2);
+    ctx.moveTo(dx + size/2, dy + size/2 - 9);
+    ctx.lineTo(dx + size/2, dy + size/2 + 9);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = '#94a3b8';
+    ctx.setLineDash([3,3]);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx, sy, srcSize, srcSize);
     ctx.restore();
   }
 
@@ -949,6 +1031,7 @@
     drawVCursor();
     drawLines();
     drawFrontView();
+    drawMagnifier();
   }
 
   /* ===================== Interaction (glisser objet / lentille / écran) ===================== */
@@ -997,7 +1080,7 @@
       return;
     }
     if (lineMode){
-      pendingLine = { x1: pxToX(pt.x), y1: (axisY - pt.y)/pxPerCm, x2: pxToX(pt.x), y2: (axisY - pt.y)/pxPerCm };
+      pendingLine = { x1: pxToX(pt.x), y1: (axisY - pt.y)/pxPerCm, x2: pxToX(pt.x), y2: (axisY - pt.y)/pxPerCm, color: currentLineColor };
       ensureLoop();
       evt.preventDefault();
       return;
@@ -1028,13 +1111,15 @@
   }
   function onMove(evt){
     if (lineMode){
+      var ptHover = pointerXY(evt);
+      hoverPt = ptHover;
       if (pendingLine){
-        var pt2 = pointerXY(evt);
-        pendingLine.x2 = pxToX(pt2.x);
-        pendingLine.y2 = (axisY - pt2.y)/pxPerCm;
-        draw();
+        pendingLine.x2 = pxToX(ptHover.x);
+        pendingLine.y2 = (axisY - ptHover.y)/pxPerCm;
         evt.preventDefault();
       }
+      ensureLoop();
+      draw();
       return;
     }
     if (!drag) {
@@ -1097,6 +1182,9 @@
   canvas.addEventListener('touchstart', onDown, {passive:false});
   canvas.addEventListener('touchmove', onMove, {passive:false});
   canvas.addEventListener('touchend', onUp);
+  canvas.addEventListener('mouseleave', function(){
+    if (!pendingLine){ hoverPt = null; draw(); }
+  });
 
   if (!LOCK_OBJ || !LOCK_LENS || !LOCK_SCR){
     var movableParts = [];
