@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tableau d'avancement</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background:transparent; color:#1f2937; }
+  .wrap { padding:10px 12px; }
+  table { border-collapse: collapse; width:100%; font-size:14px; table-layout:fixed; }
+  th, td { border:1px solid #d0d7de; padding:6px 8px; text-align:center; overflow-wrap:break-word; }
+  th { background:#e5e7eb; font-weight:600; }
+  td.label { text-align:left; background:#f6f8fa; font-weight:600; white-space:nowrap; }
+  th.sep, td.sep { background:#e5e7eb; color:#374151; font-weight:600; width:28px; padding:6px 4px; }
+  td.sep { background:#fff; }
+  td.avanc { background:#f6f8fa; font-weight:600; white-space:nowrap; }
+  .ef-top, .ef-top.sep { border-bottom:none; }
+  .ef-bottom, .ef-bottom.sep { border-top:none; }
+  .ef-bottom input { margin-top:-1px; }
+  input[type=text] {
+    width:100%; min-width:70px; padding:5px 6px; border:1px solid #cbd5e1; border-radius:5px;
+    font-size:14px; font-family:"Courier New", monospace; text-align:center; background:#fff;
+  }
+  input[type=text]:focus { outline:2px solid #2563eb; border-color:#2563eb; }
+  input.ok { border-color:#16a34a; background:#f0fdf4; }
+  input.ko { border-color:#dc2626; background:#fef2f2; }
+  .code-cell { font-family:"Courier New", monospace; font-weight:700; font-size:12px; }
+  .code-cell.ok { color:#166534; }
+  .code-cell.ko { color:#7f1d1d; }
+  .code-cell.empty { color:#9ca3af; font-weight:400; }
+  .bottom-row { display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  button {
+    padding:8px 16px; border:none; border-radius:6px; background:#2563eb; color:#fff;
+    font-size:14px; font-weight:600; cursor:pointer;
+  }
+  button:hover { background:#1d4ed8; }
+  .copy-btn { background:#e5e7eb; color:#111827; padding:4px 8px; font-size:12px; margin-left:4px; }
+  .copy-btn:hover { background:#d1d5db; }
+  .statut-glob { font-size:13px; color:#6b7280; }
+  .unit-note { font-size:12px; color:#6b7280; margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <table id="tbl"></table>
+  <div class="bottom-row">
+    <button id="btn-valider" type="button">Valider le tableau</button>
+    <span class="statut-glob" id="statut-glob"></span>
+  </div>
+  <div class="unit-note" id="unit-note"></div>
+</div>
+
+<script>
+/* =========================================================================
+   tableau_avancement.html -- tableau d'avancement (EI / en cours (x) / EF)
+   rempli par l'eleve, valide par comparaison NUMERIQUE (substitution de
+   plusieurs valeurs de x pour la ligne "en cours", tolerance relative pour
+   les lignes EI/EF).
+
+   Le parametre d'URL ne contient jamais de coefficient ni de formule
+   symbolique : uniquement les valeurs numeriques deja calculees cote
+   Python (etats + valeurs attendues aux points de test x_tests).
+
+   3 codes de ligne (EI-XXXXXX, EC-XXXXXX, EF-XXXXXX) + 1 code par colonne
+   (C1-XXXXXX, C2-XXXXXX, ...) -- voir tableau_avancement_iframe.py pour les
+   fonctions miroir cote Python (compute_code_ei/ec/ef/col).
+   ========================================================================= */
+
+/* ---------- parser d'expression (identique a expr_saisie.html) ---------- */
+const FUNCS = { sin: Math.sin, cos: Math.cos, tan: Math.tan, exp: Math.exp,
+                ln: Math.log, log: Math.log10, sqrt: Math.sqrt, abs: Math.abs };
+const CONSTS = { pi: Math.PI, e: Math.E };
+
+function tokenize(s) {
+  const tokens = [];
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === ' ' || c === '\t' || c === '\n') { i++; continue; }
+    if (/[0-9.]/.test(c)) {
+      let j = i;
+      while (j < s.length && /[0-9.]/.test(s[j])) j++;
+      tokens.push({ t: 'NUM', v: parseFloat(s.slice(i, j)) });
+      i = j;
+      continue;
+    }
+    if (/[a-zA-Z]/.test(c)) {
+      let j = i;
+      while (j < s.length && /[a-zA-Z0-9_]/.test(s[j])) j++;
+      tokens.push({ t: 'ID', v: s.slice(i, j) });
+      i = j;
+      continue;
+    }
+    if (c === '*' && s[i + 1] === '*') { tokens.push({ t: '^' }); i += 2; continue; }
+    if ('+-*/^()'.includes(c)) { tokens.push({ t: c }); i++; continue; }
+    throw new Error('caractere inconnu: ' + c);
+  }
+  return tokens;
+}
+
+function evalExpr(str, vars) {
+  const tokens = tokenize(str);
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const advance = () => tokens[pos++];
+  const atStart = () => { const t = peek(); return t && (t.t === 'NUM' || t.t === 'ID' || t.t === '('); };
+
+  function parseAtom() {
+    const t = advance();
+    if (!t) throw new Error('fin inattendue');
+    if (t.t === 'NUM') return t.v;
+    if (t.t === '(') {
+      const v = parseAddSub();
+      if (!peek() || peek().t !== ')') throw new Error(') attendue');
+      advance();
+      return v;
+    }
+    if (t.t === 'ID') {
+      const name = t.v;
+      if (peek() && peek().t === '(') {
+        advance();
+        const arg = parseAddSub();
+        if (!peek() || peek().t !== ')') throw new Error(') attendue');
+        advance();
+        if (FUNCS.hasOwnProperty(name)) return FUNCS[name](arg);
+        throw new Error('fonction inconnue: ' + name);
+      }
+      if (CONSTS.hasOwnProperty(name)) return CONSTS[name];
+      if (vars.hasOwnProperty(name)) return vars[name];
+      throw new Error('variable inconnue: ' + name);
+    }
+    throw new Error('token inattendu');
+  }
+  function parseUnary() {
+    if (peek() && peek().t === '-') { advance(); return -parseUnary(); }
+    return parsePower();
+  }
+  function parsePower() {
+    const base = parseAtom();
+    if (peek() && peek().t === '^') { advance(); return Math.pow(base, parseUnary()); }
+    return base;
+  }
+  function parseMulDiv() {
+    let v = parseUnary();
+    while (true) {
+      if (peek() && peek().t === '*') { advance(); v *= parseUnary(); }
+      else if (peek() && peek().t === '/') { advance(); v /= parseUnary(); }
+      else if (atStart()) { v *= parseUnary(); }
+      else break;
+    }
+    return v;
+  }
+  function parseAddSub() {
+    let v = parseMulDiv();
+    while (peek() && (peek().t === '+' || peek().t === '-')) {
+      const op = advance().t;
+      const rhs = parseMulDiv();
+      v = op === '+' ? v + rhs : v - rhs;
+    }
+    return v;
+  }
+  const result = parseAddSub();
+  if (pos !== tokens.length) throw new Error('caracteres en trop');
+  return result;
+}
+
+/* ---------- decodage XOR + base64 ---------- */
+const XOR_KEY = "TABAVANCEFJ2026";
+
+function b64urlDecodeToBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function xorBytes(bytes, key) {
+  const kb = new TextEncoder().encode(key);
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ kb[i % kb.length];
+  return out;
+}
+function decodeParams(code) {
+  const xored = b64urlDecodeToBytes(code);
+  const raw = xorBytes(xored, XOR_KEY);
+  const text = new TextDecoder('utf-8').decode(raw);
+  return JSON.parse(text);
+}
+
+/* ---------- hash6 (miroir exact de FJmoodl.py, Math.imul obligatoire) ---------- */
+function hash6(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  let b36;
+  if (h === 0) { b36 = '0'; }
+  else {
+    const alpha = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const digits = [];
+    let n = h;
+    while (n) { digits.push(alpha[n % 36]); n = Math.floor(n / 36); }
+    b36 = digits.reverse().join('');
+  }
+  return b36.padStart(6, '0').slice(0, 6);
+}
+function jsNum(v) {
+  return (v === Math.trunc(v)) ? String(Math.trunc(v)) : String(v);
+}
+function codeFrom(vals, prefix) {
+  return prefix + '-' + hash6(vals.map(jsNum).join('|'));
+}
+
+/* ---------- parametres ---------- */
+const qs = new URLSearchParams(location.search);
+const rawCode = qs.get('p') || qs.get('param') || '';
+let P = null;
+try { P = decodeParams(rawCode); } catch (e) { P = null; }
+if (!P) {
+  // valeurs de secours pour test local : 2H2 + O2 -> 2H2O, EI={H2:3,O2:2,H2O:0}
+  // 2 H2 + O2 -> 2 H2O ; EI H2=3, O2=2, H2O=0 mol ; xmax=1.5 (H2 limitant)
+  P = {
+    species: ["H2", "O2", "H2O"], labels: ["H₂", "O₂", "H₂O"],
+    coeffs: [2, 1, 2], n_reactifs: 2,
+    x_tests: [0.2, 0.5, 0.9, 1.3],
+    xmax_tests: [0.3, 0.6, 1.0, 1.4],
+    expected_EI: [3, 2, 0],
+    expected_Ei: [[2.6, 2, 1.2, 0.4], [1.8, 1.5, 1.1, 0.7], [0.4, 1, 1.8, 2.6]],
+    expected_EFexpr: [[2.4, 1.8, 1, 0.2], [1.7, 1.4, 1, 0.6], [0.6, 1.2, 2, 2.8]],
+    expected_EF: [0, 0.5, 3],
+    precision: 0.02, unit: "mol", show_feedback: false
+  };
+}
+if (P.show_feedback === undefined) P.show_feedback = false;
+
+const n = P.species.length;
+const configError = !(Array.isArray(P.expected_EI) && P.expected_EI.length === n &&
+                       Array.isArray(P.expected_Ei) && P.expected_Ei.length === n &&
+                       Array.isArray(P.expected_EFexpr) && P.expected_EFexpr.length === n &&
+                       Array.isArray(P.expected_EF) && P.expected_EF.length === n &&
+                       Array.isArray(P.x_tests) && P.x_tests.length > 0 &&
+                       Array.isArray(P.xmax_tests) && P.xmax_tests.length > 0);
+
+document.getElementById('unit-note').textContent = configError
+  ? 'Erreur de configuration du tableau.'
+  : `Valeurs en ${P.unit || ''} -- decimales avec "." ou ",".`;
+
+/* ---------- construction du tableau (format classique : colonne
+   "Avancement" + equation etalee en en-tete avec separateurs +/->) ---------- */
+const tbl = document.getElementById('tbl');
+
+// descripteurs de colonnes apres les 2 premieres (Etat du systeme / Avancement)
+function buildColumns() {
+  const cols = [];
+  for (let j = 0; j < n; j++) {
+    cols.push({ type: 'species', idx: j });
+    if (j < n - 1) cols.push({ type: 'sep', text: (j === P.n_reactifs - 1) ? '→' : '+' });
+  }
+  return cols;
+}
+const COLS = buildColumns();
+
+function coeffLabel(j) {
+  const c = P.coeffs && P.coeffs[j];
+  const prefix = (c && c !== 1) ? (c + ' ') : '';
+  return prefix + P.labels[j];
+}
+
+function buildColgroup() {
+  const nSep = COLS.filter(c => c.type === 'sep').length;
+  const pctLabel = 14, pctAvanc = 8, pctSep = 3, pctCode = 15;
+  const reste = Math.max(100 - pctLabel - pctAvanc - pctCode - pctSep * nSep, 10 * n);
+  const pctSpecies = reste / n;
+  let html = `<colgroup><col style="width:${pctLabel}%"><col style="width:${pctAvanc}%">`;
+  for (const col of COLS) {
+    html += col.type === 'species'
+      ? `<col style="width:${pctSpecies}%">`
+      : `<col style="width:${pctSep}%">`;
+  }
+  html += `<col style="width:${pctCode}%"></colgroup>`;
+  return html;
+}
+
+function buildTable() {
+  let html = buildColgroup();
+  html += '<tr><th>Etat du système</th><th>Avancement</th>';
+  for (const col of COLS) {
+    if (col.type === 'species') html += `<th>${coeffLabel(col.idx)}</th>`;
+    else html += `<th class="sep">${col.text}</th>`;
+  }
+  html += '<th>Code</th></tr>';
+
+  function bodyRow(label, avanc, inputPrefix, placeholder, extraCellClass, skipLabelAvanc, codeId) {
+    let row = '<tr>';
+    if (!skipLabelAvanc) {
+      row += `<td class="label"${label.rowspan ? ' rowspan="2"' : ''}>${label.text || label}</td>` +
+             `<td class="avanc"${label.rowspan ? ' rowspan="2"' : ''}>${avanc}</td>`;
+    }
+    for (const col of COLS) {
+      if (col.type === 'species') {
+        row += `<td${extraCellClass ? ` class="${extraCellClass}"` : ''}>` +
+               `<input type="text" id="${inputPrefix}-${col.idx}"` +
+               (placeholder ? ` placeholder="${placeholder}"` : '') +
+               ` autocomplete="off" spellcheck="false"></td>`;
+      } else {
+        row += `<td class="sep${extraCellClass ? ' ' + extraCellClass : ''}"></td>`;
+      }
+    }
+    row += `<td class="code-cell empty${extraCellClass ? ' ' + extraCellClass : ''}" id="${codeId}">—</td>`;
+    row += '</tr>';
+    return row;
+  }
+
+  html += bodyRow('Etat initial (t = 0 s)', 'x = 0', 'EI', null, null, false, 'code-EI');
+  html += bodyRow('Etat intermédiaire', 'x', 'EC', 'fonction de x', null, false, 'code-EC');
+  html += bodyRow({ text: 'Etat final', rowspan: true }, 'x_max', 'EFE', 'fonction de x_max', 'ef-top', false, 'code-EFE');
+  html += bodyRow(null, null, 'EFN', null, 'ef-bottom', true, 'code-EFN');
+
+  // ligne "Code colonne" en bas -- un code par espece, au pied de sa colonne
+  html += '<tr><td class="label" colspan="2">Code colonne</td>';
+  for (const col of COLS) {
+    if (col.type === 'species') html += `<td class="code-cell empty" id="code-col-${col.idx}">—</td>`;
+    else html += '<td class="sep"></td>';
+  }
+  html += '<td></td></tr>';
+
+  tbl.innerHTML = html;
+}
+buildTable();
+
+/* ---------- validation ---------- */
+function withinTol(actual, expected, precision) {
+  if (!isFinite(actual) || !isFinite(expected)) return false;
+  const tol = (expected === 0) ? Math.max(precision, 1e-4) : Math.abs(expected) * precision;
+  return Math.abs(actual - expected) <= tol;
+}
+function parseNum(raw) {
+  return parseFloat(String(raw).trim().replace(',', '.'));
+}
+function round4(v) {
+  return Math.round(v * 10000) / 10000;
+}
+
+function showCode(id, codeStr, ok) {
+  // le code est TOUJOURS affiche (correspond a ce que l'eleve a tape, juste
+  // ou faux) -- c'est Moodle qui compare au bon code pour noter. "ok" ne
+  // sert qu'a la couleur indicative (si show_feedback est actif).
+  const el = document.getElementById(id);
+  const keep = (el.className.match(/ef-(top|bottom)/) || [''])[0];
+  el.innerHTML = '';
+  el.className = ['code-cell', P.show_feedback ? (ok ? 'ok' : 'ko') : '', keep]
+    .filter(Boolean).join(' ');
+  const val = document.createElement('span');
+  val.textContent = codeStr;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'copy-btn';
+  btn.textContent = 'Copier';
+  btn.addEventListener('click', () => {
+    navigator.clipboard.writeText(codeStr).catch(() => {});
+    btn.textContent = 'Copié !';
+    setTimeout(() => { btn.textContent = 'Copier'; }, 1200);
+  });
+  el.appendChild(val);
+  el.appendChild(document.createElement('br'));
+  el.appendChild(btn);
+}
+
+function safeEvalAt(str, varName, val) {
+  try { return evalExpr(str, { [varName]: val }); } catch (e) { return NaN; }
+}
+
+document.getElementById('btn-valider').addEventListener('click', () => {
+  const statutEl = document.getElementById('statut-glob');
+  if (configError) { statutEl.textContent = 'Erreur config'; return; }
+
+  // valeurs REELLEMENT tapees par l'eleve (juste ou fausses) -- ce sont
+  // elles qui alimentent les codes, pas les valeurs attendues. "ok" ne sert
+  // qu'au retour visuel (vert/rouge), pas a conditionner l'apparition d'un code.
+  const okEI = [], okEC = [], okEFE = [], okEFN = [];
+  const valEI = [], valEC = [], valEFE = [], valEFN = [];
+
+  for (let j = 0; j < n; j++) {
+    // EI (numerique)
+    const eiInput = document.getElementById(`EI-${j}`);
+    const eiVal = parseNum(eiInput.value);
+    const eiOk = withinTol(eiVal, P.expected_EI[j], P.precision || 0.02);
+    if (P.show_feedback) eiInput.className = eiInput.value.trim() === '' ? '' : (eiOk ? 'ok' : 'ko');
+    okEI.push(eiOk); valEI.push(round4(eiVal));
+
+    // EC (expression en x) -- evaluee TELLE QUE TAPEE aux points de test
+    const ecInput = document.getElementById(`EC-${j}`);
+    const ecVals = P.x_tests.map(x => safeEvalAt(ecInput.value, 'x', x));
+    const ecOk = ecVals.every((v, k) => withinTol(v, P.expected_Ei[j][k], P.precision || 0.02));
+    if (P.show_feedback) ecInput.className = ecInput.value.trim() === '' ? '' : (ecOk ? 'ok' : 'ko');
+    okEC.push(ecOk); valEC.push(ecVals.map(round4));
+
+    // EFE (expression en xmax)
+    const efeInput = document.getElementById(`EFE-${j}`);
+    const efeVals = P.xmax_tests.map(xm => safeEvalAt(efeInput.value, 'xmax', xm));
+    const efeOk = efeVals.every((v, k) => withinTol(v, P.expected_EFexpr[j][k], P.precision || 0.02));
+    if (P.show_feedback) efeInput.className = efeInput.value.trim() === '' ? '' : (efeOk ? 'ok' : 'ko');
+    okEFE.push(efeOk); valEFE.push(efeVals.map(round4));
+
+    // EFN (numerique)
+    const efnInput = document.getElementById(`EFN-${j}`);
+    const efnVal = parseNum(efnInput.value);
+    const efnOk = withinTol(efnVal, P.expected_EF[j], P.precision || 0.02);
+    if (P.show_feedback) efnInput.className = efnInput.value.trim() === '' ? '' : (efnOk ? 'ok' : 'ko');
+    okEFN.push(efnOk); valEFN.push(round4(efnVal));
+  }
+
+  // codes de ligne, calcules a partir de ce que l'eleve a tape -- toujours affiches
+  showCode('code-EI', codeFrom(valEI, 'EI'), okEI.every(Boolean));
+  const flatEC = []; valEC.forEach(col => flatEC.push(...col));
+  showCode('code-EC', codeFrom(flatEC, 'EC'), okEC.every(Boolean));
+  const flatEFE = []; valEFE.forEach(col => flatEFE.push(...col));
+  showCode('code-EFE', codeFrom(flatEFE, 'EFE'), okEFE.every(Boolean));
+  showCode('code-EFN', codeFrom(valEFN, 'EFN'), okEFN.every(Boolean));
+
+  // codes de colonne, memes valeurs tapees, groupees par espece
+  for (let j = 0; j < n; j++) {
+    const colVals = [valEI[j], ...valEC[j], ...valEFE[j], valEFN[j]];
+    const colOk = okEI[j] && okEC[j] && okEFE[j] && okEFN[j];
+    showCode(`code-col-${j}`, codeFrom(colVals, `C${j + 1}`), colOk);
+  }
+
+  const nbOk = okEI.filter(Boolean).length + okEC.filter(Boolean).length +
+               okEFE.filter(Boolean).length + okEFN.filter(Boolean).length;
+  statutEl.textContent = `${nbOk} / ${4 * n} cellules correctes`;
+});
+</script>
+</body>
+</html>
