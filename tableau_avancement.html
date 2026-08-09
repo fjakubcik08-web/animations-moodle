@@ -81,6 +81,16 @@ function tokenize(s) {
     if (/[0-9.]/.test(c)) {
       let j = i;
       while (j < s.length && /[0-9.]/.test(s[j])) j++;
+      // notation scientifique : 1.5e-3, 6.02E23 ... (sans quoi le "e" serait
+      // lu comme la constante d'Euler et fausserait silencieusement le calcul)
+      if (j < s.length && (s[j] === 'e' || s[j] === 'E')) {
+        let k = j + 1;
+        if (k < s.length && (s[k] === '+' || s[k] === '-')) k++;
+        if (k < s.length && /[0-9]/.test(s[k])) {
+          while (k < s.length && /[0-9]/.test(s[k])) k++;
+          j = k;
+        }
+      }
       tokens.push({ t: 'NUM', v: parseFloat(s.slice(i, j)) });
       i = j;
       continue;
