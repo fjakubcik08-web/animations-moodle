@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pesée</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin:0; padding:0; width:100%; height:100%;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background:transparent; overflow:hidden;
+  }
+  #wrap { width:100%; height:100%; position:relative; }
+  canvas { display:block; width:100%; height:100%; touch-action:none; cursor:default; }
+  #verserBtn {
+    position:absolute; display:none;
+    padding:8px 18px; border:none; border-radius:6px;
+    background:#2563eb; color:#fff; font-size:14px; font-weight:600;
+    cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25);
+  }
+  #verserBtn:hover { background:#1d4ed8; }
+  #resetBtn {
+    position:absolute; top:8px; right:10px;
+    padding:5px 12px; border:1px solid #cbd5e1; border-radius:6px;
+    background:#f8fafc; color:#334155; font-size:12px; font-weight:600;
+    cursor:pointer;
+  }
+  #resetBtn:hover { background:#e2e8f0; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <button id="verserBtn" type="button">Verser</button>
+  <button id="resetBtn" type="button">Recommencer</button>
+</div>
+
+<script>
+/* =========================================================================
+   balance_pesee.html -- poste de pesée virtuel.
+   L'eleve fait glisser un flacon (espece chimique etiquetee) au-dessus de la
+   balance, clique "Verser" pour vider son contenu dans la coupelle posee sur
+   le plateau, et lit la masse affichee. Sert a fournir une donnee de masse
+   SANS l'ecrire en toutes lettres dans l'enonce ("on dispose de 2.25 g de
+   carbone" devient : va peser le flacon de carbone).
+
+   Aucune verification/code ici -- c'est un instrument de mesure, pas un
+   exercice note. Les valeurs (masses) sont encodees dans le parametre URL,
+   jamais affichees avant la pesee.
+   ========================================================================= */
+
+const XOR_KEY = "PESEEBALANCEFJ2026";
+
+function b64urlDecodeToBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function xorBytes(bytes, key) {
+  const kb = new TextEncoder().encode(key);
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ kb[i % kb.length];
+  return out;
+}
+function decodeParams(code) {
+  const xored = b64urlDecodeToBytes(code);
+  const raw = xorBytes(xored, XOR_KEY);
+  return JSON.parse(new TextDecoder('utf-8').decode(raw));
+}
+
+const qs = new URLSearchParams(location.search);
+const rawCode = qs.get('p') || qs.get('param') || '';
+let P = null;
+try { P = decodeParams(rawCode); } catch (e) { P = null; }
+if (!P || !Array.isArray(P.species) || P.species.length === 0) {
+  // valeurs de secours pour test local sans parametre
+  P = { species: [
+    { label: "C", mass: 2.25 },
+    { label: "Fe", mass: 5.60 },
+    { label: "CaCO₃", mass: 3.40 },
+    { label: "NaCl", mass: 1.75 },
+    { label: "Al", mass: 0.92 }
+  ], precision: 2 };
+}
+const PRECISION = (typeof P.precision === 'number') ? P.precision : 2;
+const PALETTE = ["#93c5fd", "#fca5a5", "#86efac", "#fcd34d", "#c4b5fd", "#67e8f9", "#fda4af", "#a5b4fc"];
+
+/* Unite de reference : largeur d'un flacon. Tous les autres elements sont des
+   multiples fixes de cette unite -- proportions realistes quels que soient
+   la taille de l'iframe ou le nombre d'especes (jamais de balance 50x plus
+   grande qu'un becher). */
+const PROP = {
+  bottleHRatio: 2.3,       // hauteur flacon = 2.3x sa largeur
+  balanceWRatio: 3.6,      // largeur balance = 3.6x largeur flacon
+  balanceAspect: 150 / 400, // rapport hauteur/largeur du gabarit SVG de la balance
+  tableThicknessRatio: 0.55,
+  legWidthRatio: 0.30,
+  legHeightRatio: 1.35
+};
+
+/* ---------- canvas / responsive ---------- */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+const verserBtn = document.getElementById('verserBtn');
+const resetBtn = document.getElementById('resetBtn');
+
+let W = 900, H = 260, DPR = 1;
+
+function layout() {
+  const n = bottles.length;
+  const marginLeft = W * 0.05;
+  const tableTopY = H * 0.72;
+
+  // largeur du flacon = unite de reference, bornee pour rester lisible
+  const bottleW = Math.min(W * 0.065, 46);
+  const bottleH = bottleW * PROP.bottleHRatio;
+
+  // balance = multiple fixe de cette unite (proportions realistes, jamais un
+  // gros bloc a cote d'un petit becher)
+  const balW = bottleW * PROP.balanceWRatio;
+  const balH = balW * PROP.balanceAspect;
+  const s = balH / 150;
+  const balanceX = W - balW - W * 0.03;
+  const balanceY = tableTopY - 140 * s;  // les pieds (bas du gabarit) touchent la table
+
+  balance.x = balanceX; balance.y = balanceY; balance.w = balW; balance.h = balH; balance.s = s;
+  balance.panX = balanceX + 200 * s;
+  balance.panY = balanceY + 15 * s;   // centre de la coupelle, posee sur le plateau
+  balance.dropR = Math.max(20, 90 * s);
+  if (!cup.animating) { cup.x = balance.panX; cup.y = balance.panY; }
+
+  // table = multiple fixe de la meme unite
+  tableThicknessGlobal = bottleW * PROP.tableThicknessRatio;
+  legWGlobal = bottleW * PROP.legWidthRatio;
+  legHGlobal = bottleW * PROP.legHeightRatio;
+
+  const zoneRight = balanceX - W * 0.04;
+  const spacing = n > 1 ? (zoneRight - marginLeft - bottleW) / (n - 1) : 0;
+
+  bottles.forEach((b, i) => {
+    b.w = bottleW; b.h = bottleH;
+    b.x0 = marginLeft + (n > 1 ? i * spacing : (zoneRight - marginLeft - bottleW) / 2);
+    b.y0 = tableTopY - bottleH;
+    if (b.state === 'idle') { b.x = b.x0; b.y = b.y0; }
+    if (b.state === 'ready') {
+      // nettement au-dessus et a gauche de la balance, penche vers la coupelle
+      b.x = balance.panX - b.w * 1.5;
+      b.y = balance.panY - b.h * 2.1;
+    }
+  });
+  tableTopYGlobal = tableTopY;
+}
+
+function resize() {
+  const rect = wrap.getBoundingClientRect();
+  DPR = window.devicePixelRatio || 1;
+  W = Math.max(rect.width, 300);
+  H = Math.max(rect.height, 160);
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  layout();
+  draw();
+}
+
+/* ---------- etat ---------- */
+const bottles = P.species.map((sp, i) => ({
+  id: i, label: sp.label, mass: sp.mass,
+  color: PALETTE[i % PALETTE.length],
+  state: 'idle', used: false, x: 0, y: 0, x0: 0, y0: 0, w: 40, h: 76,
+  dragOffX: 0, dragOffY: 0
+}));
+const balance = { x:0, y:0, w:0, h:0, panX:0, panY:0, dropR:0,
+                   currentId: null, displayed: 0, target: 0, animT: 0, pouring:false, pourT:0 };
+// la coupelle est un objet a part entiere (elle s'envole/arrive en volant)
+const cup = { x:0, y:0, scale:1, alpha:1, animating:false, hasContent:false, color:null };
+let dragging = null;
+let tableTopYGlobal = 200;
+let tableThicknessGlobal = 20, legWGlobal = 10, legHGlobal = 40;
+
+/* ---------- etincelles (retour du flacon vide -- effet "magique") ---------- */
+let sparkles = [];
+const SPARK_COLORS = ["#fbbf24", "#a78bfa", "#60a5fa", "#f472b6", "#34d399"];
+
+function spawnSparkles(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    sparkles.push({
+      x: x + (Math.random() - 0.5) * 10,
+      y: y + (Math.random() - 0.5) * 10,
+      vx: (Math.random() - 0.5) * 1.4,
+      vy: -Math.random() * 1.6 - 0.3,
+      life: 0,
+      maxLife: 450 + Math.random() * 350,
+      size: 1.6 + Math.random() * 2.2,
+      color: SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)]
+    });
+  }
+}
+function updateSparkles(dt) {
+  sparkles.forEach(sp => { sp.life += dt; sp.x += sp.vx; sp.y += sp.vy; });
+  sparkles = sparkles.filter(sp => sp.life < sp.maxLife);
+}
+function drawSparkles() {
+  sparkles.forEach(sp => {
+    const t = sp.life / sp.maxLife;
+    const alpha = Math.max(0, 1 - t);
+    const r = sp.size * (1 - t * 0.4);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = sp.color;
+    ctx.beginPath();
+    ctx.moveTo(sp.x, sp.y - r * 2);
+    ctx.lineTo(sp.x + r * 0.5, sp.y - r * 0.5);
+    ctx.lineTo(sp.x + r * 2, sp.y);
+    ctx.lineTo(sp.x + r * 0.5, sp.y + r * 0.5);
+    ctx.lineTo(sp.x, sp.y + r * 2);
+    ctx.lineTo(sp.x - r * 0.5, sp.y + r * 0.5);
+    ctx.lineTo(sp.x - r * 2, sp.y);
+    ctx.lineTo(sp.x - r * 0.5, sp.y - r * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+/* position du goulot (haut du flacon) une fois incline en position "ready" */
+function bottleSpout(b) {
+  const angle = 0.7;
+  const pivotX = b.x + b.w / 2, pivotY = b.y + b.h;
+  const localY = -b.h;
+  const rx = -localY * Math.sin(angle);
+  const ry = localY * Math.cos(angle);
+  return { x: pivotX + rx, y: pivotY + ry };
+}
+
+/* le flacon vole jusqu'a sa place, trainee d'etincelles, arc de vol */
+function returnBottleHome(b) {
+  const fromX = b.x, fromY = b.y;
+  const toX = b.x0, toY = b.y0;
+  b.state = 'flying';
+  const start = performance.now();
+  const dur = 850;
+  let last = start;
+  function step(now) {
+    const dt = now - last; last = now;
+    const t = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - t, 3);
+    const arc = Math.sin(t * Math.PI) * -22;
+    b.x = fromX + (toX - fromX) * eased;
+    b.y = fromY + (toY - fromY) * eased + arc;
+    spawnSparkles(b.x + b.w / 2, b.y + b.h / 2, 2);
+    updateSparkles(dt);
+    draw();
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      b.x = toX; b.y = toY;
+      b.state = 'idle';
+      draw();
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+/* ---------- dessin ---------- */
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawTable() {
+  ctx.fillStyle = "#b8875f";
+  roundRect(0, tableTopYGlobal, W, tableThicknessGlobal, 8); ctx.fill();
+  ctx.fillStyle = "#8f6543";
+  ctx.fillRect(W * 0.06, tableTopYGlobal + tableThicknessGlobal, legWGlobal, legHGlobal);
+  ctx.fillRect(W * 0.92 - legWGlobal, tableTopYGlobal + tableThicknessGlobal, legWGlobal, legHGlobal);
+}
+
+function drawBottle(b) {
+  const capH = b.h * 0.16;
+  ctx.save();
+  if (b.state === 'ready') {
+    // incline vers la droite, spout oriente vers la coupelle
+    ctx.translate(b.x + b.w / 2, b.y + b.h);
+    ctx.rotate(0.7);
+    ctx.translate(-(b.x + b.w / 2), -(b.y + b.h));
+  } else if (b.state === 'flying') {
+    // petit scintillement pendant le vol retour
+    const wobble = Math.sin(performance.now() / 90) * 0.22;
+    ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+    ctx.rotate(wobble);
+    ctx.translate(-(b.x + b.w / 2), -(b.y + b.h / 2));
+  }
+  // corps
+  ctx.fillStyle = "#f1f5f9";
+  ctx.strokeStyle = "#64748b";
+  ctx.lineWidth = 1.5;
+  roundRect(b.x, b.y + capH, b.w, b.h - capH, 6);
+  ctx.fill(); ctx.stroke();
+  // contenu (poudre) dans le tiers bas -- disparait une fois verse (le
+  // flacon est vide jusqu'au bouton "Recommencer")
+  if (!b.used) {
+    ctx.fillStyle = b.color;
+    const fillH = (b.h - capH) * 0.4;
+    roundRect(b.x + 3, b.y + b.h - fillH, b.w - 6, fillH - 3, 4);
+    ctx.fill();
+  }
+  // bouchon
+  ctx.fillStyle = "#475569";
+  roundRect(b.x + b.w * 0.28, b.y, b.w * 0.44, capH, 3);
+  ctx.fill();
+  ctx.restore();
+
+  // etiquette (toujours horizontale, sous le flacon)
+  ctx.fillStyle = "#1f2937";
+  ctx.font = "600 " + Math.max(11, W * 0.014) + "px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText(b.label, b.x0 + b.w / 2, b.y0 + b.h + 4);
+}
+
+function drawDropZoneHighlight() {
+  if (!dragging) return;
+  const dx = dragging.x + dragging.w / 2 - balance.panX;
+  const dy = dragging.y + dragging.h - balance.panY;
+  const dist = Math.hypot(dx, dy);
+  if (dist < balance.dropR * 1.6) {
+    ctx.beginPath();
+    ctx.arc(balance.panX, balance.panY, balance.dropR, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(37,99,235,0.12)";
+    ctx.fill();
+    ctx.strokeStyle = "#2563eb";
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawBalance() {
+  const b = balance;
+  const s = b.s;
+  const vx = (v) => b.x + v * s;
+  const vy = (v) => b.y + v * s;
+
+  // corps principal
+  roundRect(vx(20), vy(40), 360 * s, 90 * s, 20 * s);
+  ctx.fillStyle = "#e0e0e0"; ctx.fill();
+
+  // plateau (deux tons, comme le gabarit)
+  roundRect(vx(60), vy(20), 280 * s, 30 * s, 2 * s);
+  ctx.fillStyle = "#888888"; ctx.fill();
+  roundRect(vx(60), vy(20), 140 * s, 30 * s, 2 * s);
+  ctx.fillStyle = "#b0b0b0"; ctx.fill();
+
+  // coupelle de pesee -- objet anime (position/echelle/opacite propres),
+  // posee sur le plateau au repos
+  ctx.save();
+  ctx.globalAlpha = cup.alpha;
+  ctx.beginPath();
+  ctx.ellipse(cup.x, cup.y, 46 * s * cup.scale, 10 * s * cup.scale, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "#fafaf9";
+  ctx.fill();
+  ctx.strokeStyle = "#b6bcc4";
+  ctx.lineWidth = Math.max(1, s);
+  ctx.stroke();
+
+  // contenu verse -- suit la coupelle
+  if (cup.hasContent && cup.color) {
+    ctx.fillStyle = cup.color;
+    ctx.beginPath();
+    ctx.ellipse(cup.x, cup.y - 2 * s, 30 * s * cup.scale, 6.5 * s * cup.scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // boutons O/I et TARE
+  ctx.fillStyle = "#ffc107";
+  roundRect(vx(50), vy(60), 40 * s, 30 * s, 4 * s); ctx.fill();
+  roundRect(vx(100), vy(60), 40 * s, 30 * s, 4 * s); ctx.fill();
+
+  ctx.fillStyle = "#555555";
+  ctx.font = Math.max(9, 12 * s) + "px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("O/I", vx(70), vy(105));
+  ctx.fillText("TARE", vx(120), vy(105));
+
+  // ecran
+  roundRect(vx(160), vy(55), 190 * s, 45 * s, 4 * s);
+  ctx.fillStyle = "#add8e6"; ctx.fill();
+  ctx.strokeStyle = "#777777"; ctx.lineWidth = Math.max(1, s); ctx.stroke();
+
+  ctx.fillStyle = "#333333";
+  ctx.font = "bold " + Math.max(12, 24 * s) + "px 'Courier New', monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(balance.displayed.toFixed(PRECISION) + " g", vx(255), vy(88));
+
+  // pieds
+  ctx.fillStyle = "#666666";
+  ctx.fillRect(vx(50), vy(130), 40 * s, 10 * s);
+  ctx.fillRect(vx(310), vy(130), 40 * s, 10 * s);
+
+  // versement en cours -- filet + particules, bien visible (au-dessus de tout)
+  if (balance.pouring) {
+    const cb = bottles.find(x => x.id === balance.currentId);
+    if (cb) {
+      const spout = bottleSpout(cb);
+      const spoutX = spout.x;
+      const spoutY = spout.y;
+      const targetX = cup.x;
+      const targetY = cup.y - 2 * s;
+      const midX = (spoutX + targetX) / 2 + Math.sin(balance.pourT / 55) * 3 * s;
+
+      ctx.strokeStyle = cb.color;
+      ctx.lineWidth = Math.max(2, 3 * s);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(spoutX, spoutY);
+      ctx.quadraticCurveTo(midX, (spoutY + targetY) / 2, targetX, targetY);
+      ctx.stroke();
+
+      ctx.fillStyle = cb.color;
+      for (let i = 0; i < 6; i++) {
+        const t = ((balance.pourT + i * 65) % 450) / 450;
+        const px = spoutX + (targetX - spoutX) * t + Math.sin(t * 8 + i) * 2 * s;
+        const py = spoutY + (targetY - spoutY) * t;
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(1.5, 2.4 * s), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // petit eclaboussement dans la coupelle
+      ctx.beginPath();
+      ctx.ellipse(targetX, targetY, 10 * s, 3 * s, 0, 0, Math.PI * 2);
+      ctx.fillStyle = cb.color;
+      ctx.globalAlpha = 0.6;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  drawTable();
+  drawDropZoneHighlight();
+  bottles.forEach(b => { if (b !== dragging) drawBottle(b); });
+  drawBalance();
+  if (dragging) drawBottle(dragging);
+  drawSparkles();
+  positionVerserBtn();
+}
+
+/* ---------- interactions ---------- */
+function bottleAt(px, py) {
+  for (let i = bottles.length - 1; i >= 0; i--) {
+    const b = bottles[i];
+    if (px >= b.x - 4 && px <= b.x + b.w + 4 && py >= b.y - 4 && py <= b.y + b.h + 6) return b;
+  }
+  return null;
+}
+
+function toLocal(evt) {
+  const r = canvas.getBoundingClientRect();
+  const cx = (evt.touches ? evt.touches[0].clientX : evt.clientX) - r.left;
+  const cy = (evt.touches ? evt.touches[0].clientY : evt.clientY) - r.top;
+  return { x: cx, y: cy };
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  const p = toLocal(e);
+  const b = bottleAt(p.x, p.y);
+  if (!b || b.state === 'flying') return;
+  canvas.setPointerCapture(e.pointerId);
+  dragging = b;
+  b.state = 'dragging';
+  b.dragOffX = p.x - b.x;
+  b.dragOffY = p.y - b.y;
+  verserBtn.style.display = 'none';
+  draw();
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  const p = toLocal(e);
+  dragging.x = p.x - dragging.dragOffX;
+  dragging.y = p.y - dragging.dragOffY;
+  draw();
+});
+
+function endDrag(e) {
+  if (!dragging) return;
+  const b = dragging;
+  const dx = b.x + b.w / 2 - balance.panX;
+  const dy = b.y + b.h - balance.panY;
+  const dist = Math.hypot(dx, dy);
+  if (dist < balance.dropR * 1.6) {
+    // occupe la balance : si un autre flacon y attend deja (pas encore verse), il repart
+    bottles.forEach(o => {
+      if (o !== b && o.state === 'ready') returnBottleHome(o);
+    });
+    b.state = 'ready';
+    b.x = balance.panX - b.w * 1.5;
+    b.y = balance.panY - b.h * 2.1;
+  } else {
+    // simple deplacement hors zone : ne touche pas a la pesee en cours/deja lue
+    returnBottleHome(b);
+  }
+  dragging = null;
+  draw();
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+
+function positionVerserBtn() {
+  const ready = bottles.find(b => b.state === 'ready');
+  if (ready) {
+    verserBtn.style.display = 'block';
+    verserBtn.style.left = (balance.panX - 30) + 'px';
+    verserBtn.style.top = (balance.y - 34) + 'px';
+  } else {
+    verserBtn.style.display = 'none';
+  }
+}
+
+verserBtn.addEventListener('click', () => {
+  const b = bottles.find(x => x.state === 'ready');
+  if (!b) return;
+  verserBtn.style.display = 'none';
+  if (cup.hasContent) {
+    // une coupelle deja pesee occupe la balance : elle s'envole d'abord
+    // (effet magique), puis une coupelle vide arrive en volant, puis on verse
+    flyOldCupAway(() => flyNewCupIn(() => startPour(b)));
+  } else {
+    startPour(b);
+  }
+});
+
+// la coupelle deja pesee s'envole (montee + cote), disparait en etincelles
+function flyOldCupAway(callback) {
+  cup.animating = true;
+  const fromX = cup.x, fromY = cup.y;
+  const toX = cup.x + 75 * balance.s;
+  const toY = cup.y - 95 * balance.s;
+  const fromMass = balance.displayed;
+  const start = performance.now();
+  const dur = 480;
+  let last = start;
+  function step(now) {
+    const dt = now - last; last = now;
+    const t = Math.min(1, (now - start) / dur);
+    const eased = t * t;
+    cup.x = fromX + (toX - fromX) * eased;
+    cup.y = fromY + (toY - fromY) * eased;
+    cup.scale = Math.max(0, 1 - 0.9 * eased);
+    cup.alpha = Math.max(0, 1 - eased);
+    balance.displayed = fromMass * (1 - eased);
+    if (Math.random() < 0.6) spawnSparkles(cup.x, cup.y, 2);
+    updateSparkles(dt);
+    draw();
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      cup.hasContent = false;
+      cup.color = null;
+      balance.currentId = null;
+      balance.displayed = 0;
+      balance.target = 0;
+      callback();
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// une nouvelle coupelle vide arrive en volant (effet HP) et se pose sur le plateau
+function flyNewCupIn(callback) {
+  const homeX = balance.panX, homeY = balance.panY;
+  const fromX = homeX - 95 * balance.s;
+  const fromY = homeY - 110 * balance.s;
+  cup.x = fromX; cup.y = fromY; cup.scale = 0.15; cup.alpha = 0;
+  const start = performance.now();
+  const dur = 480;
+  let last = start;
+  function step(now) {
+    const dt = now - last; last = now;
+    const t = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - t, 3);
+    cup.x = fromX + (homeX - fromX) * eased;
+    cup.y = fromY + (homeY - fromY) * eased;
+    cup.scale = 0.15 + 0.85 * eased;
+    cup.alpha = eased;
+    if (Math.random() < 0.6) spawnSparkles(cup.x, cup.y, 2);
+    updateSparkles(dt);
+    draw();
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      cup.x = homeX; cup.y = homeY; cup.scale = 1; cup.alpha = 1;
+      cup.animating = false;
+      callback();
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// la masse grimpe PENDANT le versement (pas apres) -- synchronisee avec le filet
+function startPour(b) {
+  balance.currentId = b.id;
+  balance.pouring = true;
+  balance.pourT = 0;
+  const dur = 650;
+  const start = performance.now();
+  function pourStep(now) {
+    const t = Math.min(1, (now - start) / dur);
+    balance.pourT = now - start;
+    const eased = 1 - Math.pow(1 - t, 2);
+    balance.displayed = b.mass * eased;
+    draw();
+    if (t < 1) {
+      requestAnimationFrame(pourStep);
+    } else {
+      balance.pouring = false;
+      balance.displayed = b.mass;
+      balance.target = b.mass;
+      cup.hasContent = true;
+      cup.color = b.color;
+      // le flacon est maintenant vide et revient tout seul a sa place,
+      // en vol avec des etincelles -- le plateau garde la lecture
+      b.used = true;
+      returnBottleHome(b);
+    }
+  }
+  requestAnimationFrame(pourStep);
+}
+
+resetBtn.addEventListener('click', () => {
+  bottles.forEach(b => { b.state = 'idle'; b.used = false; b.x = b.x0; b.y = b.y0; });
+  balance.currentId = null;
+  balance.displayed = 0;
+  balance.target = 0;
+  cup.animating = false;
+  cup.x = balance.panX; cup.y = balance.panY;
+  cup.scale = 1; cup.alpha = 1;
+  cup.hasContent = false; cup.color = null;
+  verserBtn.style.display = 'none';
+  draw();
+});
+
+window.addEventListener('resize', resize);
+resize();
+</script>
+</body>
+</html>
