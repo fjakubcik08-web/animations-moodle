@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pesée / Mesure de volume</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin:0; padding:0; width:100%; height:100%;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background:transparent; overflow:hidden;
+  }
+  #wrap { width:100%; height:100%; position:relative; }
+  svg#stage { display:block; width:100%; height:100%; touch-action:none; }
+  .vessel { cursor:grab; }
+  .vessel.dragging { cursor:grabbing; }
+  #verserBtn {
+    position:absolute; display:none; transform:translate(-50%,-100%);
+    padding:8px 18px; border:none; border-radius:6px;
+    background:#2563eb; color:#fff; font-size:14px; font-weight:600;
+    cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25);
+  }
+  #verserBtn:hover { background:#1d4ed8; }
+  #resetBtn {
+    position:absolute; top:8px; right:10px;
+    padding:5px 12px; border:1px solid #cbd5e1; border-radius:6px;
+    background:#f8fafc; color:#334155; font-size:12px; font-weight:600;
+    cursor:pointer;
+  }
+  #resetBtn:hover { background:#e2e8f0; }
+  #zoomOverlay {
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(15,23,42,.55); z-index:50;
+  }
+  #zoomCard {
+    background:#fff; border-radius:14px; padding:12px 22px 14px; position:relative;
+    box-shadow:0 12px 40px rgba(0,0,0,.35); display:flex; flex-direction:column; align-items:center;
+    max-width:94%; max-height:90%;
+  }
+  #zoomTitle { font-size:12px; font-weight:600; color:#334155; margin-bottom:2px; }
+  #zoomClose {
+    position:absolute; top:8px; right:10px; width:24px; height:24px; border:none; border-radius:50%;
+    background:#f1f5f9; color:#334155; font-size:15px; line-height:1; cursor:pointer;
+  }
+  #zoomClose:hover { background:#e2e8f0; }
+  /* l'iframe cible est plus large que haute : on contraint sur les DEUX axes
+     (vw et vh) et le SVG (preserveAspectRatio par defaut) se cale dedans
+     sans jamais deborder, quelle que soit l'orientation du cadre. */
+  #zoomSvg { display:block; width:min(58vw, 520px); height:min(74vh, 340px); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <svg id="stage" viewBox="0 0 1200 420" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"></svg>
+  <button id="verserBtn" type="button">Verser</button>
+  <button id="resetBtn" type="button">Recommencer</button>
+  <div id="zoomOverlay">
+    <div id="zoomCard">
+      <button id="zoomClose" type="button" aria-label="Fermer">✕</button>
+      <div id="zoomTitle">Éprouvette graduée</div>
+      <svg id="zoomSvg" viewBox="0 0 220 380" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   pesee_volume.html -- poste de manip : bechers (espece solide) + erlen
+   (espece en solution) a deplacer vers une balance (coupelle -> masse
+   affichee) ou une eprouvette graduee (niveau de liquide -> volume A LIRE
+   sur les graduations, jamais imprime en chiffres).
+
+   Regle : aucune valeur n'est ecrite en clair avant l'action de l'eleve.
+   La masse (balance numerique) s'affiche une fois versee. Le volume, lui,
+   ne s'affiche JAMAIS en texte : seul le niveau du liquide monte au bon
+   endroit dans l'eprouvette, a l'eleve de lire la graduation.
+   ========================================================================= */
+
+const XOR_KEY = "PESEEVOLUMEFJ2026";
+
+function b64urlDecodeToBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function xorBytes(bytes, key) {
+  const kb = new TextEncoder().encode(key);
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ kb[i % kb.length];
+  return out;
+}
+function decodeParams(code) {
+  const xored = b64urlDecodeToBytes(code);
+  const raw = xorBytes(xored, XOR_KEY);
+  return JSON.parse(new TextDecoder('utf-8').decode(raw));
+}
+
+const qs = new URLSearchParams(location.search);
+const rawCode = qs.get('p') || qs.get('param') || '';
+let ESPECES = null;
+try { ESPECES = decodeParams(rawCode); } catch (e) { ESPECES = null; }
+if (!Array.isArray(ESPECES) || ESPECES.length === 0) {
+  // valeurs de secours pour test local sans parametre
+  // typ: 'mass' -> becher pese sur la balance / 'soluce' -> erlen mesure a l'eprouvette
+  ESPECES = [
+    { nom: 'Fe',   typ: 'mass',   value: 5.60 },
+    { nom: 'CaCO3', typ: 'mass',  value: 3.40 },
+    { nom: 'Ca2+', typ: 'soluce', value: 40.0 }
+  ];
+}
+// parametres d'affichage -- en clair dans l'URL (comme move), pas besoin d'etre
+// caches puisqu'ils ne revelent rien sur l'exercice : ?vmax=150&prec=1
+const MASS_PRECISION = qs.get('prec') !== null ? parseInt(qs.get('prec'), 10) : 2;
+const VOL_MAX = qs.get('vmax') !== null ? parseFloat(qs.get('vmax')) : 100;
+const MOVABLE = qs.get('move') !== '0';
+const PALETTE = ["#93c5fd", "#fca5a5", "#86efac", "#fcd34d", "#c4b5fd", "#67e8f9", "#fda4af", "#a5b4fc"];
+
+/* ==========================================================================
+   GRADUATION DE L'EPROUVETTE -- calculee une seule fois a partir de VOL_MAX,
+   partagee par la vue normale (petite) et la fenetre zoom (grande), pour que
+   les deux affichent EXACTEMENT la meme echelle. Pas de nombre affiche nulle
+   part avant que l'eleve n'ouvre le zoom -- la vue normale ne montre que les
+   traits, comme une vraie eprouvette vue de loin.
+   ========================================================================== */
+function niceStep(range, targetTicks) {
+  const raw = range / targetTicks;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const step = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+  return step * mag;
+}
+const GRAD_TOP_Y = 55, GRAD_BOTTOM_Y = 295;   // reperes verticaux locaux (repris du gabarit eprouvette.svg)
+const GRAD_MAJOR_STEP = niceStep(VOL_MAX, 8);
+const GRAD_MINOR_STEP = 1;   // precision de lecture demandee : 1 mL, comme une burette
+function gradValueToY(v) {
+  return GRAD_BOTTOM_Y - (v / VOL_MAX) * (GRAD_BOTTOM_Y - GRAD_TOP_Y);
+}
+function buildGradTicks() {
+  const majors = [], minors = [];
+  const nMinorSteps = Math.round(VOL_MAX / GRAD_MINOR_STEP);
+  const minorPerMajor = Math.max(1, Math.round(GRAD_MAJOR_STEP / GRAD_MINOR_STEP));
+  for (let i = 0; i <= nMinorSteps; i++) {
+    const v = Math.round(i * GRAD_MINOR_STEP * 100) / 100;
+    const y = gradValueToY(v);
+    if (i % minorPerMajor === 0) majors.push({ v, y }); else minors.push({ v, y });
+  }
+  return { majors, minors };
+}
+const GRAD = buildGradTicks();
+
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+const stage = document.getElementById('stage');
+const verserBtn = document.getElementById('verserBtn');
+const resetBtn = document.getElementById('resetBtn');
+
+/* ---------- géométrie de la scène (coordonnées fixes du viewBox) ---------- */
+/* Chaque SVG fourni a des marges internes tres differentes entre son viewBox
+   et le dessin reellement visible (ex: le becher n'occupe que 144/240 de sa
+   largeur de viewBox, la balance en occupe 346/430). Mettre a l'echelle sur
+   la largeur du viewBox donnait donc des tailles relatives fausses (balance
+   enorme, verrerie riquiqui) et un calage sur le bas du viewBox (au lieu du
+   bas du dessin) faisait flotter les objets au-dessus de la table. On calcule
+   donc l'echelle sur la largeur VISIBLE de chaque dessin, et on pose le bas
+   VISIBLE de chaque dessin sur la table. */
+const TABLE_Y = 344;
+const ZONE_LEFT = 40, ZONE_RIGHT = 560;
+
+// bbox visible (coordonnees locales du SVG d'origine) de chaque dessin
+const BECHER_BOX = { visW: 144, visBottom: 225 };
+const ERLEN_BOX  = { visW: 136, visBottom: 231 };
+const EPRO_BOX   = { visW: 100, visBottom: 350 };
+const BAL_BOX    = { visW: 346, visBottom: 225 };
+
+// largeur visible cible sur scene (proportions realistes : la balance est
+// large mais plate, l'eprouvette est fine, bechers/erlens sont l'unite de reference)
+const BECHER_VISW = 80, ERLEN_VISW = 85, EPRO_VISW = 55, BAL_VISW = 225;
+
+const EPRO_X = 610, EPRO_SCALE = EPRO_VISW / EPRO_BOX.visW;
+const EPRO_Y = TABLE_Y - EPRO_BOX.visBottom * EPRO_SCALE;
+
+const BAL_X = 800, BAL_SCALE = BAL_VISW / BAL_BOX.visW;
+const BAL_Y = TABLE_Y - BAL_BOX.visBottom * BAL_SCALE;
+
+/* points de depose (coordonnees scene) -- rayons genereux : la detection se
+   fait sur tout le survol (hover), pas seulement au pixel pres au relachement */
+const EPRO_DROP = { x: EPRO_X + 110 * EPRO_SCALE, y: EPRO_Y + 60 * EPRO_SCALE, r: 60 };
+const BAL_DROP  = { x: BAL_X + 215 * BAL_SCALE,   y: BAL_Y + 50 * BAL_SCALE,  r: 80 };
+
+/* ---------- table ---------- */
+el('rect', { x:0, y:TABLE_Y, width:1200, height:14, rx:6, fill:'#b8875f' }, stage);
+el('rect', { x:80, y:TABLE_Y+14, width:16, height:50, fill:'#8f6543' }, stage);
+el('rect', { x:1100, y:TABLE_Y+14, width:16, height:50, fill:'#8f6543' }, stage);
+
+/* ==========================================================================
+   FABRIQUES DE FORMES -- reprises telles quelles des SVG fournis par
+   Frederic (becher.svg / erlenmeyer.svg / eprouvette.svg / balance.svg),
+   dans leur repere local d'origine (non redimensionne).
+   ========================================================================== */
+
+function buildBecherShape(g, colorId, color) {
+  el('path', { d:"M48 42 L48 197 Q48 215 65 225 L175 225 Q192 215 192 197 L192 42",
+    fill:"#f4f4f4", stroke:"#303030", "stroke-width":7, "stroke-linecap":"round" }, g);
+  const fillEl = el('path', { id: colorId,
+    d:"M51 138 L189 138 L189 197 Q189 216 173 222 L67 222 Q51 215 51 197 Z",
+    fill: color, opacity:0.92 }, g);
+  el('path', { d:"M51 138 L189 138", stroke:"#70c9e4", "stroke-width":3 }, g);
+  el('g', { stroke:"#b9b9b9", "stroke-width":3 }, g).innerHTML =
+    '<path d="M163 74h18 M163 94h18 M163 114h18 M163 134h18 M163 154h18 M163 174h18 M163 194h18"/>';
+  el('path', { d:"M63 57 L63 185", stroke:"#ffffff", "stroke-width":5, opacity:.75, "stroke-linecap":"round" }, g);
+  return fillEl;
+}
+
+function buildErlenShape(g, colorId, color) {
+  el('path', { d:"M103 38 L103 92 L69 190 Q62 210 77 224 Q84 231 97 231 L163 231 Q176 231 183 224 Q198 210 191 190 L157 92 L157 38",
+    fill:"#fafafa", stroke:"#303030", "stroke-width":7, "stroke-linejoin":"round", "stroke-linecap":"round" }, g);
+  const fillEl = el('path', { id: colorId,
+    d:"M73 164 L187 164 L192 190 Q198 210 183 224 Q176 231 163 231 L97 231 Q84 231 77 224 Q62 210 69 190 Z",
+    fill: color, opacity:.92 }, g);
+  el('path', { d:"M73 164 L187 164", stroke:"#70c9e4", "stroke-width":3 }, g);
+  el('g', { stroke:"#b9b9b9", "stroke-width":3 }, g).innerHTML =
+    '<path d="M111 62h16 M111 82h16 M133 102h16 M133 122h16"/>';
+  el('path', { d:"M91 116 L75 184", stroke:"#ffffff", "stroke-width":5, opacity:.7, "stroke-linecap":"round" }, g);
+  return fillEl;
+}
+
+function eprouvetteLiquidPath(topY) {
+  topY = Math.max(40, Math.min(318, topY));
+  return "M78 " + topY + " L142 " + topY + " L142 318 Q142 330 130 336 L90 336 Q78 330 78 318 Z";
+}
+
+/* traits de graduation -- generes depuis GRAD (memes valeurs que le zoom).
+   Vue normale : traits seuls, sans nombres (comme une eprouvette vue de loin). */
+function appendGradTicks(parent, majorLen, minorLen) {
+  const g = el('g', { stroke:"#b9b9b9", "stroke-width":3 }, parent);
+  GRAD.majors.forEach(t => el('line', { x1:84, y1:t.y, x2:84 + majorLen, y2:t.y }, g));
+  GRAD.minors.forEach(t => el('line', { x1:84, y1:t.y, x2:84 + minorLen, y2:t.y }, g));
+}
+
+function buildEprouvetteShape(g) {
+  el('path', { d:"M75 28 L75 318 Q75 332 89 339 L131 339 Q145 332 145 318 L145 28",
+    fill:"#fafafa", stroke:"#303030", "stroke-width":7, "stroke-linecap":"round" }, g);
+  const liquid = el('path', { id:"eproLiquid", d:eprouvetteLiquidPath(318), fill:"#7ec9e8", opacity:.92 }, g);
+  el('path', { d:"M60 339 Q110 319 160 339 L160 350 L60 350 Z",
+    fill:"#fafafa", stroke:"#303030", "stroke-width":7, "stroke-linejoin":"round" }, g);
+  appendGradTicks(g, 20, 13);
+  return liquid;
+}
+
+function buildBalanceShape(g) {
+  el('path', { d:"M82 47 L348 47 L360 70 L70 70 Z", fill:"#9b9b9b", stroke:"#303030", "stroke-width":5, "stroke-linejoin":"round" }, g);
+  el('rect', { x:98, y:40, width:234, height:20, rx:3, fill:"#b5b5b5" }, g);
+  el('path', { d:"M52 70 Q42 72 42 87 L42 177 Q42 196 62 202 L368 202 Q388 196 388 177 L388 87 Q388 72 378 70 Z",
+    fill:"#eee9e9", stroke:"#303030", "stroke-width":5 }, g);
+  // coupelle de pesee (manquante dans le SVG d'origine) -- dans son propre
+  // sous-groupe pour pouvoir l'animer (envol/arrivee) independamment du corps
+  const cupG = el('g', { id:'cupG' }, g);
+  el('ellipse', { cx:215, cy:49, rx:58, ry:11, fill:"#fdfdfc", stroke:"#9aa1a8", "stroke-width":2 }, cupG);
+  const cupContent = el('ellipse', { id:"cupContent", cx:215, cy:47, rx:38, ry:7, fill:"#93c5fd", opacity:0 }, cupG);
+  el('rect', { x:165, y:92, width:185, height:62, rx:8, fill:"#69c5df", stroke:"#303030", "stroke-width":3 }, g);
+  const massText = el('text', { id:"massText", x:320, y:134, "text-anchor":"end",
+    "font-family":"Arial, sans-serif", "font-size":30, fill:"#26657a" }, g);
+  massText.textContent = (0).toFixed(MASS_PRECISION) + " g";
+  el('rect', { x:72, y:94, width:42, height:27, rx:7, fill:"#f5b63e", stroke:"#d69525", "stroke-width":2 }, g);
+  el('text', { x:93, y:114, "text-anchor":"middle", "font-family":"Arial, sans-serif", "font-size":13, fill:"#5b4a24" }, g).textContent = "O/I";
+  el('rect', { x:121, y:94, width:42, height:27, rx:7, fill:"#f5f5f5", stroke:"#c8c8c8", "stroke-width":2 }, g);
+  el('text', { x:142, y:114, "text-anchor":"middle", "font-family":"Arial, sans-serif", "font-size":13, fill:"#555" }, g).textContent = "TARE";
+  el('path', { d:"M75 202 L105 202 L105 218 Q105 225 98 225 L82 225 Q75 225 75 218 Z", fill:"#303030" }, g);
+  el('path', { d:"M325 202 L355 202 L355 218 Q355 225 348 225 L332 225 Q325 225 325 218 Z", fill:"#303030" }, g);
+  return { massText, cupContent, cupG };
+}
+
+/* ==========================================================================
+   INSTRUMENTS
+   ========================================================================== */
+const eproG = el('g', { transform:`translate(${EPRO_X},${EPRO_Y}) scale(${EPRO_SCALE})` }, stage);
+const eproLiquidEl = buildEprouvetteShape(eproG);
+
+const balG = el('g', { transform:`translate(${BAL_X},${BAL_Y}) scale(${BAL_SCALE})` }, stage);
+const balParts = buildBalanceShape(balG);
+
+let eproVolume = 0;   // volume courant affiche dans l'eprouvette
+let eproColor = '#7ec9e8';
+let balMass = 0;      // masse courante affichee sur la balance
+
+// le liquide garde TOUJOURS la couleur de l'espece versee (un erlen vert ne
+// devient pas bleu une fois dans l'eprouvette). A 0 mL : pas de liquide du
+// tout, seules les graduations restent visibles (eprouvette vide).
+function setEproVolume(v, color) {
+  eproVolume = v;
+  if (color) { eproColor = color; eproLiquidEl.setAttribute('fill', color); }
+  if (v <= 0.001) {
+    eproLiquidEl.setAttribute('opacity', 0);
+  } else {
+    eproLiquidEl.setAttribute('opacity', .92);
+    eproLiquidEl.setAttribute('d', eprouvetteLiquidPath(gradValueToY(v)));
+  }
+  if (zoomOverlay.style.display === 'flex') renderZoom();
+}
+function setBalMass(m, color) {
+  balMass = m;
+  if (color) balParts.cupContent.setAttribute('fill', color);
+  balParts.massText.textContent = m.toFixed(MASS_PRECISION) + " g";
+  balParts.cupContent.setAttribute('opacity', m > 0.001 ? 0.95 : 0);
+}
+
+/* ==========================================================================
+   BOUTON LOUPE + FENETRE ZOOM -- la vue normale ne montre que des traits ;
+   ici on affiche les valeurs (comme une vraie eprouvette) en grand, avec le
+   niveau de liquide actuel (ou rien si l'eprouvette est vide).
+   ========================================================================== */
+const zoomOverlay = document.getElementById('zoomOverlay');
+const zoomSvg = document.getElementById('zoomSvg');
+const zoomClose = document.getElementById('zoomClose');
+
+const zoomBtnG = el('g', { style:'cursor:pointer' }, stage);
+const ZOOM_BTN_X = EPRO_X + 55 * EPRO_SCALE, ZOOM_BTN_Y = TABLE_Y + 24;
+el('circle', { cx:ZOOM_BTN_X, cy:ZOOM_BTN_Y, r:15, fill:'#2563eb' }, zoomBtnG);
+el('circle', { cx:ZOOM_BTN_X - 2.5, cy:ZOOM_BTN_Y - 2.5, r:6, fill:'none', stroke:'#fff', 'stroke-width':2.4 }, zoomBtnG);
+el('line', { x1:ZOOM_BTN_X + 1.5, y1:ZOOM_BTN_Y + 1.5, x2:ZOOM_BTN_X + 6.5, y2:ZOOM_BTN_Y + 6.5,
+  stroke:'#fff', 'stroke-width':2.4, 'stroke-linecap':'round' }, zoomBtnG);
+zoomBtnG.addEventListener('click', () => { zoomOverlay.style.display = 'flex'; renderZoom(); });
+zoomClose.addEventListener('click', () => { zoomOverlay.style.display = 'none'; });
+zoomOverlay.addEventListener('click', (e) => { if (e.target === zoomOverlay) zoomOverlay.style.display = 'none'; });
+
+/* Le zoom ne montre PAS l'eprouvette entiere : juste la portion utile autour
+   du menisque, agrandie -- comme quand on approche l'oeil du tube pour lire
+   une burette. Fenetre de +/- 1.5 grande graduation autour du niveau actuel
+   (ou autour du 0 mL si l'eprouvette est vide -- c'est la lecture correcte
+   dans ce cas, pas le milieu de l'echelle). */
+function renderZoom() {
+  while (zoomSvg.firstChild) zoomSvg.removeChild(zoomSvg.firstChild);
+
+  const half = GRAD_MAJOR_STEP * 1.5;
+  let center = eproVolume > 0.001 ? eproVolume : 0;
+  center = Math.max(half, Math.min(VOL_MAX - half, center));
+  const yTop = gradValueToY(center + half);
+  const yBottom = gradValueToY(center - half);
+  const pad = 10;
+  zoomSvg.setAttribute('viewBox', `58 ${yTop - pad} 145 ${(yBottom - yTop) + pad * 2}`);
+
+  // parois du tube (traces fixes -- seule la fenetre visible change, effet loupe)
+  el('path', { d:"M75 28 L75 318 Q75 332 89 339 L131 339 Q145 332 145 318 L145 28",
+    fill:"#fafafa", stroke:"#303030", "stroke-width":2.2 }, zoomSvg);
+
+  if (eproVolume > 0.001) {
+    el('path', { d:eprouvetteLiquidPath(gradValueToY(eproVolume)), fill:eproColor, opacity:.92 }, zoomSvg);
+    // trait de repere au niveau exact du menisque, pour bien viser la lecture
+    const my = gradValueToY(eproVolume);
+    el('line', { x1:50, y1:my, x2:150, y2:my, stroke:'#334155', 'stroke-width':0.8, 'stroke-dasharray':'2.5,2', opacity:.6 }, zoomSvg);
+  }
+
+  // graduation fine (1 mL) + valeurs numeriques sur les grandes graduations --
+  // LA seule vue ou les nombres apparaissent
+  GRAD.minors.forEach(t => {
+    if (t.y < yTop - pad || t.y > yBottom + pad) return;
+    el('line', { x1:84, y1:t.y, x2:100, y2:t.y, stroke:'#94a3b8', 'stroke-width':0.8 }, zoomSvg);
+  });
+  GRAD.majors.forEach(t => {
+    if (t.y < yTop - pad || t.y > yBottom + pad) return;
+    el('line', { x1:84, y1:t.y, x2:108, y2:t.y, stroke:'#334155', 'stroke-width':1.3 }, zoomSvg);
+    el('text', { x:112, y:t.y + 2.6, 'text-anchor':'start', 'font-family':'Arial, sans-serif',
+      'font-size':7, 'font-weight':600, fill:'#1f2937' }, zoomSvg).textContent = t.v + ' mL';
+  });
+}
+setEproVolume(0);
+setBalMass(0);
+
+/* ==========================================================================
+   ETINCELLES "EFFET MAGIQUE" -- utilisees pour le retour des flacons et le
+   remplacement de la coupelle (envol / arrivee).
+   ========================================================================== */
+const sparkleG = el('g', {}, stage);
+let sparkles = [];
+const SPARK_COLORS = ["#fbbf24", "#a78bfa", "#60a5fa", "#f472b6", "#34d399"];
+let lastSparkleT = null;
+
+function spawnSparkles(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    sparkles.push({
+      x: x + (Math.random() - 0.5) * 10,
+      y: y + (Math.random() - 0.5) * 10,
+      vx: (Math.random() - 0.5) * 1.4,
+      vy: -Math.random() * 1.6 - 0.3,
+      life: 0,
+      maxLife: 450 + Math.random() * 350,
+      size: 2 + Math.random() * 2.4,
+      color: SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)]
+    });
+  }
+}
+function starPath(x, y, r) {
+  return `M${x} ${y - r * 2} L${x + r * 0.5} ${y - r * 0.5} L${x + r * 2} ${y} L${x + r * 0.5} ${y + r * 0.5} `
+    + `L${x} ${y + r * 2} L${x - r * 0.5} ${y + r * 0.5} L${x - r * 2} ${y} L${x - r * 0.5} ${y - r * 0.5} Z`;
+}
+function tickSparkles() {
+  const now = performance.now();
+  const dt = lastSparkleT ? Math.min(48, now - lastSparkleT) : 16;
+  lastSparkleT = now;
+  sparkles.forEach(sp => { sp.life += dt; sp.x += sp.vx; sp.y += sp.vy; });
+  sparkles = sparkles.filter(sp => sp.life < sp.maxLife);
+  while (sparkleG.firstChild) sparkleG.removeChild(sparkleG.firstChild);
+  sparkles.forEach(sp => {
+    const t = sp.life / sp.maxLife;
+    const alpha = Math.max(0, 1 - t);
+    const r = sp.size * (1 - t * 0.4);
+    el('path', { d: starPath(sp.x, sp.y, r), fill: sp.color, opacity: alpha }, sparkleG);
+  });
+}
+
+/* ==========================================================================
+   VAISSELLE SOURCE (bechers / erlens) -- position, drag, vol/pesee
+   ========================================================================== */
+const vessels = ESPECES.map((v, i) => ({
+  id: i,
+  kind: v.typ === 'soluce' ? 'erlen' : 'becher',   // 'mass' -> becher/balance, 'soluce' -> erlen/eprouvette
+  label: v.nom || ('Espèce ' + (i + 1)),
+  value: typeof v.value === 'number' ? v.value : 1,
+  color: PALETTE[i % PALETTE.length],
+  used: false,
+  state: 'idle',        // idle | dragging | ready | pouring | flying
+  x: 0, y: 0, angle: 0,  // position/angle courants (repere scene)
+  x0: 0, y0: 0,           // position de repos
+  w: 0, h: 0, scale: 0, pivotX: 0, pivotY: 0,
+  dragOffX: 0, dragOffY: 0
+}));
+
+function layoutVessels() {
+  const n = vessels.length;
+  const maxW = Math.max(BECHER_VISW, ERLEN_VISW) * (240 / BECHER_BOX.visW); // approx pire cas pour l'espacement
+  const spacing = n > 1 ? Math.min(150, (ZONE_RIGHT - ZONE_LEFT - maxW) / (n - 1)) : 0;
+  vessels.forEach((v, i) => {
+    const localW = v.kind === 'erlen' ? 260 : 240;
+    const localH = 300;
+    const box = v.kind === 'erlen' ? ERLEN_BOX : BECHER_BOX;
+    const targetVisW = v.kind === 'erlen' ? ERLEN_VISW : BECHER_VISW;
+    v.scale = targetVisW / box.visW;
+    v.w = localW * v.scale;   // largeur de la boite (avec marges), sert a l'espacement/centrage du label
+    v.h = localH * v.scale;
+    v.pivotX = (v.kind === 'erlen' ? 130 : 120);
+    v.pivotY = box.visBottom;
+    v.x0 = ZONE_LEFT + (n > 1 ? i * spacing : (ZONE_RIGHT - ZONE_LEFT - v.w) / 2);
+    v.y0 = TABLE_Y - box.visBottom * v.scale;   // le bas VISIBLE du verre touche la table
+    if (v.state === 'idle') { v.x = v.x0; v.y = v.y0; v.angle = 0; }
+  });
+}
+layoutVessels();
+
+/* construction du DOM de chaque flacon */
+vessels.forEach(v => {
+  const outer = el('g', { class:'vessel', id:'vessel_' + v.id }, stage);
+  const tilt = el('g', {}, outer);
+  const localW = v.kind === 'erlen' ? 260 : 260; // hitbox generouse
+  const localH = 300;
+  el('rect', { x:0, y:0, width: v.kind === 'erlen' ? 260 : 240, height:300, fill:'transparent' }, tilt);
+  const fillEl = v.kind === 'erlen'
+    ? buildErlenShape(tilt, 'fill_' + v.id, v.color)
+    : buildBecherShape(tilt, 'fill_' + v.id, v.color);
+  v.dom = outer; v.tiltDom = tilt; v.fillEl = fillEl;
+
+  const label = el('text', { x: v.x0 + v.w / 2, y: v.y0 + v.h + 16, "text-anchor":"middle",
+    "font-family":"Arial, sans-serif", "font-size":13, "font-weight":600, fill:"#1f2937" }, stage);
+  label.textContent = v.label;
+  v.labelDom = label;
+});
+
+function renderVessel(v) {
+  v.dom.setAttribute('transform', `translate(${v.x},${v.y}) scale(${v.scale})`);
+  v.tiltDom.setAttribute('transform', `rotate(${v.angle * 180 / Math.PI} ${v.pivotX} ${v.pivotY})`);
+}
+function renderAll() { vessels.forEach(renderVessel); }
+renderAll();
+
+/* ---------- animation générique (lerp avec easing) ---------- */
+function animate(duration, onFrame, onDone) {
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / duration);
+    onFrame(t);
+    if (t < 1) requestAnimationFrame(step); else if (onDone) onDone();
+  }
+  requestAnimationFrame(step);
+}
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+const easeInQuad = t => t * t;
+
+/* ---------- drag & drop ---------- */
+let dragging = null;
+let hoverActive = false;
+
+function stagePoint(evt) {
+  const pt = stage.createSVGPoint();
+  const src = evt.touches ? evt.touches[0] : evt;
+  pt.x = src.clientX; pt.y = src.clientY;
+  const ctm = stage.getScreenCTM().inverse();
+  return pt.matrixTransform(ctm);
+}
+
+// halo de zone de depose -- visible des qu'un flacon compatible la survole
+const dropHighlight = el('circle', { r:0, fill:'rgba(37,99,235,0.12)', stroke:'#2563eb',
+  'stroke-width':2, 'stroke-dasharray':'6,4', opacity:0 }, stage);
+
+function targetFor(v) {
+  return v.kind === 'becher' ? BAL_DROP : EPRO_DROP;
+}
+
+/* place le bouton Verser au-dessus du point donne (coordonnees scene) */
+function placeVerserBtnAt(sx, sy) {
+  const pt = stage.createSVGPoint();
+  pt.x = sx; pt.y = sy;
+  const screenPt = pt.matrixTransform(stage.getScreenCTM());
+  const wrapRect = document.getElementById('wrap').getBoundingClientRect();
+  verserBtn.style.display = 'block';
+  verserBtn.style.left = (screenPt.x - wrapRect.left) + 'px';
+  verserBtn.style.top = (screenPt.y - wrapRect.top) + 'px';
+}
+
+/* appele en continu pendant le drag : affiche halo + bouton des le survol
+   d'une zone compatible (pas besoin de relacher pour voir apparaitre "Verser") */
+function updateHoverState(v) {
+  const drop = targetFor(v);
+  const cx = v.x + v.w / 2, cy = v.y + v.h / 2;
+  const dist = Math.hypot(cx - drop.x, cy - drop.y);
+  hoverActive = dist < drop.r;
+  if (hoverActive) {
+    dropHighlight.setAttribute('cx', drop.x);
+    dropHighlight.setAttribute('cy', drop.y);
+    dropHighlight.setAttribute('r', drop.r);
+    dropHighlight.setAttribute('opacity', 1);
+    placeVerserBtnAt(v.x + v.w / 2, v.y - 8);
+  } else {
+    dropHighlight.setAttribute('opacity', 0);
+    verserBtn.style.display = 'none';
+  }
+}
+
+vessels.forEach(v => {
+  if (!MOVABLE) return;
+  v.dom.addEventListener('pointerdown', (e) => {
+    if (v.state === 'flying' || v.state === 'pouring' || v.used) return;
+    e.preventDefault();
+    v.dom.setPointerCapture(e.pointerId);
+    const p = stagePoint(e);
+    dragging = v;
+    v.state = 'dragging';
+    v.angle = 0;
+    v.dragOffX = p.x - v.x;
+    v.dragOffY = p.y - v.y;
+    verserBtn.style.display = 'none';
+    dropHighlight.setAttribute('opacity', 0);
+    v.dom.classList.add('dragging');
+  });
+  v.dom.addEventListener('pointermove', (e) => {
+    if (dragging !== v) return;
+    const p = stagePoint(e);
+    v.x = p.x - v.dragOffX;
+    v.y = p.y - v.dragOffY;
+    renderVessel(v);
+    updateHoverState(v);
+  });
+  v.dom.addEventListener('pointerup', endDrag);
+  v.dom.addEventListener('pointercancel', endDrag);
+});
+
+function endDrag(e) {
+  const v = dragging;
+  if (!v) return;
+  v.dom.classList.remove('dragging');
+  dropHighlight.setAttribute('opacity', 0);
+  const wasHovering = hoverActive;
+  dragging = null;
+  hoverActive = false;
+  if (wasHovering) {
+    const drop = targetFor(v);
+    vessels.forEach(o => { if (o !== v && o.state === 'ready') returnHome(o); });
+    v.state = 'ready';
+    const readyX = drop.x - v.w * 0.95;
+    const readyY = drop.y - v.h * 1.15;
+    // anime vers la position "prete" et incline le flacon
+    const fromX = v.x, fromY = v.y, fromA = v.angle;
+    animate(280, t => {
+      const e2 = easeOutCubic(t);
+      v.x = fromX + (readyX - fromX) * e2;
+      v.y = fromY + (readyY - fromY) * e2;
+      v.angle = fromA + (0.7 - fromA) * e2;
+      renderVessel(v);
+      positionVerserBtn();
+    }, () => { positionVerserBtn(); });
+  } else {
+    returnHome(v);
+  }
+}
+
+function returnHome(v) {
+  v.state = 'flying';
+  const fromX = v.x, fromY = v.y, fromA = v.angle;
+  animate(500, t => {
+    const e2 = easeOutCubic(t);
+    const arc = Math.sin(t * Math.PI) * -18;
+    v.x = fromX + (v.x0 - fromX) * e2;
+    v.y = fromY + (v.y0 - fromY) * e2 + arc;
+    v.angle = fromA + (0 - fromA) * e2;
+    renderVessel(v);
+    if (Math.random() < 0.6) spawnSparkles(v.x + v.w / 2, v.y + v.h / 2, 2);
+    tickSparkles();
+  }, () => {
+    v.x = v.x0; v.y = v.y0; v.angle = 0;
+    v.state = 'idle';
+    renderVessel(v);
+    positionVerserBtn();
+  });
+}
+
+/* ---------- bouton Verser (etat "pret", apres relachement dans une zone) ---------- */
+function positionVerserBtn() {
+  const ready = vessels.find(v => v.state === 'ready');
+  if (!ready) { verserBtn.style.display = 'none'; return; }
+  placeVerserBtnAt(ready.x + ready.w * 0.15, ready.y - 6);
+}
+
+/* ==========================================================================
+   FILET DE VERSEMENT -- un ruban continu (courbe) + gouttes qui accelerent
+   en tombant, pas de trait droit rigide ni de nuage de points au hasard.
+   ========================================================================== */
+const streamPath = el('path', { fill:'none', 'stroke-linecap':'round', opacity:0 }, stage);
+const dropsG = el('g', {}, stage);
+let streamParticles = [];
+
+function pourStreamStep(spout, target, color) {
+  const dx = target.x - spout.x;
+  const midX = spout.x + dx * 0.5 + (dx >= 0 ? 10 : -10);
+  const midY = (spout.y + target.y) / 2;
+
+  streamPath.setAttribute('d', `M${spout.x} ${spout.y} Q${midX} ${midY} ${target.x} ${target.y}`);
+  streamPath.setAttribute('stroke', color);
+  streamPath.setAttribute('stroke-width', 4.5);
+  streamPath.setAttribute('opacity', 0.5);
+
+  if (Math.random() < 0.5) streamParticles.push({ t: 0 });
+  streamParticles.forEach(p => { p.t += 0.045 + p.t * 0.07; }); // accelere (chute)
+  streamParticles = streamParticles.filter(p => p.t < 1);
+
+  while (dropsG.firstChild) dropsG.removeChild(dropsG.firstChild);
+  streamParticles.forEach(p => {
+    const t = p.t;
+    const it = 1 - t;
+    const x = it * it * spout.x + 2 * it * t * midX + t * t * target.x;
+    const y = it * it * spout.y + 2 * it * t * midY + t * t * target.y;
+    const r = Math.max(1.4, 3 - t * 1.4);
+    el('ellipse', { cx:x, cy:y, rx:r * 0.75, ry:r, fill:color, opacity: Math.min(1, it * 1.5 + 0.15) }, dropsG);
+  });
+}
+function clearStream() {
+  streamParticles = [];
+  while (dropsG.firstChild) dropsG.removeChild(dropsG.firstChild);
+  streamPath.setAttribute('opacity', 0);
+}
+
+function spoutPoint(v) {
+  // extremite haute du col, une fois incline (repere scene)
+  const localTipX = v.kind === 'erlen' ? 130 : 120;
+  const localTipY = v.kind === 'erlen' ? 38 : 42;
+  const a = v.angle;
+  const dx = localTipX - v.pivotX, dy = localTipY - v.pivotY;
+  const rx = dx * Math.cos(a) - dy * Math.sin(a);
+  const ry = dx * Math.sin(a) + dy * Math.cos(a);
+  return { x: v.x + (v.pivotX + rx) * v.scale, y: v.y + (v.pivotY + ry) * v.scale };
+}
+
+/* ---------- remplacement magique de la coupelle (balance) ---------- */
+// convertit un point EXPRIME dans le repere local de la balance (+ decalage
+// anime local du cupG) en coordonnees scene, pour placer les etincelles
+function localCupPointToScene(localDX, localDY) {
+  return { x: BAL_X + (215 + localDX) * BAL_SCALE, y: BAL_Y + (49 + localDY) * BAL_SCALE };
+}
+
+// la coupelle deja pesee s'envole (montee + cote), disparait en etincelles
+function flyOldCupAway(callback) {
+  const fromMass = balMass;
+  animate(480, t => {
+    const eased = t * t;
+    const dx = 75 * eased, dy = -95 * eased;
+    balParts.cupG.setAttribute('transform', `translate(${dx},${dy}) scale(${Math.max(0, 1 - 0.9 * eased)})`);
+    balParts.cupG.setAttribute('opacity', Math.max(0, 1 - eased));
+    setBalMass(fromMass * (1 - eased));
+    if (Math.random() < 0.6) {
+      const p = localCupPointToScene(dx, dy);
+      spawnSparkles(p.x, p.y, 2);
+    }
+    tickSparkles();
+  }, () => {
+    balParts.cupG.setAttribute('transform', 'translate(0,0) scale(1)');
+    balParts.cupG.setAttribute('opacity', 1);
+    balParts.cupContent.setAttribute('opacity', 0);
+    setBalMass(0);
+    callback();
+  });
+}
+
+// une nouvelle coupelle vide arrive en volant (effet "Poudlard") et se pose
+function flyNewCupIn(callback) {
+  const fromDX = -95, fromDY = -110;
+  balParts.cupG.setAttribute('transform', `translate(${fromDX},${fromDY}) scale(0.15)`);
+  balParts.cupG.setAttribute('opacity', 0);
+  animate(480, t => {
+    const eased = easeOutCubic(t);
+    const dx = fromDX * (1 - eased), dy = fromDY * (1 - eased);
+    balParts.cupG.setAttribute('transform', `translate(${dx},${dy}) scale(${0.15 + 0.85 * eased})`);
+    balParts.cupG.setAttribute('opacity', eased);
+    if (Math.random() < 0.6) {
+      const p = localCupPointToScene(dx, dy);
+      spawnSparkles(p.x, p.y, 2);
+    }
+    tickSparkles();
+  }, () => {
+    balParts.cupG.setAttribute('transform', 'translate(0,0) scale(1)');
+    balParts.cupG.setAttribute('opacity', 1);
+    callback();
+  });
+}
+
+// eprouvette deja remplie : le liquide se vide dans un tourbillon d'etincelles
+// avant de recevoir la nouvelle espece (pas d'objet "coupelle" ici, donc pas
+// d'envol, mais le meme esprit magique)
+function drainEprouvette(callback) {
+  const fromVol = eproVolume;
+  animate(380, t => {
+    const eased = t * t;
+    setEproVolume(fromVol * (1 - eased));
+    if (Math.random() < 0.6) spawnSparkles(EPRO_DROP.x, EPRO_DROP.y + 20, 2);
+    tickSparkles();
+  }, () => { setEproVolume(0); callback(); });
+}
+
+/* ---------- verser ---------- */
+verserBtn.addEventListener('click', () => {
+  const v = vessels.find(x => x.state === 'ready');
+  if (!v) return;
+  verserBtn.style.display = 'none';
+  v.state = 'pouring';
+
+  const isBecher = v.kind === 'becher';
+  const startVal = isBecher ? balMass : eproVolume;
+  const resetFirst = startVal > 0.001;
+
+  function doPour() {
+    const dur = 900;
+    animate(dur, t => {
+      const eased = easeInQuad(t);
+      const val = v.value * eased;
+      if (isBecher) setBalMass(val, v.color); else setEproVolume(val, v.color);
+      const spout = spoutPoint(v);
+      const target = isBecher ? { x: BAL_DROP.x, y: BAL_DROP.y - 4 } : { x: EPRO_DROP.x, y: EPRO_DROP.y - 4 };
+      pourStreamStep(spout, target, v.color);
+    }, () => {
+      clearStream();
+      if (isBecher) setBalMass(v.value, v.color); else setEproVolume(v.value, v.color);
+      v.used = true;
+      v.fillEl.setAttribute('opacity', 0);
+      returnHome(v);
+    });
+  }
+
+  if (resetFirst && isBecher) {
+    flyOldCupAway(() => flyNewCupIn(doPour));
+  } else if (resetFirst) {
+    drainEprouvette(doPour);
+  } else {
+    doPour();
+  }
+});
+
+/* ---------- reset ---------- */
+resetBtn.addEventListener('click', () => {
+  clearStream();
+  sparkles = [];
+  while (sparkleG.firstChild) sparkleG.removeChild(sparkleG.firstChild);
+  vessels.forEach(v => {
+    v.used = false; v.state = 'idle'; v.x = v.x0; v.y = v.y0; v.angle = 0;
+    v.fillEl.setAttribute('opacity', .92);
+    renderVessel(v);
+  });
+  balParts.cupG.setAttribute('transform', 'translate(0,0) scale(1)');
+  balParts.cupG.setAttribute('opacity', 1);
+  setBalMass(0);
+  setEproVolume(0);
+  verserBtn.style.display = 'none';
+});
+
+renderAll();
+</script>
+</body>
+</html>
