@@ -522,7 +522,10 @@ function placeVerserBtnAt(sx, sy) {
   const wrapRect = document.getElementById('wrap').getBoundingClientRect();
   verserBtn.style.display = 'block';
   verserBtn.style.left = (screenPt.x - wrapRect.left) + 'px';
-  verserBtn.style.top = (screenPt.y - wrapRect.top) + 'px';
+  // le bouton s'affiche entierement au-dessus de son point d'ancrage
+  // (transform:translate(-50%,-100%)) -- on garde une marge pour qu'il ne
+  // soit jamais coupe par le haut du cadre (overflow:hidden sur body/html).
+  verserBtn.style.top = Math.max(screenPt.y - wrapRect.top, 36) + 'px';
 }
 
 /* appele en continu pendant le drag : affiche halo + bouton des le survol
@@ -585,7 +588,7 @@ function endDrag(e) {
     vessels.forEach(o => { if (o !== v && o.state === 'ready') returnHome(o); });
     v.state = 'ready';
     const readyX = drop.x - v.w * 0.95;
-    const readyY = Math.max(drop.y - v.h * 1.15, 12);
+    const readyY = Math.max(drop.y - v.h * 1.15, 46);
     // anime vers la position "prete" et incline le flacon
     const fromX = v.x, fromY = v.y, fromA = v.angle;
     animate(280, t => {
