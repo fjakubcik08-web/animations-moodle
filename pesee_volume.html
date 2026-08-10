@@ -585,7 +585,7 @@ function endDrag(e) {
     vessels.forEach(o => { if (o !== v && o.state === 'ready') returnHome(o); });
     v.state = 'ready';
     const readyX = drop.x - v.w * 0.95;
-    const readyY = drop.y - v.h * 1.15;
+    const readyY = Math.max(drop.y - v.h * 1.15, 12);
     // anime vers la position "prete" et incline le flacon
     const fromX = v.x, fromY = v.y, fromA = v.angle;
     animate(280, t => {
