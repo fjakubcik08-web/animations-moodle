@@ -10,9 +10,9 @@
   .graphCol{flex:none;width:380px;}
   canvas#graph{width:380px;height:260px;display:block;}
   .controls{display:flex;align-items:center;gap:16px;padding:0 16px 16px;}
-  button#startBtn{font-size:15px;padding:8px 18px;border:1px solid #8a8780;background:#f4f3ef;border-radius:4px;cursor:pointer;}
-  button#startBtn:hover{background:#e9e7e1;}
-  button#startBtn:disabled{opacity:0.6;cursor:default;}
+  .controls button{font-size:15px;padding:8px 18px;border:1px solid #8a8780;background:#f4f3ef;border-radius:4px;cursor:pointer;}
+  .controls button:hover{background:#e9e7e1;}
+  .controls button:disabled{opacity:0.6;cursor:default;}
   .readout{font-size:14px;color:#5f5e5a;}
 </style>
 </head>
@@ -82,11 +82,13 @@
 </div>
 <div class="controls">
 <button id="startBtn">Commencer</button>
+<button id="exportBtn">Exporter JPG</button>
 <span class="readout" id="timeOut">t = 0 s</span>
 </div>
 <script>
 (function(){
   var btn = document.getElementById('startBtn');
+  var exportBtn = document.getElementById('exportBtn');
   var timeOut = document.getElementById('timeOut');
   var hotDot = document.getElementById('hotDot');
   var liquidRect = document.getElementById('liquidRect');
@@ -205,7 +207,8 @@
     Y_MAX = Math.ceil((mx + 10) / 10) * 10;
   })();
 
-  function drawGraph(){
+  function drawGraph(showCursor){
+    if(showCursor === undefined) showCursor = true;
     var w = CSS_W, h = CSS_H;
     gctx.clearRect(0,0,w,h);
     var padL = 46, padB = 32, padT = 14, padR = 12;
@@ -271,37 +274,42 @@
       }
       gctx.stroke();
 
-      var idx = (!running && reviewIdx !== null) ? reviewIdx : points.length - 1;
-      var cur = points[idx];
-      var cx2 = xPix(cur.t), cy2 = yPix(cur.temp);
-      gctx.fillStyle = '#2f6fb5';
-      gctx.beginPath();
-      gctx.arc(cx2, cy2, 4, 0, Math.PI*2);
-      gctx.fill();
-      gctx.strokeStyle = '#ffffff';
-      gctx.lineWidth = 1.5;
-      gctx.stroke();
+      if(showCursor){
+        var idx = (!running && reviewIdx !== null) ? reviewIdx : points.length - 1;
+        var cur = points[idx];
+        var cx2 = xPix(cur.t), cy2 = yPix(cur.temp);
+        gctx.fillStyle = '#2f6fb5';
+        gctx.beginPath();
+        gctx.arc(cx2, cy2, 4, 0, Math.PI*2);
+        gctx.fill();
+        gctx.strokeStyle = '#ffffff';
+        gctx.lineWidth = 1.5;
+        gctx.stroke();
 
-      if(!running){
-        var label = 't=' + cur.t.toFixed(1) + 's  T=' + cur.temp.toFixed(1) + '°C';
-        gctx.font = '11px Arial';
-        var lw = gctx.measureText(label).width + 10;
-        var lx = Math.min(Math.max(cx2 - lw/2, padL), padL + plotW - lw);
-        var ly = cy2 - 12;
-        if(ly < padT + 12) ly = cy2 + 22;
-        gctx.fillStyle = 'rgba(255,255,255,0.92)';
-        gctx.fillRect(lx, ly - 12, lw, 16);
-        gctx.strokeStyle = '#c9c6c0';
-        gctx.lineWidth = 1;
-        gctx.strokeRect(lx, ly - 12, lw, 16);
-        gctx.fillStyle = '#2f3f8f';
-        gctx.fillText(label, lx + 5, ly);
+        if(!running){
+          var label = 't=' + cur.t.toFixed(1) + 's  T=' + cur.temp.toFixed(1) + '°C';
+          gctx.font = '11px Arial';
+          var lw = gctx.measureText(label).width + 10;
+          var lx = Math.min(Math.max(cx2 - lw/2, padL), padL + plotW - lw);
+          var ly = cy2 - 12;
+          if(ly < padT + 12) ly = cy2 + 22;
+          gctx.fillStyle = 'rgba(255,255,255,0.92)';
+          gctx.fillRect(lx, ly - 12, lw, 16);
+          gctx.strokeStyle = '#c9c6c0';
+          gctx.lineWidth = 1;
+          gctx.strokeRect(lx, ly - 12, lw, 16);
+          gctx.fillStyle = '#2f3f8f';
+          gctx.fillText(label, lx + 5, ly);
+        }
       }
     }
   }
 
   var LIQ_X = 30, LIQ_W = 140, LIQ_BOTTOM = 175, LIQ_MAXH = 145;
   var ICE_X = 55, ICE_W = 90, ICE_BOTTOM = 175, ICE_MAXH = 90;
+  // volume du glacon conserve a la fonte : la hauteur de liquide qu'il produit
+  // correspond a son propre volume reparti sur la largeur du becher (pas le becher plein)
+  var MELT_LIQ_MAXH = (ICE_W * ICE_MAXH) / LIQ_W;
   var BUBBLE_TOP = LIQ_BOTTOM - LIQ_MAXH + 10;
 
   function spawnBubble(){
@@ -333,7 +341,7 @@
 
   function updateVessel(t, temp){
     var meltFrac = iceMeltFrac(t);
-    var liqH = ICE_VISIBLE ? LIQ_MAXH * meltFrac : LIQ_MAXH;
+    var liqH = ICE_VISIBLE ? MELT_LIQ_MAXH * meltFrac : LIQ_MAXH;
     liquidRect.setAttribute('y', LIQ_BOTTOM - liqH);
     liquidRect.setAttribute('height', Math.max(liqH, 0));
 
@@ -391,6 +399,25 @@
     btn.textContent = 'En cours...';
     btn.disabled = true;
     requestAnimationFrame(tick);
+  });
+
+  exportBtn.addEventListener('click', function(){
+    drawGraph(false);
+    var tmp = document.createElement('canvas');
+    tmp.width = graph.width;
+    tmp.height = graph.height;
+    var tctx = tmp.getContext('2d');
+    tctx.fillStyle = '#ffffff';
+    tctx.fillRect(0, 0, tmp.width, tmp.height);
+    tctx.drawImage(graph, 0, 0);
+    var url = tmp.toDataURL('image/jpeg', 0.95);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'courbe_chauffage_' + TY + '.jpg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    drawGraph(true);
   });
 
   function nearestIndexForX(clientX){
