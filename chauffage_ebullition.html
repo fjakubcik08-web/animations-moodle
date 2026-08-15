@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Chauffage jusqu'à ébullition</title>
+<style>
+  html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#ffffff;color:#3d3d3a;}
+  .wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;padding:16px;box-sizing:border-box;}
+  #scene{flex:none;width:360px;height:396px;}
+  .graphCol{flex:none;width:380px;}
+  canvas#graph{width:380px;height:260px;display:block;}
+  .controls{display:flex;align-items:center;gap:16px;padding:0 16px 16px;}
+  button#startBtn{font-size:15px;padding:8px 18px;border:1px solid #8a8780;background:#f4f3ef;border-radius:4px;cursor:pointer;}
+  button#startBtn:hover{background:#e9e7e1;}
+  button#startBtn:disabled{opacity:0.6;cursor:default;}
+  .readout{font-size:14px;color:#5f5e5a;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<svg xmlns="http://www.w3.org/2000/svg" id="scene" viewBox="0 0 500 550">
+<rect width="100%" height="100%" fill="none"/>
+<g id="plaque-chauffante" transform="translate(130, 340)">
+<rect x="0" y="20" width="240" height="140" fill="#37474f"/>
+<rect x="5" y="75" width="230" height="80" fill="#455a64"/>
+<rect x="5" y="0" width="230" height="20" fill="#eceff1"/>
+<line x1="5" y1="20" x2="235" y2="20" stroke="#b0bec5" stroke-width="2"/>
+<rect x="40" y="90" width="65" height="30" fill="#212121"/>
+<text x="46" y="111" font-family="monospace, sans-serif" font-size="12" font-weight="bold" fill="#00e676">100°C</text>
+<circle id="hotDot" cx="25" cy="105" r="4" fill="#ff1744"/>
+<circle cx="145" cy="105" r="15" fill="#cfd8dc"/>
+<line x1="145" y1="90" x2="145" y2="105" stroke="#37474f" stroke-width="2.5"/>
+<text x="132" y="135" font-family="Arial, sans-serif" font-size="8" fill="#cfd8dc" font-weight="bold">TEMP</text>
+<circle cx="195" cy="105" r="12" fill="#90a4ae"/>
+<line x1="195" y1="105" x2="183" y2="105" stroke="#37474f" stroke-width="2"/>
+<text x="184" y="135" font-family="Arial, sans-serif" font-size="8" fill="#cfd8dc" font-weight="bold">STIR</text>
+</g>
+<g id="becher-labo" transform="translate(150, 160)">
+<rect x="20" y="0" width="160" height="180" fill="#f4f8fa" opacity="0.8"/>
+<rect x="20" y="175" width="160" height="5" fill="#d9e5ec"/>
+<rect id="liquidRect" x="30" y="30" width="140" height="145" fill="#3a7bd5"/>
+<rect id="iceBlock" x="45" y="30" width="110" height="145" rx="3" fill="#e2f2f8" stroke="#9fc7d9" stroke-width="2"/>
+<g id="bubbles"></g>
+<path d="M 10,-5 L 20,0 L 20,180 L 180,180 L 180,0" fill="none" stroke="#78909c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<g stroke="#90a4ae" stroke-width="2" stroke-linecap="round">
+<line x1="150" y1="30" x2="172" y2="30"/>
+<line x1="150" y1="65" x2="172" y2="65"/>
+<line x1="150" y1="100" x2="172" y2="100"/>
+<line x1="150" y1="135" x2="172" y2="135"/>
+<line x1="150" y1="170" x2="172" y2="170"/>
+</g>
+<text x="120" y="18" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#78909c">mL</text>
+<line x1="32" y1="15" x2="32" y2="160" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+<line x1="40" y1="35" x2="40" y2="120" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/>
+</g>
+<g id="sonde-plongeante" transform="translate(210, 40)">
+<rect x="10" y="0" width="10" height="15" fill="#37474f"/>
+<rect x="0" y="15" width="30" height="50" fill="#546e7a"/>
+<rect x="9" y="65" width="12" height="15" fill="#78909c"/>
+<rect x="11" y="80" width="8" height="210" fill="#b0bec5"/>
+<polygon points="11,290 15,300 19,290" fill="#78909c"/>
+</g>
+<g id="boitier-thermometre" transform="translate(10, 160)">
+<rect x="0" y="0" width="110" height="160" fill="#eceff1" stroke="#b0bec5" stroke-width="4"/>
+<rect x="12" y="15" width="86" height="45" fill="#212121"/>
+<rect x="16" y="19" width="78" height="37" fill="#00e676" opacity="0.9"/>
+<text id="tempText" x="20" y="44" font-family="monospace, sans-serif" font-size="17" font-weight="bold" fill="#212121">--.-</text>
+<text x="76" y="33" font-family="Arial, sans-serif" font-size="9" font-weight="bold" fill="#212121">°C</text>
+<circle cx="32" cy="95" r="11" fill="#ff1744"/>
+<text x="21" y="117" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="#546e7a">ON/OFF</text>
+<circle cx="78" cy="95" r="11" fill="#29b6f6"/>
+<text x="69" y="117" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="#546e7a">HOLD</text>
+<rect x="110" y="125" width="10" height="15" fill="#37474f"/>
+</g>
+<g id="cable-liaison" stroke="#37474f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+<polyline points="130,292 190,292 190,15 225,15"/>
+</g>
+</svg>
+<div class="graphCol">
+<canvas id="graph" width="380" height="260"></canvas>
+</div>
+</div>
+<div class="controls">
+<button id="startBtn">Commencer</button>
+<span class="readout" id="timeOut">t = 0 s</span>
+</div>
+<script>
+(function(){
+  var btn = document.getElementById('startBtn');
+  var timeOut = document.getElementById('timeOut');
+  var hotDot = document.getElementById('hotDot');
+  var liquidRect = document.getElementById('liquidRect');
+  var iceBlock = document.getElementById('iceBlock');
+  var tempText = document.getElementById('tempText');
+  var bubblesG = document.getElementById('bubbles');
+  var graph = document.getElementById('graph');
+  var gctx = graph.getContext('2d');
+  var CSS_W = 380, CSS_H = 260;
+  var dpr = window.devicePixelRatio || 1;
+  graph.width = CSS_W * dpr;
+  graph.height = CSS_H * dpr;
+  graph.style.width = CSS_W + 'px';
+  graph.style.height = CSS_H + 'px';
+  gctx.scale(dpr, dpr);
+
+  var XOR_KEY = 'CHAUFF25';
+  function decodeParams(){
+    var out = {};
+    var qs = new URLSearchParams(window.location.search);
+    var p = qs.get('p');
+    if(p){
+      try{
+        var b64 = p.replace(/-/g,'+').replace(/_/g,'/');
+        while(b64.length % 4) b64 += '=';
+        var raw = atob(b64);
+        var dec = '';
+        for(var i=0;i<raw.length;i++){
+          dec += String.fromCharCode(raw.charCodeAt(i) ^ XOR_KEY.charCodeAt(i % XOR_KEY.length));
+        }
+        out = JSON.parse(dec);
+      }catch(e){}
+    }
+    ['ty'].forEach(function(k){ if(qs.has(k)) out[k] = qs.get(k); });
+    ['mix'].forEach(function(k){ if(qs.has(k)) out[k] = parseInt(qs.get(k),10); });
+    ['ts','tf','tb','t1','t2','t3','du'].forEach(function(k){ if(qs.has(k)) out[k] = parseFloat(qs.get(k)); });
+    return out;
+  }
+  var P = decodeParams();
+
+  var TY = P.ty || 'LG';
+  var MIX = P.mix === 1;
+
+  var defaults = {
+    LG:  { ts: 20,  tb: 100, t1: 21,             du: 30 },
+    SL:  { ts: -10, tf: 0,   t1: 10,             du: 30 },
+    SLG: { ts: -10, tf: 0,   tb: 100, t1: 8, t2: 16, t3: 34, du: 40 }
+  };
+  var D = defaults[TY] || defaults.LG;
+
+  var T_START = (typeof P.ts === 'number') ? P.ts : D.ts;
+  var T_FUSION = (typeof P.tf === 'number') ? P.tf : D.tf;
+  var T_BOIL = (typeof P.tb === 'number') ? P.tb : D.tb;
+  var T1 = (typeof P.t1 === 'number') ? P.t1 : D.t1;
+  var T2 = (typeof P.t2 === 'number') ? P.t2 : D.t2;
+  var T3 = (typeof P.t3 === 'number') ? P.t3 : D.t3;
+  var DURATION = (typeof P.du === 'number') ? P.du : D.du;
+  var MIX_K = 2.5 / DURATION;
+
+  var ICE_VISIBLE = (TY !== 'LG') && !MIX;
+
+  var running = false;
+  var startTime = null;
+  var points = [];
+  var bubbleTimer = 0;
+  var reviewIdx = null;
+  var dragging = false;
+
+  function tempAt(t){
+    if(TY === 'LG'){
+      if(MIX) return T_START + (T_BOIL - T_START) * (1 - Math.exp(-MIX_K * t));
+      if(t >= T1) return T_BOIL;
+      return T_START + (T_BOIL - T_START) * (t / T1);
+    }
+    if(TY === 'SL'){
+      if(MIX) return T_START + (T_FUSION - T_START) * (1 - Math.exp(-MIX_K * t));
+      if(t >= T1) return T_FUSION;
+      return T_START + (T_FUSION - T_START) * (t / T1);
+    }
+    // SLG
+    if(MIX) return T_START + (T_BOIL - T_START) * (1 - Math.exp(-MIX_K * t));
+    if(t < T1) return T_START + (T_FUSION - T_START) * (t / T1);
+    if(t < T2) return T_FUSION;
+    if(t < T3) return T_FUSION + (T_BOIL - T_FUSION) * ((t - T2) / (T3 - T2));
+    return T_BOIL;
+  }
+
+  function boilingAt(t, temp){
+    if(TY === 'LG'){
+      return MIX ? (temp >= T_START + (T_BOIL - T_START) * 0.8) : (t >= T1);
+    }
+    if(TY === 'SL') return false;
+    return MIX ? (temp >= T_START + (T_BOIL - T_START) * 0.85) : (t >= T3);
+  }
+
+  function iceMeltFrac(t){
+    if(!ICE_VISIBLE) return 1;
+    if(TY === 'SL'){
+      if(t < T1) return 0;
+      return Math.min((t - T1) / Math.max(DURATION - T1, 0.001), 1);
+    }
+    // SLG
+    if(t < T1) return 0;
+    if(t < T2) return (t - T1) / Math.max(T2 - T1, 0.001);
+    return 1;
+  }
+
+  var Y_MIN, Y_MAX;
+  (function(){
+    var vals = [T_START];
+    if(TY === 'SL' || TY === 'SLG') vals.push(T_FUSION);
+    if(TY === 'LG' || TY === 'SLG') vals.push(T_BOIL);
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    Y_MIN = Math.floor((mn - 10) / 10) * 10;
+    Y_MAX = Math.ceil((mx + 10) / 10) * 10;
+  })();
+
+  function drawGraph(){
+    var w = CSS_W, h = CSS_H;
+    gctx.clearRect(0,0,w,h);
+    var padL = 46, padB = 32, padT = 14, padR = 12;
+    var plotW = w - padL - padR, plotH = h - padT - padB;
+    var yRange = Y_MAX - Y_MIN;
+
+    function xPix(t){ return padL + (t / DURATION) * plotW; }
+    function yPix(v){ return padT + plotH - ((v - Y_MIN) / yRange) * plotH; }
+
+    var majorStepY = 20, minorStepY = 5;
+    var majorStepX = DURATION > 30 ? 10 : 10, minorStepX = 2;
+
+    gctx.strokeStyle = '#eeece7';
+    gctx.lineWidth = 1;
+    gctx.setLineDash([1,2]);
+    for(var mv = Y_MIN; mv <= Y_MAX; mv += minorStepY){
+      if((mv - Y_MIN) % majorStepY === 0) continue;
+      var my = yPix(mv);
+      gctx.beginPath(); gctx.moveTo(padL, my); gctx.lineTo(padL + plotW, my); gctx.stroke();
+    }
+    for(var ms = 0; ms <= DURATION; ms += minorStepX){
+      if(ms % majorStepX === 0) continue;
+      var mx = xPix(ms);
+      gctx.beginPath(); gctx.moveTo(mx, padT); gctx.lineTo(mx, padT + plotH); gctx.stroke();
+    }
+    gctx.setLineDash([]);
+
+    gctx.strokeStyle = '#e4e2dc';
+    gctx.lineWidth = 1;
+    for(var gv = Y_MIN; gv <= Y_MAX; gv += majorStepY){
+      var gy = yPix(gv);
+      gctx.beginPath(); gctx.moveTo(padL, gy); gctx.lineTo(padL + plotW, gy); gctx.stroke();
+    }
+    for(var gs = 0; gs <= DURATION; gs += majorStepX){
+      var gx = xPix(gs);
+      gctx.beginPath(); gctx.moveTo(gx, padT); gctx.lineTo(gx, padT + plotH); gctx.stroke();
+    }
+
+    gctx.strokeStyle = '#c9c6c0';
+    gctx.lineWidth = 1;
+    gctx.beginPath();
+    gctx.moveTo(padL, padT); gctx.lineTo(padL, padT + plotH); gctx.lineTo(padL + plotW, padT + plotH);
+    gctx.stroke();
+    gctx.fillStyle = '#5f5e5a';
+    gctx.font = '12px Arial';
+    gctx.fillText('T (°C)', padL - 38, padT + 4);
+    gctx.fillText('t (s)', padL + plotW - 16, padT + plotH + 24);
+    for(var tv = Y_MIN; tv <= Y_MAX; tv += majorStepY){
+      gctx.fillText(String(tv), 4, yPix(tv) + 4);
+    }
+    for(var ts2 = 0; ts2 <= DURATION; ts2 += majorStepX){
+      gctx.fillText(String(ts2), xPix(ts2) - 5, padT + plotH + 18);
+    }
+
+    if(points.length > 1){
+      gctx.strokeStyle = '#2f6fb5';
+      gctx.lineWidth = 2;
+      gctx.beginPath();
+      for(var i=0;i<points.length;i++){
+        var p = points[i];
+        var px = xPix(p.t), py = yPix(p.temp);
+        if(i===0) gctx.moveTo(px,py); else gctx.lineTo(px,py);
+      }
+      gctx.stroke();
+
+      var idx = (!running && reviewIdx !== null) ? reviewIdx : points.length - 1;
+      var cur = points[idx];
+      var cx2 = xPix(cur.t), cy2 = yPix(cur.temp);
+      gctx.fillStyle = '#2f6fb5';
+      gctx.beginPath();
+      gctx.arc(cx2, cy2, 4, 0, Math.PI*2);
+      gctx.fill();
+      gctx.strokeStyle = '#ffffff';
+      gctx.lineWidth = 1.5;
+      gctx.stroke();
+
+      if(!running){
+        var label = 't=' + cur.t.toFixed(1) + 's  T=' + cur.temp.toFixed(1) + '°C';
+        gctx.font = '11px Arial';
+        var lw = gctx.measureText(label).width + 10;
+        var lx = Math.min(Math.max(cx2 - lw/2, padL), padL + plotW - lw);
+        var ly = cy2 - 12;
+        if(ly < padT + 12) ly = cy2 + 22;
+        gctx.fillStyle = 'rgba(255,255,255,0.92)';
+        gctx.fillRect(lx, ly - 12, lw, 16);
+        gctx.strokeStyle = '#c9c6c0';
+        gctx.lineWidth = 1;
+        gctx.strokeRect(lx, ly - 12, lw, 16);
+        gctx.fillStyle = '#2f3f8f';
+        gctx.fillText(label, lx + 5, ly);
+      }
+    }
+  }
+
+  var LIQ_X = 30, LIQ_W = 140, LIQ_BOTTOM = 175, LIQ_MAXH = 145;
+  var ICE_X = 45, ICE_W = 110, ICE_BOTTOM = 175, ICE_MAXH = 145;
+  var BUBBLE_TOP = LIQ_BOTTOM - LIQ_MAXH + 10;
+
+  function spawnBubble(){
+    var ns = 'http://www.w3.org/2000/svg';
+    var c = document.createElementNS(ns,'circle');
+    var cx = LIQ_X + 15 + Math.random()*(LIQ_W - 30);
+    c.setAttribute('cx', cx);
+    c.setAttribute('cy', LIQ_BOTTOM - 5);
+    var r = 2 + Math.random()*4;
+    c.setAttribute('r', r);
+    c.setAttribute('fill', 'rgba(255,255,255,0.85)');
+    c.dataset.vy = (0.8 + Math.random()*0.7);
+    bubblesG.appendChild(c);
+  }
+
+  function updateBubbles(boiling){
+    if(boiling){
+      bubbleTimer++;
+      if(bubbleTimer % 4 === 0) spawnBubble();
+    }
+    var kids = bubblesG.children;
+    for(var i=kids.length-1;i>=0;i--){
+      var c = kids[i];
+      var cy = parseFloat(c.getAttribute('cy')) - parseFloat(c.dataset.vy);
+      c.setAttribute('cy', cy);
+      if(cy < BUBBLE_TOP) bubblesG.removeChild(c);
+    }
+  }
+
+  function updateVessel(t, temp){
+    var meltFrac = iceMeltFrac(t);
+    var liqH = ICE_VISIBLE ? LIQ_MAXH * meltFrac : LIQ_MAXH;
+    liquidRect.setAttribute('y', LIQ_BOTTOM - liqH);
+    liquidRect.setAttribute('height', Math.max(liqH, 0));
+
+    if(ICE_VISIBLE){
+      iceBlock.style.display = meltFrac >= 1 ? 'none' : '';
+      var iceH = ICE_MAXH * (1 - meltFrac);
+      iceBlock.setAttribute('y', ICE_BOTTOM - iceH);
+      iceBlock.setAttribute('height', Math.max(iceH, 0));
+    } else {
+      iceBlock.style.display = 'none';
+    }
+
+    var warming = (TY === 'LG') || (TY === 'SLG' && t >= T2) || (TY !== 'SL' && MIX);
+    if(warming){
+      var base = (TY === 'SLG') ? T_FUSION : T_START;
+      var frac = Math.min(Math.max((temp - base) / Math.max(T_BOIL - base, 0.001), 0), 1);
+      var hue = 210 - frac * 84;
+      liquidRect.setAttribute('fill', 'hsl(' + hue + ',55%,58%)');
+    } else {
+      liquidRect.setAttribute('fill', '#bcdcee');
+    }
+  }
+
+  function tick(ts){
+    if(!running) return;
+    if(startTime===null) startTime = ts;
+    var t = Math.min((ts - startTime)/1000, DURATION);
+    var temp = tempAt(t);
+    var boiling = boilingAt(t, temp);
+    points.push({t:t, temp:temp});
+    timeOut.textContent = 't = ' + t.toFixed(1) + ' s';
+    updateVessel(t, temp);
+    hotDot.setAttribute('fill', '#d0492f');
+    tempText.textContent = temp.toFixed(1);
+    updateBubbles(boiling);
+    drawGraph();
+    if(t < DURATION){
+      requestAnimationFrame(tick);
+    } else {
+      running = false;
+      reviewIdx = points.length - 1;
+      btn.textContent = 'Recommencer';
+      btn.disabled = false;
+      drawGraph();
+    }
+  }
+
+  btn.addEventListener('click', function(){
+    running = true;
+    startTime = null;
+    points = [];
+    reviewIdx = null;
+    bubblesG.innerHTML = '';
+    hotDot.setAttribute('fill', '#7a7772');
+    btn.textContent = 'En cours...';
+    btn.disabled = true;
+    requestAnimationFrame(tick);
+  });
+
+  function nearestIndexForX(clientX){
+    var rect = graph.getBoundingClientRect();
+    var padL = 46, padR = 12;
+    var plotW = CSS_W - padL - padR;
+    var xPx = clientX - rect.left;
+    var t = ((xPx - padL) / plotW) * DURATION;
+    t = Math.min(Math.max(t, 0), DURATION);
+    var best = 0, bestD = Infinity;
+    for(var i=0;i<points.length;i++){
+      var d = Math.abs(points[i].t - t);
+      if(d < bestD){ bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  function onPointerDown(e){
+    if(running || points.length < 2) return;
+    dragging = true;
+    reviewIdx = nearestIndexForX(e.clientX);
+    drawGraph();
+  }
+  function onPointerMove(e){
+    if(!dragging) return;
+    reviewIdx = nearestIndexForX(e.clientX);
+    drawGraph();
+  }
+  function onPointerUp(){ dragging = false; }
+
+  graph.style.touchAction = 'none';
+  graph.addEventListener('pointerdown', onPointerDown);
+  graph.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+
+  updateVessel(0, T_START);
+  drawGraph();
+})();
+</script>
+</body>
+</html>
