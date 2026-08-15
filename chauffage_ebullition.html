@@ -39,7 +39,7 @@
 <rect x="20" y="0" width="160" height="180" fill="#f4f8fa" opacity="0.8"/>
 <rect x="20" y="175" width="160" height="5" fill="#d9e5ec"/>
 <rect id="liquidRect" x="30" y="30" width="140" height="145" fill="#3a7bd5"/>
-<rect id="iceBlock" x="45" y="30" width="110" height="145" rx="3" fill="#e2f2f8" stroke="#9fc7d9" stroke-width="2"/>
+<rect id="iceBlock" x="55" y="85" width="90" height="90" rx="4" fill="#e2f2f8" stroke="#9fc7d9" stroke-width="2"/>
 <g id="bubbles"></g>
 <path d="M 10,-5 L 20,0 L 20,180 L 180,180 L 180,0" fill="none" stroke="#78909c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
 <g stroke="#90a4ae" stroke-width="2" stroke-linecap="round">
@@ -144,9 +144,9 @@
   var T2 = (typeof P.t2 === 'number') ? P.t2 : D.t2;
   var T3 = (typeof P.t3 === 'number') ? P.t3 : D.t3;
   var DURATION = (typeof P.du === 'number') ? P.du : D.du;
-  var MIX_K = 2.5 / DURATION;
+  var MIX_TILT = 3;
 
-  var ICE_VISIBLE = (TY !== 'LG') && !MIX;
+  var ICE_VISIBLE = (TY !== 'LG');
 
   var running = false;
   var startTime = null;
@@ -155,31 +155,32 @@
   var reviewIdx = null;
   var dragging = false;
 
+  function tiltPlateau(t, segStart, segEnd, base){
+    if(!MIX) return base;
+    var frac = Math.min(Math.max((t - segStart) / Math.max(segEnd - segStart, 0.001), 0), 1);
+    return base + MIX_TILT * frac;
+  }
+
   function tempAt(t){
     if(TY === 'LG'){
-      if(MIX) return T_START + (T_BOIL - T_START) * (1 - Math.exp(-MIX_K * t));
-      if(t >= T1) return T_BOIL;
-      return T_START + (T_BOIL - T_START) * (t / T1);
+      if(t < T1) return T_START + (T_BOIL - T_START) * (t / T1);
+      return tiltPlateau(t, T1, DURATION, T_BOIL);
     }
     if(TY === 'SL'){
-      if(MIX) return T_START + (T_FUSION - T_START) * (1 - Math.exp(-MIX_K * t));
-      if(t >= T1) return T_FUSION;
-      return T_START + (T_FUSION - T_START) * (t / T1);
+      if(t < T1) return T_START + (T_FUSION - T_START) * (t / T1);
+      return tiltPlateau(t, T1, DURATION, T_FUSION);
     }
     // SLG
-    if(MIX) return T_START + (T_BOIL - T_START) * (1 - Math.exp(-MIX_K * t));
     if(t < T1) return T_START + (T_FUSION - T_START) * (t / T1);
-    if(t < T2) return T_FUSION;
+    if(t < T2) return tiltPlateau(t, T1, T2, T_FUSION);
     if(t < T3) return T_FUSION + (T_BOIL - T_FUSION) * ((t - T2) / (T3 - T2));
-    return T_BOIL;
+    return tiltPlateau(t, T3, DURATION, T_BOIL);
   }
 
   function boilingAt(t, temp){
-    if(TY === 'LG'){
-      return MIX ? (temp >= T_START + (T_BOIL - T_START) * 0.8) : (t >= T1);
-    }
+    if(TY === 'LG') return t >= T1;
     if(TY === 'SL') return false;
-    return MIX ? (temp >= T_START + (T_BOIL - T_START) * 0.85) : (t >= T3);
+    return t >= T3;
   }
 
   function iceMeltFrac(t){
@@ -300,7 +301,7 @@
   }
 
   var LIQ_X = 30, LIQ_W = 140, LIQ_BOTTOM = 175, LIQ_MAXH = 145;
-  var ICE_X = 45, ICE_W = 110, ICE_BOTTOM = 175, ICE_MAXH = 145;
+  var ICE_X = 55, ICE_W = 90, ICE_BOTTOM = 175, ICE_MAXH = 90;
   var BUBBLE_TOP = LIQ_BOTTOM - LIQ_MAXH + 10;
 
   function spawnBubble(){
