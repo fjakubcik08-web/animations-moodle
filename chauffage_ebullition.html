@@ -207,6 +207,19 @@
     Y_MAX = Math.ceil((mx + 10) / 10) * 10;
   })();
 
+  function niceStep(range, targetTicks){
+    if(range <= 0) return 1;
+    var raw = range / targetTicks;
+    var mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
+    var norm = raw / mag;
+    var step;
+    if(norm < 1.5) step = 1;
+    else if(norm < 3) step = 2;
+    else if(norm < 7) step = 5;
+    else step = 10;
+    return step * mag;
+  }
+
   function drawGraph(showCursor){
     if(showCursor === undefined) showCursor = true;
     var w = CSS_W, h = CSS_H;
@@ -218,32 +231,40 @@
     function xPix(t){ return padL + (t / DURATION) * plotW; }
     function yPix(v){ return padT + plotH - ((v - Y_MIN) / yRange) * plotH; }
 
-    var majorStepY = 20, minorStepY = 5;
-    var majorStepX = DURATION > 30 ? 10 : 10, minorStepX = 2;
+    var majorStepY = niceStep(yRange, 6);
+    var minorStepY = majorStepY / 5;
+    var majorStepX = niceStep(DURATION, 6);
+    var minorStepX = majorStepX / 5;
+    var minorPerMajorY = Math.round(majorStepY / minorStepY);
+    var minorPerMajorX = Math.round(majorStepX / minorStepX);
+    var nMinorY = Math.round(yRange / minorStepY);
+    var nMinorX = Math.round(DURATION / minorStepX);
 
     gctx.strokeStyle = '#eeece7';
     gctx.lineWidth = 1;
     gctx.setLineDash([1,2]);
-    for(var mv = Y_MIN; mv <= Y_MAX; mv += minorStepY){
-      if((mv - Y_MIN) % majorStepY === 0) continue;
-      var my = yPix(mv);
+    for(var iy = 0; iy <= nMinorY; iy++){
+      if(iy % minorPerMajorY === 0) continue;
+      var my = yPix(Y_MIN + iy * minorStepY);
       gctx.beginPath(); gctx.moveTo(padL, my); gctx.lineTo(padL + plotW, my); gctx.stroke();
     }
-    for(var ms = 0; ms <= DURATION; ms += minorStepX){
-      if(ms % majorStepX === 0) continue;
-      var mx = xPix(ms);
+    for(var ix = 0; ix <= nMinorX; ix++){
+      if(ix % minorPerMajorX === 0) continue;
+      var mx = xPix(ix * minorStepX);
       gctx.beginPath(); gctx.moveTo(mx, padT); gctx.lineTo(mx, padT + plotH); gctx.stroke();
     }
     gctx.setLineDash([]);
 
     gctx.strokeStyle = '#e4e2dc';
     gctx.lineWidth = 1;
-    for(var gv = Y_MIN; gv <= Y_MAX; gv += majorStepY){
-      var gy = yPix(gv);
+    var nMajorY = Math.round(yRange / majorStepY);
+    for(var jy = 0; jy <= nMajorY; jy++){
+      var gy = yPix(Y_MIN + jy * majorStepY);
       gctx.beginPath(); gctx.moveTo(padL, gy); gctx.lineTo(padL + plotW, gy); gctx.stroke();
     }
-    for(var gs = 0; gs <= DURATION; gs += majorStepX){
-      var gx = xPix(gs);
+    var nMajorX = Math.round(DURATION / majorStepX);
+    for(var jx = 0; jx <= nMajorX; jx++){
+      var gx = xPix(jx * majorStepX);
       gctx.beginPath(); gctx.moveTo(gx, padT); gctx.lineTo(gx, padT + plotH); gctx.stroke();
     }
 
@@ -256,11 +277,13 @@
     gctx.font = '12px Arial';
     gctx.fillText('T (°C)', padL - 38, padT + 4);
     gctx.fillText('t (s)', padL + plotW - 16, padT + plotH + 24);
-    for(var tv = Y_MIN; tv <= Y_MAX; tv += majorStepY){
-      gctx.fillText(String(tv), 4, yPix(tv) + 4);
+    for(var ky = 0; ky <= nMajorY; ky++){
+      var tv = Y_MIN + ky * majorStepY;
+      gctx.fillText(String(Math.round(tv)), 4, yPix(tv) + 4);
     }
-    for(var ts2 = 0; ts2 <= DURATION; ts2 += majorStepX){
-      gctx.fillText(String(ts2), xPix(ts2) - 5, padT + plotH + 18);
+    for(var kx = 0; kx <= nMajorX; kx++){
+      var ts2 = kx * majorStepX;
+      gctx.fillText(String(Math.round(ts2)), xPix(ts2) - 5, padT + plotH + 18);
     }
 
     if(points.length > 1){
