@@ -147,6 +147,8 @@
   var T3 = (typeof P.t3 === 'number') ? P.t3 : D.t3;
   var DURATION = (typeof P.du === 'number') ? P.du : D.du;
   var MIX_TILT = 3;
+  var SAMPLE_DT = DURATION / 300;
+  var nextSampleT = 0;
 
   var ICE_VISIBLE = (TY !== 'LG');
 
@@ -394,7 +396,10 @@
     var t = Math.min((ts - startTime)/1000, DURATION);
     var temp = tempAt(t);
     var boiling = boilingAt(t, temp);
-    points.push({t:t, temp:temp});
+    while(nextSampleT <= t + 1e-9){
+      points.push({t: nextSampleT, temp: tempAt(nextSampleT)});
+      nextSampleT += SAMPLE_DT;
+    }
     timeOut.textContent = 't = ' + t.toFixed(1) + ' s';
     updateVessel(t, temp);
     hotDot.setAttribute('fill', '#d0492f');
@@ -416,6 +421,7 @@
     running = true;
     startTime = null;
     points = [];
+    nextSampleT = 0;
     reviewIdx = null;
     bubblesG.innerHTML = '';
     hotDot.setAttribute('fill', '#7a7772');
