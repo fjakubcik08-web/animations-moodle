@@ -425,8 +425,9 @@
       var base = (TY === 'SLG' || (TY === 'SL' && t >= T2)) ? T_FUSION : T_START;
       var top = (TY === 'SL') ? T_END_SL : T_BOIL;
       var frac = Math.min(Math.max((temp - base) / Math.max(top - base, 0.001), 0), 1);
-      var hue = 210 - frac * 84;
-      liquidRect.setAttribute('fill', 'hsl(' + hue + ',55%,58%)');
+      var sat = 45 + frac * 25;
+      var light = 80 - frac * 30;
+      liquidRect.setAttribute('fill', 'hsl(' + SAMPLE_HUE + ',' + sat + '%,' + light + '%)');
     } else {
       liquidRect.setAttribute('fill', 'hsl(' + SAMPLE_HUE + ',50%,80%)');
     }
