@@ -153,6 +153,11 @@
   var nextSampleT = 0;
 
   var ICE_VISIBLE = (TY !== 'LG');
+  var SAMPLE_HUE = Math.floor(Math.random() * 360);
+  if(ICE_VISIBLE){
+    iceBlock.setAttribute('fill', 'hsl(' + SAMPLE_HUE + ',45%,88%)');
+    iceBlock.setAttribute('stroke', 'hsl(' + SAMPLE_HUE + ',35%,70%)');
+  }
 
   var running = false;
   var startTime = null;
@@ -175,8 +180,9 @@
     if(TY === 'SL'){
       if(t < T1) return T_START + (T_FUSION - T_START) * (t / T1);
       if(t < T2) return tiltPlateau(t, T1, T2, T_FUSION);
+      var plateauEndSL = tiltPlateau(T2, T1, T2, T_FUSION);
       var rateSL = (T_FUSION - T_START) / T1;
-      return T_FUSION + rateSL * (t - T2);
+      return plateauEndSL + rateSL * (t - T2);
     }
     // SLG
     if(t < T1) return T_START + (T_FUSION - T_START) * (t / T1);
@@ -391,7 +397,7 @@
       var hue = 210 - frac * 84;
       liquidRect.setAttribute('fill', 'hsl(' + hue + ',55%,58%)');
     } else {
-      liquidRect.setAttribute('fill', '#bcdcee');
+      liquidRect.setAttribute('fill', 'hsl(' + SAMPLE_HUE + ',50%,80%)');
     }
   }
 
