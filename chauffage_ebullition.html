@@ -14,6 +14,25 @@
   .controls button:hover{background:#e9e7e1;}
   .controls button:disabled{opacity:0.6;cursor:default;}
   .readout{font-size:14px;color:#5f5e5a;}
+  @keyframes surfacepulse{
+    0%{fill:#eceff1;}
+    50%{fill:#ff7043;}
+    100%{fill:#eceff1;}
+  }
+  #plaque-chauffante.heating #plaqueSurface{animation:surfacepulse 1.2s ease-in-out infinite;}
+  .heat-wave{opacity:0;}
+  @keyframes heatrise{
+    0%{transform:translateY(0) scaleY(0.6); opacity:0;}
+    20%{opacity:0.55;}
+    80%{opacity:0.35;}
+    100%{transform:translateY(-32px) scaleY(1.15); opacity:0;}
+  }
+  #plaque-chauffante.heating .heat-wave{animation:heatrise 1.6s ease-in infinite;}
+  #plaque-chauffante.heating .heat-wave:nth-child(2){animation-delay:0.3s;}
+  #plaque-chauffante.heating .heat-wave:nth-child(3){animation-delay:0.6s;}
+  #plaque-chauffante.heating .heat-wave:nth-child(4){animation-delay:0.9s;}
+  #plaque-chauffante.heating .heat-wave:nth-child(5){animation-delay:0.15s;}
+  #plaque-chauffante.heating .heat-wave:nth-child(6){animation-delay:0.45s;}
 </style>
 </head>
 <body>
@@ -23,7 +42,15 @@
 <g id="plaque-chauffante" transform="translate(130, 340)">
 <rect x="0" y="20" width="240" height="140" fill="#37474f"/>
 <rect x="5" y="75" width="230" height="80" fill="#455a64"/>
-<rect x="5" y="0" width="230" height="20" fill="#eceff1"/>
+<rect id="plaqueSurface" x="5" y="0" width="230" height="20" fill="#eceff1"/>
+<g id="heatWaves" stroke="#ff6a3a" stroke-width="2.5" fill="none" stroke-linecap="round">
+<path class="heat-wave" d="M 14,0 Q 20,-14 14,-26 Q 8,-38 14,-50"/>
+<path class="heat-wave" d="M 24,0 Q 30,-14 24,-26 Q 18,-38 24,-50"/>
+<path class="heat-wave" d="M 34,0 Q 40,-14 34,-26 Q 28,-38 34,-50"/>
+<path class="heat-wave" d="M 206,0 Q 212,-14 206,-26 Q 200,-38 206,-50"/>
+<path class="heat-wave" d="M 216,0 Q 222,-14 216,-26 Q 210,-38 216,-50"/>
+<path class="heat-wave" d="M 226,0 Q 232,-14 226,-26 Q 220,-38 226,-50"/>
+</g>
 <line x1="5" y1="20" x2="235" y2="20" stroke="#b0bec5" stroke-width="2"/>
 <rect x="40" y="90" width="65" height="30" fill="#212121"/>
 <text x="46" y="111" font-family="monospace, sans-serif" font-size="12" font-weight="bold" fill="#00e676">100°C</text>
@@ -93,6 +120,7 @@
   var exportBtn = document.getElementById('exportBtn');
   var timeOut = document.getElementById('timeOut');
   var hotDot = document.getElementById('hotDot');
+  var plaqueG = document.getElementById('plaque-chauffante');
   var liquidRect = document.getElementById('liquidRect');
   var iceBlock = document.getElementById('iceBlock');
   var tempText = document.getElementById('tempText');
@@ -428,6 +456,7 @@
       btn.textContent = 'Recommencer';
       btn.disabled = false;
       skipBtn.style.display = 'none';
+      plaqueG.classList.remove('heating');
       drawGraph();
     }
   }
@@ -440,6 +469,7 @@
     reviewIdx = null;
     bubblesG.innerHTML = '';
     hotDot.setAttribute('fill', '#7a7772');
+    plaqueG.classList.add('heating');
     btn.textContent = 'En cours...';
     btn.disabled = true;
     if(TY === 'SL') skipBtn.style.display = '';
