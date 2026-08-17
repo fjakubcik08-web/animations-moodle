@@ -82,12 +82,14 @@
 </div>
 <div class="controls">
 <button id="startBtn">Commencer</button>
+<button id="skipBtn" style="display:none">Passer la transition</button>
 <button id="exportBtn">Exporter JPG</button>
 <span class="readout" id="timeOut">t = 0 s</span>
 </div>
 <script>
 (function(){
   var btn = document.getElementById('startBtn');
+  var skipBtn = document.getElementById('skipBtn');
   var exportBtn = document.getElementById('exportBtn');
   var timeOut = document.getElementById('timeOut');
   var hotDot = document.getElementById('hotDot');
@@ -134,7 +136,7 @@
 
   var defaults = {
     LG:  { ts: 20,  tb: 100, t1: 21,             du: 30 },
-    SL:  { ts: -10, tf: 0,   t1: 10,             du: 30 },
+    SL:  { ts: -10, tf: 0,   t1: 10, t2: 16,      du: 30 },
     SLG: { ts: -10, tf: 0,   tb: 100, t1: 8, t2: 16, t3: 34, du: 40 }
   };
   var D = defaults[TY] || defaults.LG;
@@ -172,7 +174,9 @@
     }
     if(TY === 'SL'){
       if(t < T1) return T_START + (T_FUSION - T_START) * (t / T1);
-      return tiltPlateau(t, T1, DURATION, T_FUSION);
+      if(t < T2) return tiltPlateau(t, T1, T2, T_FUSION);
+      var rateSL = (T_FUSION - T_START) / T1;
+      return T_FUSION + rateSL * (t - T2);
     }
     // SLG
     if(t < T1) return T_START + (T_FUSION - T_START) * (t / T1);
@@ -191,7 +195,7 @@
     if(!ICE_VISIBLE) return 1;
     if(TY === 'SL'){
       if(t < T1) return 0;
-      return Math.min((t - T1) / Math.max(DURATION - T1, 0.001), 1);
+      return Math.min((t - T1) / Math.max(T2 - T1, 0.001), 1);
     }
     // SLG
     if(t < T1) return 0;
@@ -203,6 +207,7 @@
   (function(){
     var vals = [T_START];
     if(TY === 'SL' || TY === 'SLG') vals.push(T_FUSION);
+    if(TY === 'SL') vals.push(tempAt(DURATION));
     if(TY === 'LG' || TY === 'SLG') vals.push(T_BOIL);
     var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
     Y_MIN = Math.floor((mn - 10) / 10) * 10;
@@ -379,9 +384,9 @@
       iceBlock.style.display = 'none';
     }
 
-    var warming = (TY === 'LG') || (TY === 'SLG' && t >= T2) || (TY !== 'SL' && MIX);
+    var warming = (TY === 'LG') || (TY === 'SLG' && t >= T2) || (TY === 'SL' && t >= T2) || (TY !== 'SL' && MIX);
     if(warming){
-      var base = (TY === 'SLG') ? T_FUSION : T_START;
+      var base = (TY === 'SLG' || (TY === 'SL' && t >= T2)) ? T_FUSION : T_START;
       var frac = Math.min(Math.max((temp - base) / Math.max(T_BOIL - base, 0.001), 0), 1);
       var hue = 210 - frac * 84;
       liquidRect.setAttribute('fill', 'hsl(' + hue + ',55%,58%)');
@@ -406,6 +411,9 @@
     tempText.textContent = temp.toFixed(1);
     updateBubbles(boiling);
     drawGraph();
+    if(TY === 'SL' && t >= T2){
+      skipBtn.style.display = 'none';
+    }
     if(t < DURATION){
       requestAnimationFrame(tick);
     } else {
@@ -413,6 +421,7 @@
       reviewIdx = points.length - 1;
       btn.textContent = 'Recommencer';
       btn.disabled = false;
+      skipBtn.style.display = 'none';
       drawGraph();
     }
   }
@@ -427,7 +436,17 @@
     hotDot.setAttribute('fill', '#7a7772');
     btn.textContent = 'En cours...';
     btn.disabled = true;
+    if(TY === 'SL') skipBtn.style.display = '';
     requestAnimationFrame(tick);
+  });
+
+  skipBtn.addEventListener('click', function(){
+    if(!running || startTime === null) return;
+    var now = performance.now();
+    var curT = (now - startTime) / 1000;
+    if(curT >= T2) return;
+    var landing = Math.min(T2 + 2 + Math.random() * 3, DURATION);
+    startTime -= (landing - curT) * 1000;
   });
 
   exportBtn.addEventListener('click', function(){
