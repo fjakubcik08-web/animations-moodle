@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cubes et masse volumique</title>
+<style>
+  html,body{margin:0;padding:0;overflow:hidden;background:#87b8d8;font-family:'Segoe UI',Arial,sans-serif;}
+  #stage{position:relative;width:100vw;height:100vh;min-width:700px;min-height:480px;}
+  canvas{display:block;width:100%;height:100%;cursor:default;}
+  #topbar{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:20;}
+  .btn{
+    background:#2e7d32;color:#fff;border:none;border-radius:8px;padding:9px 16px;
+    font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.25);
+    display:inline-flex;align-items:center;gap:7px;
+  }
+  .btn:hover{background:#256428;}
+  #resetBtn{position:absolute;top:14px;left:16px;z-index:20;}
+  #resetBtn .btn{background:#8d6e63;}
+  #resetBtn .btn:hover{background:#6d534a;}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c"></canvas>
+
+  <div id="resetBtn"><button class="btn">↺ Réinitialiser</button></div>
+</div>
+
+<script>
+/* =========================================================================
+   PARAMETRES (decodage URL, schema propre a cette animation)
+   Cle XOR : "CUBEFLOT26"  -> JSON compact -> XOR -> base64 -> ?p=
+   Params en clair prioritaires sur ?p= (pratique tests locaux) :
+     v0   = volume initial du liquide en L (defaut 100)
+     move = 0/1 verrouille l'interaction (defaut 1 = actif)
+     bal  = 0/1 affiche la balance sur la scene (defaut 1)
+     rho  = masse volumique du liquide de la cuve, kg/m3 (defaut 1000 = eau)
+   Cle "cubes" du schema encode (?p=) : dict {id: {m, V, color, side, stack}}
+     m = masse reelle en kg, V = volume reel en L. density/edge en sont deduits.
+   ========================================================================= */
+const XOR_KEY = "CUBEFLOT26";
+
+function xorB64Decode(str){
+  try{
+    const bin = atob(str.replace(/-/g,'+').replace(/_/g,'/'));
+    let out = '';
+    for(let i=0;i<bin.length;i++){
+      out += String.fromCharCode(bin.charCodeAt(i) ^ XOR_KEY.charCodeAt(i % XOR_KEY.length));
+    }
+    return JSON.parse(out);
+  }catch(e){ return null; }
+}
+
+const qs = new URLSearchParams(location.search);
+let decoded = null;
+if(qs.get('p')) decoded = xorB64Decode(qs.get('p'));
+
+// Schema des cubes : dict {id: {m, V, color, side, stack}}
+//   m = masse reelle en kg, V = volume reel en L (donc L = dm3)
+// "edge" (arete reelle en cm) et "density" (kg/m3) sont RECALCULES a partir de m/V, jamais saisis.
+// La taille a l'ecran (px) est deduite via RENDER_SCALE, independamment de ces valeurs reelles.
+const DEFAULT_CUBES = {
+  "A": {m:4.08,  V:5.832, color:"#6a1b6e", side:"left",  stack:0},   // bois (flotte bien)
+  "B": {m:1.59,  V:1.728, color:"#1a3d7c", side:"left",  stack:1},   // glace (flotte, affleure)
+  "C": {m:0.18,  V:0.729, color:"#c8b52a", side:"right", stack:2},   // liege/polystyrene (flotte tres haut)
+  "D": {m:3.59,  V:1.331, color:"#a52620", side:"right", stack:1},   // aluminium (coule)
+  "E": {m:17.30, V:2.197, color:"#3f7d32", side:"right", stack:0}    // fer (coule)
+};
+const RENDER_SCALE = 3; // px affiches par cm reel (purement visuel)
+
+const CFG = {
+  v0: qs.get('v0') !== null ? Number(qs.get('v0')) : (decoded?.v0 ?? 100),
+  move: qs.get('move') !== null ? qs.get('move')==='1' : (decoded?.move ?? 1),
+  showBalance: qs.get('bal') !== null ? qs.get('bal')==='1' : (decoded?.bal ?? 1),
+  liquidDensity: qs.get('rho') !== null ? Number(qs.get('rho')) : (decoded?.liquidDensity ?? 1000),
+  cubes: decoded?.cubes ?? DEFAULT_CUBES
+};
+
+const WATER_DENSITY = CFG.liquidDensity; // kg/m3 -- masse volumique du liquide de la cuve (eau par defaut)
+
+/* =============================== CANVAS SETUP =============================== */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W,H;
+function resize(){
+  const stage = document.getElementById('stage');
+  W = canvas.width = stage.clientWidth;
+  H = canvas.height = stage.clientHeight;
+  layout();
+}
+window.addEventListener('resize', resize);
+
+/* =============================== ETAT ANIME =============================== */
+function literVolume(edgeCm){ return (edgeCm*edgeCm*edgeCm)/1000; } // cm3 -> L
+const TANK_CAPACITY_L = 100 + Object.values(CFG.cubes).reduce((s,c)=>s + c.V, 0) * 1.3 + 60;
+
+// etats possibles : 'shelf' (talus de depart), 'free' (pose au sol n'importe ou),
+// 'falling' (en cours de glisser-deposer), 'settled' (dans l'eau), 'onBalance' (sur la balance)
+// density (kg/m3) et edge (arete reelle en cm) sont recalcules a partir de m (kg) et V (L) :
+// c'est CE calcul qui determine si le cube flotte ou coule (compare a WATER_DENSITY plus bas).
+const cubes = Object.entries(CFG.cubes).map(([id,c])=>({
+  ...c,
+  id,
+  density: (c.m / c.V) * 1000,   // kg/m3
+  edge: Math.cbrt(c.V * 1000),   // cm (V en L = cm3/1000)
+  state:'shelf',
+  x:0, y:0,        // position ecran (coin haut-gauche face avant)
+  animY:0,          // position verticale reelle et amortie quand le cube est dans l'eau
+  px:null
+}));
+
+let TANK, GROUND, BALANCE;
+let prevWaterTopY = null;
+
+function layout(){
+  const tankW = Math.min(420, W*0.34);
+  const tankLeft = W/2 - tankW/2;
+  const groundY = H*0.58;
+  TANK = {
+    x: tankLeft, w: tankW,
+    topY: groundY,
+    bottomY: H*0.94,
+    skewX: 34, skewY: -20
+  };
+  GROUND = { y: groundY };
+
+  const standHeight = 60;
+  BALANCE = {
+    x: 34, w: 120, h: 14, standHeight,
+    plateTopY: groundY - standHeight,
+    skewX: 20, skewY: -11
+  };
+
+  const leftCubes = cubes.filter(c=>c.side==='left').sort((a,b)=>a.stack-b.stack);
+  const rightCubes = cubes.filter(c=>c.side==='right').sort((a,b)=>a.stack-b.stack);
+
+  layoutStack(leftCubes, TANK.x - 40, groundY, -1);
+  layoutStack(rightCubes, TANK.x + TANK.w + 40, groundY, 1);
+
+  prevWaterTopY = TANK.bottomY;
+}
+
+function layoutStack(list, baseX, baseY, dir){
+  let cursorY = baseY;
+  list.forEach(c=>{
+    const px = c.edge*RENDER_SCALE; // taille ecran, distincte de l'arete reelle (c.edge, en cm)
+    if(c.state==='shelf'){
+      c.px = px;
+      c.x = dir>0 ? baseX : baseX - px;
+      c.y = cursorY - px;
+      cursorY -= px;
+    } else if(!c.px){
+      c.px = px;
+    }
+  });
+}
+
+/* =============================== DESSIN =============================== */
+function drawBox(x,y,w,h,skx,sky,colFront,colTop,colSide,alpha){
+  ctx.save();
+  ctx.globalAlpha = alpha ?? 1;
+  ctx.fillStyle = colFront;
+  ctx.fillRect(x,y,w,h);
+  ctx.fillStyle = colTop;
+  ctx.beginPath();
+  ctx.moveTo(x,y);
+  ctx.lineTo(x+skx,y+sky);
+  ctx.lineTo(x+w+skx,y+sky);
+  ctx.lineTo(x+w,y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = colSide;
+  ctx.beginPath();
+  ctx.moveTo(x+w,y);
+  ctx.lineTo(x+w+skx,y+sky);
+  ctx.lineTo(x+w+skx,y+sky+h);
+  ctx.lineTo(x+w,y+h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function shade(hex, amt){
+  const c = hex.replace('#','');
+  const n = parseInt(c,16);
+  let r=(n>>16)+amt, g=((n>>8)&255)+amt, b=(n&255)+amt;
+  r=Math.max(0,Math.min(255,r)); g=Math.max(0,Math.min(255,g)); b=Math.max(0,Math.min(255,b));
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawBackground(){
+  const sky = ctx.createLinearGradient(0,0,0,GROUND.y*0.75);
+  sky.addColorStop(0,'#bcdff2');
+  sky.addColorStop(1,'#e7f3ec');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0,0,W,GROUND.y*0.75);
+
+  const grass = ctx.createLinearGradient(0,GROUND.y*0.62,0,GROUND.y);
+  grass.addColorStop(0,'#cfe08a');
+  grass.addColorStop(1,'#6fae4a');
+  ctx.fillStyle = grass;
+  ctx.fillRect(0,GROUND.y*0.62,W,GROUND.y*0.38);
+
+  ctx.fillStyle = '#8a5a34';
+  ctx.fillRect(0,GROUND.y,W,H-GROUND.y);
+}
+
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+/* --------- physique de flottaison (partagee calcul + dessin) --------- */
+function equilibriumSubmergedPx(c, px){
+  return px * Math.min(1, c.density/WATER_DENSITY);
+}
+
+// enfoncement reel d'un cube (en px) d'apres sa position ecran actuelle,
+// par recouvrement geometrique avec le volume d'eau du bac (calcule au frame precedent)
+function overlapSubmergedPx(cubeTopY, px, waterTopY){
+  const cubeBottom = cubeTopY + px;
+  const top = Math.max(cubeTopY, waterTopY);
+  const bottom = Math.min(cubeBottom, TANK.bottomY);
+  return Math.max(0, Math.min(px, bottom - top));
+}
+
+function currentWaterVolume(){
+  let total = CFG.v0;
+  cubes.forEach(c=>{
+    const px = c.px || (c.edge*RENDER_SCALE); // taille ecran (geometrie)
+    if(c.state==='settled'){
+      const subPx = overlapSubmergedPx(c.animY, px, prevWaterTopY);
+      total += literVolume(c.edge) * (subPx/px); // volume reel (cm) * fraction immergee
+    } else if(c.state==='falling'){
+      // pendant le glisser : si le cube passe au-dessus du bac, l'eau reagit deja en temps reel
+      const cx = c.x + px/2;
+      if(cx > TANK.x-10 && cx < TANK.x+TANK.w+50){
+        const subPx = overlapSubmergedPx(c.y, px, prevWaterTopY);
+        total += literVolume(c.edge) * (subPx/px);
+      }
+    }
+  });
+  return total;
+}
+
+function waterTopYFor(volumeL){
+  const {topY,bottomY} = TANK;
+  const frac = Math.max(0, Math.min(1, volumeL/TANK_CAPACITY_L));
+  return bottomY - (bottomY-topY)*frac;
+}
+
+function drawTank(waterVolume, waterTopY){
+  const {x,w,topY,bottomY,skewX,skewY} = TANK;
+
+  if(waterTopY > topY){
+    drawBox(x, topY, w, waterTopY-topY, skewX, skewY, '#7d6a5a', '#96826d', '#5f4d40');
+  }
+  drawBox(x, waterTopY, w, bottomY-waterTopY, skewX, skewY, '#3f7fb0', '#6fb3d8', '#2e5f85');
+
+  const arrowY = waterTopY;
+  ctx.save();
+  ctx.fillStyle = '#c0392b';
+  ctx.beginPath();
+  ctx.moveTo(x-4, arrowY);
+  ctx.lineTo(x-16, arrowY-8);
+  ctx.lineTo(x-16, arrowY+8);
+  ctx.closePath();
+  ctx.fill();
+
+  const label = waterVolume.toFixed(2)+' L';
+  ctx.font = 'bold 14px Segoe UI, Arial';
+  const tw = ctx.measureText(label).width;
+  const bx = x-16-tw-16, by = arrowY-14;
+  ctx.fillStyle = '#fff';
+  roundRect(bx,by,tw+16,28,6);
+  ctx.fill();
+  ctx.strokeStyle = '#c0392b'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.fillStyle = '#222';
+  ctx.fillText(label, bx+8, by+19);
+  ctx.restore();
+}
+
+function drawBalancePlatform(){
+  if(!CFG.showBalance) return;
+  const {x,w,h,skewX,skewY,plateTopY} = BALANCE;
+  // pied (court, pose sur le sol -- ne descend pas dans la terre)
+  drawBox(x+w/2-8, plateTopY+h, 16, GROUND.y-(plateTopY+h), 8,-6, '#78909c','#90a4ae','#5f7a85');
+  // plateau
+  drawBox(x, plateTopY, w, h, skewX, skewY, '#b0bec5', '#cfd8dc', '#90a4ae');
+}
+
+function drawBalanceReading(){
+  if(!CFG.showBalance) return;
+  const {x,w,plateTopY} = BALANCE;
+  const onBalance = cubes.filter(c=>c.state==='onBalance');
+  let label = '— g';
+  let topY = plateTopY - 34;
+  if(onBalance.length){
+    const totalKg = onBalance.reduce((s,c)=> s + c.m, 0); // masse reelle (kg), directement depuis le schema
+    label = totalKg >= 1 ? `${totalKg.toFixed(2)} kg` : `${(totalKg*1000).toFixed(0)} g`;
+    if(onBalance.length>1) label = onBalance.map(c=>c.id).join('+') + ' : ' + label;
+    const highestCubeTop = Math.min(...onBalance.map(c=>c.y));
+    topY = Math.min(topY, highestCubeTop - 32);
+  }
+
+  ctx.save();
+  ctx.font = 'bold 13px Segoe UI, Arial';
+  const tw = ctx.measureText(label).width;
+  const bx = x + w/2 - (tw+18)/2, by = topY;
+  ctx.fillStyle = '#fff';
+  roundRect(bx,by,tw+18,26,6);
+  ctx.fill();
+  ctx.strokeStyle = '#455a64'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.fillStyle = '#222';
+  ctx.fillText(label, bx+9, by+18);
+  ctx.restore();
+}
+
+function drawCubeBody(c, x, y, alpha){
+  const px = c.px || c.edge;
+  const top = shade(c.color, 35);
+  const side = shade(c.color, -35);
+  drawBox(x,y,px,px,20,-12,c.color,top,side,alpha ?? 1);
+
+  ctx.save();
+  ctx.font='bold 12px Segoe UI, Arial';
+  const label = c.id;
+  const tw = ctx.measureText(label).width;
+  const lx = x+6, ly = y+4;
+  ctx.fillStyle='#fff';
+  roundRect(lx-3,ly-2,tw+10,16,4);
+  ctx.fill();
+  ctx.fillStyle='#222';
+  ctx.fillText(label, lx+2, ly+11);
+  ctx.restore();
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H);
+  drawBackground();
+
+  const waterVolume = currentWaterVolume();
+  const waterTopY = waterTopYFor(waterVolume);
+
+  drawTank(waterVolume, waterTopY);
+  drawBalancePlatform();
+
+  // cubes sur les talus / poses librement au sol
+  cubes.filter(c=>c.state==='shelf'||c.state==='free'||c.state==='onBalance').forEach(c=>{
+    drawCubeBody(c, c.x, c.y, 1);
+  });
+
+  // cubes dans l'eau : la position reelle (animY) glisse en douceur vers l'equilibre
+  cubes.filter(c=>c.state==='settled').forEach(c=>{
+    const px = c.px || c.edge;
+    if(dragCube !== c){
+      const isSinker = c.density >= WATER_DENSITY;
+      const targetY = isSinker ? (TANK.bottomY - px) : (waterTopY - (px - equilibriumSubmergedPx(c, px)));
+      c.animY += (targetY - c.animY) * 0.14;
+    }
+    drawCubeBody(c, c.x, c.animY, c.density >= WATER_DENSITY ? 0.85 : 1);
+  });
+
+  // cube en cours de glisser-deposer (suit la souris)
+  cubes.filter(c=>c.state==='falling').forEach(c=>drawCubeBody(c, c.x, c.y, 1));
+
+  drawBalanceReading();
+
+  // recouvre la portion immergee des flotteurs avec l'eau (effet "sous l'eau")
+  const {topY,bottomY,x,w,skewX,skewY} = TANK;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, waterTopY, W, bottomY-waterTopY+40);
+  ctx.clip();
+  drawBox(x, waterTopY, w, bottomY-waterTopY, skewX, skewY, 'rgba(63,127,176,0.55)', 'rgba(111,179,216,0.55)', 'rgba(46,95,133,0.55)');
+  ctx.restore();
+
+  prevWaterTopY = waterTopY;
+  requestAnimationFrame(render);
+}
+
+/* =============================== INTERACTIONS =============================== */
+let dragCube = null, dragOffX=0, dragOffY=0;
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  cubes.forEach(c=>{ c.state='shelf'; c.px=null; });
+  layout();
+});
+
+function pointerPos(e){
+  const r = canvas.getBoundingClientRect();
+  const p = e.touches ? e.touches[0] : e;
+  return { x:(p.clientX-r.left)*(canvas.width/r.width), y:(p.clientY-r.top)*(canvas.height/r.height) };
+}
+
+function cubeAt(px,py){
+  for(let i=cubes.length-1;i>=0;i--){
+    const c = cubes[i];
+    const s = c.px || c.edge;
+    const cx = c.x;
+    const cy = c.state==='settled' ? c.animY : c.y;
+    if(px>=cx-4 && px<=cx+s+22 && py>=cy-14 && py<=cy+s+8) return c;
+  }
+  return null;
+}
+
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+canvas.addEventListener('touchstart', onDown, {passive:false});
+canvas.addEventListener('touchmove', onMove, {passive:false});
+window.addEventListener('touchend', onUp);
+
+function onDown(e){
+  if(!CFG.move) return;
+  const p = pointerPos(e);
+  const c = cubeAt(p.x,p.y);
+  if(!c) return;
+  e.preventDefault();
+
+  if(c.state==='shelf' || c.state==='free' || c.state==='onBalance'){
+    const fromShelf = c.state==='shelf';
+    dragOffX = p.x - c.x;
+    dragOffY = p.y - c.y;
+    dragCube = c;
+    c.state = 'falling';
+    if(fromShelf) layout(); // comble le vide laisse dans la pile du talus
+  } else if(c.state==='settled'){
+    // en main : on peut pousser plus profond ou tirer vers le haut pour ressortir le cube
+    dragCube = c;
+    dragOffX = p.x - c.x;
+    dragOffY = p.y - c.animY;
+  }
+}
+
+function onMove(e){
+  if(!dragCube) return;
+  e.preventDefault();
+  const p = pointerPos(e);
+
+  if(dragCube.state==='falling'){
+    dragCube.x = p.x - dragOffX;
+    dragCube.y = p.y - dragOffY;
+    return;
+  }
+
+  if(dragCube.state==='settled'){
+    const px = dragCube.px || dragCube.edge;
+    const newY = p.y - dragOffY;
+    // si on tire assez haut pour sortir totalement le cube de l'eau, on le detache
+    if(newY + px < prevWaterTopY - 12){
+      dragCube.state = 'falling';
+      dragCube.x = p.x - dragOffX;
+      dragCube.y = newY;
+      return;
+    }
+    dragCube.animY = Math.max(TANK.topY - px, Math.min(TANK.bottomY - px, newY));
+  }
+}
+
+function onUp(e){
+  if(!dragCube) return;
+  const c = dragCube;
+
+  if(c.state==='falling'){
+    const px = c.px || c.edge;
+    const cx = c.x + px/2;
+    const cy = c.y + px/2;
+    const overTank = cx > TANK.x-10 && cx < TANK.x+TANK.w+50 && cy > TANK.topY-20;
+    const overBalance = CFG.showBalance &&
+      cx > BALANCE.x-10 && cx < BALANCE.x+BALANCE.w+10 &&
+      cy > BALANCE.plateTopY-100 && cy < BALANCE.plateTopY+40;
+
+    if(overTank){
+      c.state = 'settled';
+      c.animY = c.y; // pas de teleportation : la position reelle part d'ou le cube a ete lache
+    } else if(overBalance){
+      c.state = 'onBalance';
+      c.x = BALANCE.x + (BALANCE.w-px)/2;
+      c.y = BALANCE.plateTopY - px;
+    } else {
+      // pose libre : toujours au niveau du sol, jamais dans les airs ni enterre,
+      // et jamais sur le rebord du bac (le rendu isometrique du rebord ne colle pas
+      // au plan plat de l'herbe -> ca donnerait l'impression que le cube "flotte").
+      c.state = 'free';
+      let x = Math.max(4, Math.min(W-px-4, c.x));
+      const rimLeft = TANK.x - 6;
+      const rimRight = TANK.x + TANK.w + TANK.skewX + 6;
+      if(x + px > rimLeft && x < rimRight){
+        const distLeft = Math.abs((x+px) - rimLeft);
+        const distRight = Math.abs(rimRight - x);
+        x = (distLeft <= distRight) ? (rimLeft - px) : rimRight;
+        x = Math.max(4, Math.min(W-px-4, x));
+      }
+      c.x = x;
+      c.y = GROUND.y - px;
+    }
+  }
+  // si c.state==='settled' (juste repositionne a la main dans l'eau), rien a faire de plus :
+  // le render() fera glisser animY vers l'equilibre tout seul des que dragCube redevient null.
+  dragCube = null;
+}
+
+/* =============================== INIT =============================== */
+resize();
+render();
+</script>
+</body>
+</html>
