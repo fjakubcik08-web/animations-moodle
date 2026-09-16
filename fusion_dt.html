@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Réaction nucléaire</title>
+<style>
+  :root{
+    --bg:#05070c;
+    --panel:#0a0d14;
+    --line:#232a38;
+    --accent:#3b7dff;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    background:var(--bg);
+    font-family:"Segoe UI",Arial,Helvetica,sans-serif;
+    overflow:hidden;
+  }
+  #wrap{
+    display:flex;flex-direction:column;align-items:center;
+    width:100%;height:100%;padding:8px 10px;gap:8px;
+  }
+  #stage{
+    position:relative;
+    width:100%;max-width:920px;flex:1;min-height:0;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    box-shadow:0 1px 8px rgba(0,0,0,.5);
+    overflow:hidden;
+  }
+  canvas{display:block;width:100%;height:100%;cursor:default;}
+  #controls{
+    width:100%;max-width:920px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #reactBtn{
+    border:none;cursor:pointer;
+    background:var(--accent);color:#fff;
+    font-size:14px;font-weight:600;
+    padding:8px 22px;border-radius:8px;
+    box-shadow:0 1px 2px rgba(20,30,50,.15);
+  }
+  #reactBtn:active{transform:translateY(1px);}
+  #reactBtn:disabled{opacity:.5;cursor:default;}
+  #reactBtn.hidden{display:none;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="c"></canvas>
+  </div>
+  <div id="controls">
+    <button id="reactBtn">Réaction</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- Paramétrage encodé dans l'URL ---------- */
+  // Schéma: JSON compact -> XOR (clé "FJfusionDT") -> base64 url-safe (param ?p=...)
+  // Paramètres en clair (?speed=..., ?locked=..., ?reactifs=..., ?produits=...)
+  // prennent le dessus sur ?p=... s'ils sont présents.
+  const XOR_KEY = "FJfusionDT";
+
+  function xorBytes(bytes, key){
+    const kb = [];
+    for (let i=0;i<key.length;i++) kb.push(key.charCodeAt(i));
+    const out = new Uint8Array(bytes.length);
+    for (let i=0;i<bytes.length;i++) out[i] = bytes[i] ^ kb[i % kb.length];
+    return out;
+  }
+  function b64urlToBytes(s){
+    s = s.replace(/-/g,'+').replace(/_/g,'/');
+    while (s.length % 4) s += '=';
+    const bin = atob(s);
+    const bytes = new Uint8Array(bin.length);
+    for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function decodeParam(p){
+    try{
+      const bytes = b64urlToBytes(p);
+      const dec = xorBytes(bytes, XOR_KEY);
+      let str = "";
+      for (let i=0;i<dec.length;i++) str += String.fromCharCode(dec[i]);
+      return JSON.parse(decodeURIComponent(escape(str)));
+    }catch(e){ return {}; }
+  }
+
+  // locked=1 : le bouton [Réaction] est masqué (image fixe pour un devoir),
+  // le survol reste actif.
+  // reactifs / produits : listes de [A, Z, typ]. typ est optionnel (def 'noy') :
+  //   'noy'         -> noyau/particule composée de nucléons (rendu = billes
+  //                     protons/neutrons selon A et Z, survol -> nb p/n)
+  //   'e-' / 'e+'   -> électron / positron (β⁻/β⁺) : petit point, survol -> charge
+  //   'gamma'       -> photon/rayonnement : pas de survol (déjà symbolisé par
+  //                     le flash d'énergie)
+  //   'nu' / 'antinu' -> (anti)neutrino : petit cercle pointillé, survol -> nom
+  //   autre chaîne  -> particule exotique non prévue : petit point gris,
+  //                     survol -> affiche le type tel quel
+  const DEFAULTS = {
+    speed: 1,
+    locked: 0,
+    // Par défaut : fission de l'uranium 235 (U-235 + n -> Ba-141 + Kr-92 + 3n)
+    reactifs: [[235,92,"noy"],[1,0,"noy"]],
+    produits: [[141,56,"noy"],[92,36,"noy"],[1,0,"noy"],[1,0,"noy"],[1,0,"noy"]]
+  };
+  const qs = new URLSearchParams(window.location.search);
+  let cfg = Object.assign({}, DEFAULTS);
+  if (qs.has('p')) Object.assign(cfg, decodeParam(qs.get('p')));
+  ['speed','locked'].forEach(k=>{
+    if (qs.has(k)){
+      const v = qs.get(k);
+      cfg[k] = (k==='speed') ? parseFloat(v) : parseInt(v,10);
+    }
+  });
+  ['reactifs','produits'].forEach(k=>{
+    if (qs.has(k)){
+      try{ cfg[k] = JSON.parse(qs.get(k)); }catch(e){}
+    }
+  });
+  if (!isFinite(cfg.speed) || cfg.speed<=0) cfg.speed = 1;
+
+  function sanitizeList(list){
+    if (!Array.isArray(list) || list.length===0) return [[1,0,"noy"]];
+    return list.map(entry=>{
+      entry = entry || [];
+      let A = parseInt(entry[0], 10);
+      let Z = parseInt(entry[1], 10);
+      let typ = (typeof entry[2]==='string' && entry[2]) ? entry[2] : 'noy';
+      if (!isFinite(A) || A<0) A = (typ==='noy') ? 1 : 0;
+      if (!isFinite(Z)) Z = 0;
+      Z = Math.max(0, Math.min(Z, Math.max(A,0)));
+      return [A,Z,typ];
+    });
+  }
+  cfg.reactifs = sanitizeList(cfg.reactifs);
+  cfg.produits = sanitizeList(cfg.produits);
+
+  /* ---------- Canvas setup ---------- */
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const reactBtn = document.getElementById('reactBtn');
+
+  let W=0, H=0, DPR=1;
+  function resize(){
+    const r = stage.getBoundingClientRect();
+    DPR = window.devicePixelRatio || 1;
+    W = Math.max(320, r.width);
+    H = Math.max(220, r.height);
+    canvas.width = W*DPR;
+    canvas.height = H*DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+
+  /* ---------- Nucleon cluster geometry (générique, à partir de A et Z) ---------- */
+
+  // Répartition sur une sphère (spirale de Fibonacci) : garantit une
+  // silhouette globalement sphérique quel que soit le nombre de billes
+  // affichées (contrairement à un empilement/agrégation qui peut donner des
+  // formes allongées ou bosselées). Renvoie une liste de {x,y,z} en unités
+  // de rayon de sphère ; le rayon R est choisi pour que les billes voisines
+  // se touchent à peu près à la surface.
+  function fibonacciSpherePoints(total, R){
+    const pts = [];
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    for (let i=0; i<total; i++){
+      const y = ((i + 0.5) / total) * 2 - 1;
+      const r = Math.sqrt(Math.max(0, 1 - y*y));
+      const phi = i * golden;
+      pts.push({ x: Math.cos(phi)*r*R, y: y*R, z: Math.sin(phi)*r*R });
+    }
+    return pts;
+  }
+  function pack3D(total){
+    if (total <= 1) return [{x:0,y:0,z:0}];
+    const R = Math.sqrt(total/Math.PI) * 1.05; // ~distance surfacique entre voisins ≈ 2
+    return fibonacciSpherePoints(total, R);
+  }
+
+  // Pour les petits amas (2 à 4 nucléons, très fréquents : deutérium,
+  // tritium, hélium...), un empaquetage aléatoire donne un résultat trop
+  // variable (parfois une forme allongée) : on utilise des gabarits
+  // compacts fixes (sphères tangentes, rayon 1) plutôt que l'agrégation.
+  function templatePositions(total){
+    const R3 = 2/Math.sqrt(3);
+    const T3D2 = 1/Math.sqrt(2);
+    switch(total){
+      case 1: return [{x:0,y:0,z:0}];
+      case 2: return [{x:-1,y:0,z:-0.25},{x:1,y:0,z:0.25}];
+      case 3: return [
+        {x:0, y:-R3, z:0.3},
+        {x:R3*Math.cos(Math.PI/6), y:R3*Math.sin(Math.PI/6), z:-0.15},
+        {x:-R3*Math.cos(Math.PI/6), y:R3*Math.sin(Math.PI/6), z:-0.15}
+      ];
+      case 4: return [
+        {x: T3D2, y: T3D2, z: T3D2},
+        {x: T3D2, y:-T3D2, z:-T3D2},
+        {x:-T3D2, y: T3D2, z:-T3D2},
+        {x:-T3D2, y:-T3D2, z: T3D2}
+      ];
+      default: return null;
+    }
+  }
+
+  function distributeTypes(total, nProtons){
+    const types = [];
+    let acc = 0;
+    for (let i=0;i<total;i++){
+      acc += nProtons;
+      if (acc >= total){ acc -= total; types.push('p'); }
+      else types.push('n');
+    }
+    return types;
+  }
+
+  // Pour ne pas afficher des dizaines/centaines de sphères, on plafonne le
+  // nombre de billes réellement dessinées (le nombre réel de protons/neutrons
+  // reste correct au survol) et on grossit les billes affichées pour
+  // conserver un volume total cohérent avec le vrai nombre de nucléons
+  // (rayon nucléaire ~ A^(1/3)).
+  const NUCLEON_DISPLAY_CAP = 26;
+
+  /* ---------- Construction générique d'une espèce (noyau ou particule) ---------- */
+  function speciesFor(A, Z, typ){
+    typ = typ || 'noy';
+
+    if (typ === 'noy'){
+      const total = Math.max(1, A);
+      const nProtons = Math.max(0, Math.min(Z, total));
+      const nNeutrons = total - nProtons;
+
+      let displayTotal = Math.min(total, NUCLEON_DISPLAY_CAP);
+      let dispP = Math.round(displayTotal * nProtons/total);
+      if (nProtons>0) dispP = Math.max(1, dispP);
+      if (nNeutrons>0) dispP = Math.min(displayTotal-1, dispP);
+      dispP = Math.max(0, Math.min(displayTotal, dispP));
+
+      const pts = templatePositions(displayTotal) || pack3D(displayTotal);
+      const types = distributeTypes(displayTotal, dispP);
+      // mélange aléatoire : sans ça, l'ordre de répartition suit la position
+      // sur la sphère (spirale de Fibonacci) et donne des "bandes" de
+      // protons/neutrons au lieu d'un mélange bien réparti
+      for (let i=types.length-1; i>0; i--){
+        const j = (Math.random()*(i+1))|0;
+        const tmp = types[i]; types[i] = types[j]; types[j] = tmp;
+      }
+      let zmin=Infinity, zmax=-Infinity;
+      pts.forEach(pt=>{ zmin=Math.min(zmin,pt.z); zmax=Math.max(zmax,pt.z); });
+      const zr = (zmax-zmin) || 1;
+      const layout = pts.map((pt,i)=>({
+        dx:pt.x, dy:pt.y, z:pt.z, type: types[i],
+        shade: 0.6 + 0.4*((pt.z-zmin)/zr)
+      }));
+      let maxDist = 0;
+      layout.forEach(o=>{ maxDist = Math.max(maxDist, Math.hypot(o.dx,o.dy)); });
+
+      let scale = (total<=NUCLEON_DISPLAY_CAP) ? 1 : Math.cbrt(total/displayTotal);
+      if (total===1) scale = 1.25;
+      scale = Math.max(0.4, Math.min(2.6, scale));
+
+      return { kind:'noy', A:total, p:nProtons, n:nNeutrons, layout, scale, maxDist,
+        zmin, zmax, spinPhase: Math.random()*Math.PI*2 };
+    }
+    if (typ === 'e-' || typ === 'e+'){
+      return { kind:'lepton', A:0, charge: (typ==='e-') ? -1 : 1,
+        scale:1, maxDist:0.75 };
+    }
+    if (typ === 'gamma'){
+      return { kind:'gamma', A:0, scale:1, maxDist:1.1 };
+    }
+    if (typ === 'nu' || typ === 'antinu'){
+      return { kind:'neutrino', A:0,
+        label: (typ==='antinu') ? 'antineutrino' : 'neutrino',
+        scale:1, maxDist:0.65 };
+    }
+    // particule exotique non prévue : rendu générique, survol affiche le type
+    return { kind:'other', A:0, label:String(typ), scale:1, maxDist:0.75 };
+  }
+
+  function hitRadius(nucleonR, sp){
+    return (sp.maxDist + 1.15) * nucleonR * sp.scale;
+  }
+
+  /* ---------- Rendu ---------- */
+  // Rouge/bleu saturés + forte brillance, façon modèle moléculaire "boules et bâtons".
+  function shadeColor(rgb, f){
+    return 'rgb('+Math.round(rgb[0]*f)+','+Math.round(rgb[1]*f)+','+Math.round(rgb[2]*f)+')';
+  }
+  const NUCLEON_PALETTE = {
+    p: { dark:[120,10,10], base:[204,28,28], light:[255,180,170] },
+    n: { dark:[10,16,110], base:[30,50,196], light:[170,190,255] }
+  };
+  function drawNucleon(x,y,r,type,shade){
+    shade = (shade===undefined) ? 1 : shade;
+    const pal = NUCLEON_PALETTE[type] || NUCLEON_PALETTE.n;
+    const base = shadeColor(pal.base, shade);
+    const dark = shadeColor(pal.dark, shade*0.92);
+    const light = shadeColor(pal.light, 0.55+0.45*shade);
+    const g = ctx.createRadialGradient(x-r*0.38,y-r*0.4,r*0.05, x,y,r);
+    g.addColorStop(0, light);
+    g.addColorStop(0.42, base);
+    g.addColorStop(1, dark);
+    ctx.beginPath();
+    ctx.fillStyle = g;
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fill();
+    ctx.lineWidth = Math.max(0.6, r*0.06);
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.stroke();
+    // petit reflet net et brillant, façon plastique/verre
+    ctx.beginPath();
+    ctx.fillStyle = 'rgba(255,255,255,'+(0.55*shade)+')';
+    ctx.ellipse(x-r*0.34, y-r*0.38, r*0.22, r*0.14, -0.6, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Vitesse de la rotation douce et continue des noyaux (radians/ms) —
+  // volontairement lente pour rester discrète ("douce").
+  const SPIN_SPEED = 0.00022;
+
+  function drawSpecies(cx, cy, nucleonR, sp, extraScale, rotation, now){
+    const scale = sp.scale * (extraScale===undefined?1:extraScale);
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(rotation||0);
+
+    if (sp.kind === 'noy'){
+      // rotation 3D continue autour de l'axe vertical, pour donner une vraie
+      // impression de volume (chaque noyau tourne à son propre rythme)
+      const spin = (now||0)*SPIN_SPEED + (sp.spinPhase||0);
+      const cosT = Math.cos(spin), sinT = Math.sin(spin);
+      const zr = (sp.zmax - sp.zmin) || 1;
+      const rotated = sp.layout.map(o=>{
+        const rx = o.dx*cosT + o.z*sinT;
+        const rz = -o.dx*sinT + o.z*cosT;
+        return { rx, dy:o.dy, rz, type:o.type };
+      });
+      rotated.sort((a,b)=>a.rz-b.rz);
+      rotated.forEach(o=>{
+        const shade = 0.6 + 0.4*((o.rz - sp.zmin)/zr);
+        drawNucleon(o.rx*nucleonR*scale, o.dy*nucleonR*scale, nucleonR*scale, o.type, shade);
+      });
+
+    } else if (sp.kind === 'lepton'){
+      const r = nucleonR*0.55*scale;
+      const col = (sp.charge<0) ? '#caa23a' : '#d9822b';
+      const dcol = (sp.charge<0) ? '#8a6d1f' : '#93521a';
+      const g = ctx.createRadialGradient(-r*0.3,-r*0.3,r*0.1, 0,0,r);
+      g.addColorStop(0, '#fff3d0');
+      g.addColorStop(0.55, col);
+      g.addColorStop(1, dcol);
+      ctx.beginPath();
+      ctx.fillStyle = g;
+      ctx.arc(0,0,r,0,Math.PI*2);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.stroke();
+
+    } else if (sp.kind === 'gamma'){
+      const s = nucleonR*1.3*scale;
+      ctx.strokeStyle = '#e0a83a';
+      ctx.fillStyle = '#ffdd7a';
+      ctx.lineWidth = Math.max(1.2, s*0.14);
+      ctx.beginPath();
+      ctx.moveTo(-s*0.35, -s*0.9);
+      ctx.lineTo(s*0.15, -s*0.15);
+      ctx.lineTo(-s*0.15, s*0.05);
+      ctx.lineTo(s*0.35, s*0.9);
+      ctx.stroke();
+
+    } else if (sp.kind === 'neutrino'){
+      const r = nucleonR*0.55*scale;
+      ctx.setLineDash([r*0.5, r*0.45]);
+      ctx.lineWidth = Math.max(1, r*0.22);
+      ctx.strokeStyle = 'rgba(90,110,140,0.65)';
+      ctx.beginPath();
+      ctx.arc(0,0,r,0,Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+    } else { // 'other'
+      const r = nucleonR*0.6*scale;
+      const g = ctx.createRadialGradient(-r*0.3,-r*0.3,r*0.1, 0,0,r);
+      g.addColorStop(0, '#eef1f5');
+      g.addColorStop(0.6, '#aab4c0');
+      g.addColorStop(1, '#727e8c');
+      ctx.beginPath();
+      ctx.fillStyle = g;
+      ctx.arc(0,0,r,0,Math.PI*2);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Aura circulaire douce derrière chaque noyau/particule (fond sombre).
+  function drawAura(cx, cy, radius, now, phaseOffset){
+    const pulse = 1 + 0.06*Math.sin((now||0)/650 + (phaseOffset||0));
+    const r = radius*1.55*pulse;
+    const g = ctx.createRadialGradient(cx,cy,0, cx,cy,r);
+    g.addColorStop(0, 'rgba(120,170,255,0.20)');
+    g.addColorStop(0.55, 'rgba(90,140,255,0.10)');
+    g.addColorStop(1, 'rgba(90,140,255,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx,cy,r,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawWithAura(cx, cy, nucleonR, sp, extraScale, rotation, now){
+    drawAura(cx, cy, hitRadius(nucleonR, sp), now, cx*0.05+cy*0.03);
+    drawSpecies(cx, cy, nucleonR, sp, extraScale, rotation, now);
+  }
+
+  /* ---------- Espèces de la réaction (construites à partir des paramètres) ---------- */
+  const reactifs = cfg.reactifs.map(([A,Z,typ])=>speciesFor(A,Z,typ));
+  const produits = cfg.produits.map(([A,Z,typ])=>speciesFor(A,Z,typ));
+
+  /* ---------- Timeline de l'animation (déclenchée par le bouton) ---------- */
+  const T1 = 1300, T2 = 1700, T3 = 3400; // ms, avant application de la vitesse
+  const TOTAL = T3;
+
+  let phase = 'before';   // 'before' | 'playing' | 'after'
+  let startTime = null;
+  let sparks = [];
+
+  // Activité d'ambiance en arrière-plan : de petites paires floues qui
+  // dérivent lentement et pulsent (comme de minuscules fusions lointaines),
+  // pour suggérer qu'il "se passe des choses" sans distraire du premier plan.
+  const AMBIENT_COUNT = 9;
+  const ambientBlobs = Array.from({length:AMBIENT_COUNT}, ()=>({
+    x: Math.random(), y: Math.random(),
+    vx: (Math.random()-0.5)*0.00005, vy: (Math.random()-0.5)*0.00005,
+    phase: Math.random()*Math.PI*2,
+    speed: 0.0005 + Math.random()*0.0009,
+    size: 0.05 + Math.random()*0.085
+  }));
+  function drawAmbient(now){
+    ctx.save();
+    ctx.filter = 'blur(14px)';
+    ctx.globalCompositeOperation = 'lighter';
+    ambientBlobs.forEach(b=>{
+      b.x += b.vx; b.y += b.vy;
+      if (b.x < -0.15) b.x = 1.15; if (b.x > 1.15) b.x = -0.15;
+      if (b.y < -0.15) b.y = 1.15; if (b.y > 1.15) b.y = -0.15;
+      const cx = b.x*W, cy = b.y*H;
+      const r = b.size * Math.min(W,H);
+      const flash = Math.pow(Math.sin(now*b.speed + b.phase)*0.5+0.5, 3);
+      const baseA = 0.05 + 0.11*flash;
+
+      const gr = ctx.createRadialGradient(cx-r*0.2,cy,0, cx-r*0.2,cy,r);
+      gr.addColorStop(0, 'rgba(210,60,60,'+(baseA*0.8)+')');
+      gr.addColorStop(1, 'rgba(210,60,60,0)');
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(cx-r*0.2,cy,r,0,Math.PI*2); ctx.fill();
+
+      const gb = ctx.createRadialGradient(cx+r*0.2,cy,0, cx+r*0.2,cy,r);
+      gb.addColorStop(0, 'rgba(70,110,230,'+(baseA*0.8)+')');
+      gb.addColorStop(1, 'rgba(70,110,230,0)');
+      ctx.fillStyle = gb;
+      ctx.beginPath(); ctx.arc(cx+r*0.2,cy,r,0,Math.PI*2); ctx.fill();
+
+      if (flash > 0.55){
+        const gf = ctx.createRadialGradient(cx,cy,0, cx,cy,r*0.95);
+        const fa = (flash-0.55)/0.45*0.16;
+        gf.addColorStop(0, 'rgba(255,240,205,'+fa+')');
+        gf.addColorStop(1, 'rgba(255,240,205,0)');
+        ctx.fillStyle = gf;
+        ctx.beginPath(); ctx.arc(cx,cy,r*0.95,0,Math.PI*2); ctx.fill();
+      }
+    });
+    ctx.restore();
+  }
+  let mouse = { x:-9999, y:-9999 };
+
+  function makeSparks(cx,cy,n){
+    const arr = [];
+    for (let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2;
+      const speed = 60 + Math.random()*140;
+      arr.push({ x:cx, y:cy, vx:Math.cos(a)*speed, vy:Math.sin(a)*speed,
+        life:0.5+Math.random()*0.5, age:0, r:1.5+Math.random()*2.2 });
+    }
+    return arr;
+  }
+  function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+  function clamp01(t){ return Math.max(0,Math.min(1,t)); }
+  function lerp(a,b,t){ return a+(b-a)*t; }
+
+  /* ---------- Dispositions géométriques génériques ---------- */
+  // Les réactifs sont empilés verticalement sur la gauche, mais l'écart entre
+  // deux noyaux voisins tient compte de leur taille réelle à l'écran (deux
+  // gros noyaux ne doivent jamais se toucher visuellement au repos).
+  function computeReactantPositions(nucleonR){
+    const gap = Math.max(16, H*0.035);
+    const radii = reactifs.map(sp=>hitRadius(nucleonR, sp));
+    const totalHeight = radii.reduce((s,r)=>s + 2*r, 0) + gap*Math.max(0, radii.length-1);
+    const startX = W*0.27;
+    let y = H*0.5 - totalHeight/2;
+    return radii.map(r=>{
+      y += r;
+      const pos = { x:startX, y };
+      y += r + gap;
+      return pos;
+    });
+  }
+  function reactantPreContact(i, contact, nucleonR, startPositions){
+    const start = startPositions[i];
+    let dx = contact.x - start.x, dy = contact.y - start.y;
+    const d = Math.hypot(dx,dy) || 1;
+    dx/=d; dy/=d;
+    const back = nucleonR * (3 + reactifs[i].maxDist);
+    return { x: contact.x - dx*back, y: contact.y - dy*back };
+  }
+
+  // Les produits partent en éventail depuis le point de contact, puis on
+  // relâche (repousse) itérativement les paires qui se chevaucheraient
+  // compte tenu de leur taille réelle — garantit une séparation nette même
+  // avec des tailles très différentes (ex: fission).
+  function computeProductPositions(nucleonR){
+    const contact = { x:W*0.5, y:H*0.5 };
+    const n = produits.length;
+    const totalMass = produits.reduce((s,o)=>s+o.A,0) || 1;
+    const fanHalf = Math.min(80, 25 + n*12) * Math.PI/180;
+    const radii = produits.map(sp=>hitRadius(nucleonR, sp));
+    const pos = produits.map((sp,i)=>{
+      const angle = (n<=1) ? 0 : (-fanHalf + i*(2*fanHalf/(n-1)));
+      const massFrac = sp.A / totalMass;
+      const distFactor = Math.max(0.32, 1 - massFrac*0.8);
+      const baseDist = Math.min(W,H)*0.4;
+      const dist = baseDist*distFactor + radii[i]*1.5;
+      return {
+        x: contact.x + Math.cos(angle)*dist,
+        y: contact.y + Math.sin(angle)*dist*0.62
+      };
+    });
+    const gap = Math.max(10, nucleonR*0.8);
+    for (let iter=0; iter<60; iter++){
+      let moved = false;
+      for (let i=0;i<n;i++){
+        for (let j=i+1;j<n;j++){
+          const dx = pos[j].x-pos[i].x, dy = pos[j].y-pos[i].y;
+          let d = Math.hypot(dx,dy);
+          const minD = radii[i]+radii[j]+gap;
+          if (d < minD){
+            moved = true;
+            if (d < 0.001){ d = 0.001; }
+            const push = (minD-d)/2;
+            const ux = dx/d, uy = dy/d;
+            pos[i].x -= ux*push; pos[i].y -= uy*push*0.7;
+            pos[j].x += ux*push; pos[j].y += uy*push*0.7;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+    pos.forEach((p,i)=>{
+      const margin = radii[i]+8;
+      p.x = Math.max(margin, Math.min(W-margin, p.x));
+      p.y = Math.max(margin, Math.min(H-margin, p.y));
+    });
+    return pos;
+  }
+
+  let hoverTargets = [];
+  function addHoverTarget(x,y,r,lines){
+    if (!lines || !lines.length) return;
+    hoverTargets.push({x,y,r,lines});
+  }
+  function tooltipLinesFor(sp){
+    if (sp.kind === 'noy') return [`protons : ${sp.p}`, `neutrons : ${sp.n}`];
+    if (sp.kind === 'lepton') return [`charge : ${sp.charge>0?'+1':'-1'}`];
+    if (sp.kind === 'neutrino') return [sp.label];
+    if (sp.kind === 'gamma') return null; // pas de survol pour le rayonnement
+    return [sp.label || 'particule'];
+  }
+
+  function drawTooltip(x, y, lines){
+    ctx.save();
+    ctx.font = '600 13px Segoe UI, Arial, sans-serif';
+    const padX = 10, padY = 7, lh = 16;
+    let w = 0;
+    lines.forEach(l => { w = Math.max(w, ctx.measureText(l).width); });
+    w += padX*2;
+    const h = lh*lines.length + padY*2 - (lh-13);
+    let bx = x + 14, by = y - h - 10;
+    if (bx + w > W) bx = x - w - 14;
+    if (by < 4) by = y + 16;
+    ctx.fillStyle = 'rgba(31,42,55,0.92)';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(bx,by,w,h,6) : ctx.rect(bx,by,w,h);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    lines.forEach((l,i)=>{
+      ctx.fillText(l, bx+padX, by+padY+lh*i+7);
+    });
+    ctx.restore();
+  }
+
+  function frame(now){
+    resizeIfNeeded();
+    ctx.clearRect(0,0,W,H);
+    drawAmbient(now);
+    hoverTargets = [];
+
+    const contact = { x: W*0.5, y: H*0.5 };
+    const nucleonR = Math.max(7, Math.min(13, W*0.014));
+    const reactPos = computeReactantPositions(nucleonR);
+    const prodPos = computeProductPositions(nucleonR);
+
+    if (phase === 'before'){
+      reactifs.forEach((sp,i)=>{
+        const pos = reactPos[i];
+        drawWithAura(pos.x, pos.y, nucleonR, sp, 1, 0, now);
+        addHoverTarget(pos.x, pos.y, hitRadius(nucleonR, sp), tooltipLinesFor(sp));
+      });
+
+    } else if (phase === 'playing'){
+      if (startTime===null) startTime = now;
+      let t = (now - startTime) * cfg.speed;
+      if (t >= TOTAL){
+        phase = 'after';
+        sparks = [];
+        reactBtn.disabled = false;
+        reactBtn.textContent = 'Réinitialiser';
+      } else if (t < T1){
+        const p = easeInOut(clamp01(t/T1));
+        reactifs.forEach((sp,i)=>{
+          const start = reactPos[i];
+          const pre = reactantPreContact(i, contact, nucleonR, reactPos);
+          const x = lerp(start.x, pre.x, p), y = lerp(start.y, pre.y, p);
+          drawWithAura(x, y, nucleonR, sp, 1, 0, now);
+          addHoverTarget(x, y, hitRadius(nucleonR, sp), tooltipLinesFor(sp));
+        });
+      } else if (t < T2){
+        const p = clamp01((t-T1)/(T2-T1));
+        reactifs.forEach((sp,i)=>{
+          const pre = reactantPreContact(i, contact, nucleonR, reactPos);
+          const wobble = Math.sin(p*Math.PI*6 + i) * (1-p) * nucleonR*0.35;
+          const x = lerp(pre.x, contact.x, p*0.3) + wobble;
+          const y = lerp(pre.y, contact.y, p*0.3);
+          const rot = (i%2===0 ? 1 : -1) * p*0.6;
+          drawWithAura(x, y, nucleonR, sp, 1-p*0.15, rot, now);
+          addHoverTarget(x, y, hitRadius(nucleonR, sp), tooltipLinesFor(sp));
+        });
+
+        if (sparks.length===0 && p>0.05) sparks = makeSparks(contact.x, contact.y, 26);
+
+        const flashP = Math.sin(p*Math.PI);
+        const flashR = nucleonR*(3 + p*9);
+        const grad = ctx.createRadialGradient(contact.x,contact.y,0, contact.x,contact.y,flashR);
+        grad.addColorStop(0, 'rgba(255,255,255,'+(0.95*flashP)+')');
+        grad.addColorStop(0.35, 'rgba(255,236,150,'+(0.85*flashP)+')');
+        grad.addColorStop(0.7, 'rgba(255,170,60,'+(0.45*flashP)+')');
+        grad.addColorStop(1, 'rgba(255,170,60,0)');
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(contact.x, contact.y, flashR, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        const p = clamp01((t-T2)/(T3-T2));
+        const glowP = Math.max(0, 1 - p*1.4);
+        if (glowP>0){
+          const flashR2 = nucleonR*(6 + p*4);
+          const grad2 = ctx.createRadialGradient(contact.x,contact.y,0, contact.x,contact.y,flashR2);
+          grad2.addColorStop(0, 'rgba(255,222,140,'+(0.5*glowP)+')');
+          grad2.addColorStop(1, 'rgba(255,222,140,0)');
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = grad2;
+          ctx.beginPath();
+          ctx.arc(contact.x,contact.y,flashR2,0,Math.PI*2);
+          ctx.fill();
+          ctx.restore();
+        }
+        produits.forEach((sp,i)=>{
+          const fin = prodPos[i];
+          const x = lerp(contact.x, fin.x, easeInOut(p));
+          const y = lerp(contact.y, fin.y, easeInOut(p));
+          drawWithAura(x, y, nucleonR, sp, 1, p*0.3*(i%2===0?1:-1), now);
+          addHoverTarget(x, y, hitRadius(nucleonR, sp), tooltipLinesFor(sp));
+        });
+      }
+
+      if (sparks.length){
+        const dt = 1/60;
+        sparks.forEach(s=>{
+          s.age += dt; s.x += s.vx*dt; s.y += s.vy*dt;
+          s.vx *= 0.96; s.vy *= 0.96;
+        });
+        sparks = sparks.filter(s=>s.age < s.life);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        sparks.forEach(s=>{
+          const a = 1 - s.age/s.life;
+          ctx.fillStyle = 'rgba(255,205,110,'+a+')';
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+          ctx.fill();
+        });
+        ctx.restore();
+      }
+    }
+
+    if (phase === 'after'){
+      produits.forEach((sp,i)=>{
+        const fin = prodPos[i];
+        drawWithAura(fin.x, fin.y, nucleonR, sp, 1, 0, now);
+        addHoverTarget(fin.x, fin.y, hitRadius(nucleonR, sp), tooltipLinesFor(sp));
+      });
+    }
+
+    {
+      let hit = null, bestD = Infinity;
+      hoverTargets.forEach(o=>{
+        const d = Math.hypot(mouse.x-o.x, mouse.y-o.y);
+        if (d <= o.r && d < bestD){ bestD = d; hit = o; }
+      });
+      canvas.style.cursor = hit ? 'pointer' : 'default';
+      if (hit) drawTooltip(mouse.x, mouse.y, hit.lines);
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  function resizeIfNeeded(){
+    const r = stage.getBoundingClientRect();
+    if (Math.abs(r.width - W) > 1 || Math.abs(r.height - H) > 1) resize();
+  }
+
+  canvas.addEventListener('mousemove', (e)=>{
+    const r = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - r.left;
+    mouse.y = e.clientY - r.top;
+  });
+  canvas.addEventListener('mouseleave', ()=>{ mouse.x=-9999; mouse.y=-9999; });
+
+  reactBtn.addEventListener('click', function(){
+    if (phase === 'playing') return;
+    if (phase === 'after'){
+      // étape intermédiaire immobile : on revient à l'état "avant" (comme au
+      // tout début) et il faut recliquer sur [Réaction] pour relancer
+      phase = 'before';
+      sparks = [];
+      reactBtn.textContent = 'Réaction';
+      return;
+    }
+    phase = 'playing';
+    startTime = null;
+    sparks = [];
+    reactBtn.disabled = true;
+  });
+
+  if (cfg.locked === 1){
+    reactBtn.classList.add('hidden');
+  }
+
+  resize();
+  requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
