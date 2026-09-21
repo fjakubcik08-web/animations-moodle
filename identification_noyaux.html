@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Identification de noyaux et particules</title>
+<style>
+  :root{
+    --bg:#05070c;
+    --panel:#0a0d14;
+    --line:#232a38;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    background:var(--bg);
+    font-family:"Segoe UI",Arial,Helvetica,sans-serif;
+    overflow:hidden;
+  }
+  #wrap{
+    display:flex;flex-direction:column;align-items:center;
+    width:100%;height:100%;padding:8px 10px;gap:6px;
+  }
+  #stage{
+    position:relative;
+    width:100%;max-width:920px;flex:1;min-height:0;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    box-shadow:0 1px 8px rgba(0,0,0,.5);
+    overflow:hidden;
+  }
+  canvas{display:block;width:100%;height:100%;cursor:default;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="c"></canvas>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- Parametrage encode dans l'URL ---------- */
+  // Schema : JSON compact -> XOR (cle "NUCL3D_FJ2026") -> base64 url-safe (?p=...)
+  // Parametre en clair ?rotate=0/1 prend le dessus sur ?p=... si present.
+  const XOR_KEY = "NUCL3D_FJ2026";
+
+  function xorBytes(bytes, key){
+    const kb = [];
+    for (let i=0;i<key.length;i++) kb.push(key.charCodeAt(i));
+    const out = new Uint8Array(bytes.length);
+    for (let i=0;i<bytes.length;i++) out[i] = bytes[i] ^ kb[i % kb.length];
+    return out;
+  }
+  function b64urlToBytes(s){
+    s = s.replace(/-/g,'+').replace(/_/g,'/');
+    while (s.length % 4) s += '=';
+    const bin = atob(s);
+    const bytes = new Uint8Array(bin.length);
+    for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function decodeParam(p){
+    try{
+      const bytes = b64urlToBytes(p);
+      const dec = xorBytes(bytes, XOR_KEY);
+      let str = "";
+      for (let i=0;i<dec.length;i++) str += String.fromCharCode(dec[i]);
+      return JSON.parse(decodeURIComponent(escape(str)));
+    }catch(e){ return null; }
+  }
+
+  // Types (miroir Python) : 0 = noyau (z,n) -- couvre aussi proton seul (1,0)
+  // et neutron seul (0,1) ; 1 = electron ; 2 = positron.
+  const N_OBJECTS = 4;
+  const DEFAULT_PAYLOAD = {
+    o: [[0,2,2],[0,1,0],[1,0,0],[2,0,0]], // demo : helium-4, proton, electron, positron
+    r: 1
+  };
+  const qs = new URLSearchParams(window.location.search);
+  let payload = DEFAULT_PAYLOAD;
+  if (qs.has('p')){
+    const decoded = decodeParam(qs.get('p'));
+    if (decoded && Array.isArray(decoded.o) && decoded.o.length>0) payload = decoded;
+  }
+  let rotateOn = payload.r !== 0;
+  if (qs.has('rotate')) rotateOn = qs.get('rotate') !== '0';
+
+  let objsRaw = payload.o.slice(0,N_OBJECTS);
+  while (objsRaw.length < N_OBJECTS) objsRaw.push([0,1,0]);
+
+  /* ---------- Canvas setup ---------- */
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+
+  let W=0, H=0, DPR=1;
+  function resize(){
+    const r = stage.getBoundingClientRect();
+    DPR = window.devicePixelRatio || 1;
+    W = Math.max(320, r.width);
+    H = Math.max(220, r.height);
+    canvas.width = W*DPR;
+    canvas.height = H*DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+
+  /* ---------- Geometrie des amas de nucleons ---------- */
+  function fibonacciSpherePoints(total, R){
+    const pts = [];
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    for (let i=0; i<total; i++){
+      const y = ((i + 0.5) / total) * 2 - 1;
+      const r = Math.sqrt(Math.max(0, 1 - y*y));
+      const phi = i * golden;
+      pts.push({ x: Math.cos(phi)*r*R, y: y*R, z: Math.sin(phi)*r*R });
+    }
+    return pts;
+  }
+  function pack3D(total){
+    if (total <= 1) return [{x:0,y:0,z:0}];
+    const R = Math.sqrt(total/Math.PI) * 1.05;
+    return fibonacciSpherePoints(total, R);
+  }
+  function templatePositions(total){
+    const R3 = 2/Math.sqrt(3);
+    const T3D2 = 1/Math.sqrt(2);
+    switch(total){
+      case 1: return [{x:0,y:0,z:0}];
+      case 2: return [{x:-1,y:0,z:-0.25},{x:1,y:0,z:0.25}];
+      case 3: return [
+        {x:0, y:-R3, z:0.3},
+        {x:R3*Math.cos(Math.PI/6), y:R3*Math.sin(Math.PI/6), z:-0.15},
+        {x:-R3*Math.cos(Math.PI/6), y:R3*Math.sin(Math.PI/6), z:-0.15}
+      ];
+      case 4: return [
+        {x: T3D2, y: T3D2, z: T3D2},
+        {x: T3D2, y:-T3D2, z:-T3D2},
+        {x:-T3D2, y: T3D2, z:-T3D2},
+        {x:-T3D2, y:-T3D2, z: T3D2}
+      ];
+      default: return null;
+    }
+  }
+  function distributeTypes(total, nProtons){
+    const types = [];
+    let acc = 0;
+    for (let i=0;i<total;i++){
+      acc += nProtons;
+      if (acc >= total){ acc -= total; types.push('p'); }
+      else types.push('n');
+    }
+    return types;
+  }
+
+  const NUCLEON_DISPLAY_CAP = 26;
+
+  function speciesFor(z, n){
+    const total = Math.max(1, z+n);
+    const nProtons = Math.max(0, Math.min(z, total));
+    const nNeutrons = total - nProtons;
+
+    let displayTotal = Math.min(total, NUCLEON_DISPLAY_CAP);
+    let dispP = Math.round(displayTotal * nProtons/total);
+    if (nProtons>0) dispP = Math.max(1, dispP);
+    if (nNeutrons>0) dispP = Math.min(displayTotal-1, dispP);
+    dispP = Math.max(0, Math.min(displayTotal, dispP));
+
+    const pts = templatePositions(displayTotal) || pack3D(displayTotal);
+    const types = distributeTypes(displayTotal, dispP);
+    for (let i=types.length-1; i>0; i--){
+      const j = (Math.random()*(i+1))|0;
+      const tmp = types[i]; types[i] = types[j]; types[j] = tmp;
+    }
+    let zmin=Infinity, zmax=-Infinity;
+    pts.forEach(pt=>{ zmin=Math.min(zmin,pt.z); zmax=Math.max(zmax,pt.z); });
+    const zr = (zmax-zmin) || 1;
+    const layout = pts.map((pt,i)=>({ dx:pt.x, dy:pt.y, z:pt.z, type: types[i] }));
+    let maxDist = 0;
+    layout.forEach(o=>{ maxDist = Math.max(maxDist, Math.hypot(o.dx,o.dy)); });
+
+    let scale = (total<=NUCLEON_DISPLAY_CAP) ? 1 : Math.cbrt(total/displayTotal);
+    if (total===1) scale = 1.25;
+    scale = Math.max(0.4, Math.min(2.6, scale));
+
+    return { kind:'noy', p:nProtons, n:nNeutrons, layout, scale, maxDist, zmin, zmax,
+      spinPhase: Math.random()*Math.PI*2 };
+  }
+  function leptonSpecies(charge){
+    return { kind:'lepton', charge, scale:1, maxDist:0.75 };
+  }
+
+  function hitRadius(nucleonR, sp){
+    return (sp.maxDist + 1.15) * nucleonR * sp.scale;
+  }
+
+  /* ---------- Rendu des billes (rouge=proton, bleu=neutron) ---------- */
+  function shadeColor(rgb, f){
+    return 'rgb('+Math.round(rgb[0]*f)+','+Math.round(rgb[1]*f)+','+Math.round(rgb[2]*f)+')';
+  }
+  const NUCLEON_PALETTE = {
+    p: { dark:[120,10,10], base:[204,28,28], light:[255,180,170] },
+    n: { dark:[10,16,110], base:[30,50,196], light:[170,190,255] }
+  };
+  function drawNucleon(x,y,r,type,shade){
+    shade = (shade===undefined) ? 1 : shade;
+    const pal = NUCLEON_PALETTE[type] || NUCLEON_PALETTE.n;
+    const base = shadeColor(pal.base, shade);
+    const dark = shadeColor(pal.dark, shade*0.92);
+    const light = shadeColor(pal.light, 0.55+0.45*shade);
+    const g = ctx.createRadialGradient(x-r*0.38,y-r*0.4,r*0.05, x,y,r);
+    g.addColorStop(0, light);
+    g.addColorStop(0.42, base);
+    g.addColorStop(1, dark);
+    ctx.beginPath();
+    ctx.fillStyle = g;
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fill();
+    ctx.lineWidth = Math.max(0.6, r*0.06);
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.fillStyle = 'rgba(255,255,255,'+(0.55*shade)+')';
+    ctx.ellipse(x-r*0.34, y-r*0.38, r*0.22, r*0.14, -0.6, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  const SPIN_SPEED = 0.0007; // rad/ms, rotation continue
+
+  function drawSpecies(cx, cy, nucleonR, sp, now){
+    const scale = sp.scale;
+    ctx.save();
+    ctx.translate(cx,cy);
+
+    if (sp.kind === 'noy'){
+      const spin = rotateOn ? ((now||0)*SPIN_SPEED + (sp.spinPhase||0)) : (0.9 + sp.spinPhase*0.2);
+      const cosT = Math.cos(spin), sinT = Math.sin(spin);
+      const zr = (sp.zmax - sp.zmin) || 1;
+      const rotated = sp.layout.map(o=>{
+        const rx = o.dx*cosT + o.z*sinT;
+        const rz = -o.dx*sinT + o.z*cosT;
+        return { rx, dy:o.dy, rz, type:o.type };
+      });
+      rotated.sort((a,b)=>a.rz-b.rz);
+      rotated.forEach(o=>{
+        const shade = 0.6 + 0.4*((o.rz - sp.zmin)/zr);
+        drawNucleon(o.rx*nucleonR*scale, o.dy*nucleonR*scale, nucleonR*scale, o.type, shade);
+      });
+    } else if (sp.kind === 'lepton'){
+      const r = nucleonR*0.62*scale;
+      const col = (sp.charge<0) ? '#caa23a' : '#d9822b';
+      const dcol = (sp.charge<0) ? '#8a6d1f' : '#93521a';
+      const g = ctx.createRadialGradient(-r*0.3,-r*0.3,r*0.1, 0,0,r);
+      g.addColorStop(0, '#fff3d0');
+      g.addColorStop(0.55, col);
+      g.addColorStop(1, dcol);
+      ctx.beginPath();
+      ctx.fillStyle = g;
+      ctx.arc(0,0,r,0,Math.PI*2);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawAura(cx, cy, radius, now, phaseOffset){
+    const pulse = 1 + 0.06*Math.sin((now||0)/650 + (phaseOffset||0));
+    const r = radius*1.55*pulse;
+    const g = ctx.createRadialGradient(cx,cy,0, cx,cy,r);
+    g.addColorStop(0, 'rgba(120,170,255,0.20)');
+    g.addColorStop(0.55, 'rgba(90,140,255,0.10)');
+    g.addColorStop(1, 'rgba(90,140,255,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx,cy,r,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawWithAura(cx, cy, nucleonR, sp, now){
+    drawAura(cx, cy, hitRadius(nucleonR, sp), now, cx*0.05+cy*0.03);
+    drawSpecies(cx, cy, nucleonR, sp, now);
+  }
+
+  /* ---------- Activite d'ambiance en fond (flou), meme esprit que fusion_dt ---------- */
+  const AMBIENT_COUNT = 9;
+  const ambientBlobs = Array.from({length:AMBIENT_COUNT}, ()=>({
+    x: Math.random(), y: Math.random(),
+    vx: (Math.random()-0.5)*0.00005, vy: (Math.random()-0.5)*0.00005,
+    phase: Math.random()*Math.PI*2,
+    speed: 0.0004 + Math.random()*0.0007,
+    size: 0.045 + Math.random()*0.07
+  }));
+  function drawAmbient(now){
+    ctx.save();
+    ctx.filter = 'blur(14px)';
+    ctx.globalCompositeOperation = 'lighter';
+    ambientBlobs.forEach(b=>{
+      b.x += b.vx; b.y += b.vy;
+      if (b.x < -0.15) b.x = 1.15; if (b.x > 1.15) b.x = -0.15;
+      if (b.y < -0.15) b.y = 1.15; if (b.y > 1.15) b.y = -0.15;
+      const cx = b.x*W, cy = b.y*H;
+      const r = b.size * Math.min(W,H);
+      const flash = Math.pow(Math.sin(now*b.speed + b.phase)*0.5+0.5, 3);
+      const baseA = 0.04 + 0.09*flash;
+      const gr = ctx.createRadialGradient(cx,cy,0, cx,cy,r);
+      gr.addColorStop(0, 'rgba(90,140,255,'+(baseA*0.8)+')');
+      gr.addColorStop(1, 'rgba(90,140,255,0)');
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  /* ---------- Survol : tooltip protons/neutrons ou charge ---------- */
+  let mouse = { x:-9999, y:-9999 };
+  canvas.addEventListener('mousemove', (e)=>{
+    const r = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - r.left;
+    mouse.y = e.clientY - r.top;
+  });
+  canvas.addEventListener('mouseleave', ()=>{ mouse.x=-9999; mouse.y=-9999; });
+
+  function tooltipLinesFor(sp){
+    if (sp.kind === 'noy'){
+      const lines = [];
+      if (sp.p > 0) lines.push(`protons : ${sp.p}`);
+      if (sp.n > 0) lines.push(`neutrons : ${sp.n}`);
+      return lines.length ? lines : [`protons : ${sp.p}`, `neutrons : ${sp.n}`];
+    }
+    if (sp.kind === 'lepton') return [`charge : ${sp.charge>0?'+1':'-1'}`];
+    return null;
+  }
+  function drawTooltip(x, y, lines){
+    ctx.save();
+    ctx.font = '600 13px Segoe UI, Arial, sans-serif';
+    const padX = 10, padY = 7, lh = 16;
+    let w = 0;
+    lines.forEach(l => { w = Math.max(w, ctx.measureText(l).width); });
+    w += padX*2;
+    const h = lh*lines.length + padY*2 - (lh-13);
+    let bx = x + 14, by = y - h - 10;
+    if (bx + w > W) bx = x - w - 14;
+    if (by < 4) by = y + 16;
+    ctx.fillStyle = 'rgba(31,42,55,0.94)';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(bx,by,w,h,6) : ctx.rect(bx,by,w,h);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    lines.forEach((l,i)=>{
+      ctx.fillText(l, bx+padX, by+padY+lh*i+7);
+    });
+    ctx.restore();
+  }
+
+  /* ---------- Construction des N_OBJECTS objets ---------- */
+  function buildObject(triplet){
+    const code = triplet[0];
+    if (code === 1) return leptonSpecies(-1);
+    if (code === 2) return leptonSpecies(1);
+    return speciesFor(Math.max(0, triplet[1]|0), Math.max(0, triplet[2]|0));
+  }
+  const objects = objsRaw.map(buildObject);
+
+  function resizeIfNeeded(){
+    const r = stage.getBoundingClientRect();
+    if (Math.abs(r.width - W) > 1 || Math.abs(r.height - H) > 1) resize();
+  }
+
+  function frame(now){
+    resizeIfNeeded();
+    ctx.clearRect(0,0,W,H);
+    drawAmbient(now);
+
+    const labelH = 26;
+    const panelW = W/N_OBJECTS;
+    const cy = (H - labelH)/2 + 6;
+    const nucleonR = Math.max(6, Math.min(20, Math.min(panelW, H-labelH)*0.095));
+
+    const hoverTargets = [];
+    ctx.font = '600 14px Segoe UI, Arial, sans-serif';
+    ctx.fillStyle = '#7f93a8';
+    ctx.textAlign = 'center';
+
+    objects.forEach((sp,i)=>{
+      const cx = panelW*(i+0.5);
+      if (i>0){
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.beginPath();
+        ctx.moveTo(panelW*i, 10);
+        ctx.lineTo(panelW*i, H-labelH-4);
+        ctx.stroke();
+        ctx.restore();
+      }
+      drawWithAura(cx, cy, nucleonR, sp, now);
+      hoverTargets.push({ x:cx, y:cy, r:hitRadius(nucleonR, sp), lines:tooltipLinesFor(sp) });
+      ctx.fillStyle = '#7f93a8';
+      ctx.font = '600 14px Segoe UI, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(i+1), cx, H-9);
+    });
+
+    let hit = null, bestD = Infinity;
+    hoverTargets.forEach(o=>{
+      if (!o.lines) return;
+      const d = Math.hypot(mouse.x-o.x, mouse.y-o.y);
+      if (d <= o.r && d < bestD){ bestD = d; hit = o; }
+    });
+    canvas.style.cursor = hit ? 'pointer' : 'default';
+    if (hit) drawTooltip(mouse.x, mouse.y, hit.lines);
+
+    requestAnimationFrame(frame);
+  }
+
+  resize();
+  requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
