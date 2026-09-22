@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pesées — préparation de solutions</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;overflow:hidden;}
+  #wrap{width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
+  #scene{width:100%;height:100%;max-width:1600px;max-height:480px;touch-action:none;user-select:none;}
+  /* pas de règle CSS générique "svg{...}" : elle s'appliquerait aussi aux
+     <svg> imbriqués (un par objet) et écraserait leurs width/height propres. */
+  .instr{font-size:15px;fill:#37474f;}
+  .label{font-size:15px;fill:#37474f;font-weight:600;text-anchor:middle;}
+  .sublabel{font-size:12px;fill:#607d8b;text-anchor:middle;}
+  .draggable{cursor:grab;}
+  .draggable:active{cursor:grabbing;}
+  .uibtn{cursor:pointer;}
+  .aura{opacity:0;pointer-events:none;}
+  .aura.show{opacity:1;}
+  @keyframes auraPulse{ 0%{opacity:.35;} 50%{opacity:.75;} 100%{opacity:.35;} }
+  .aura.show circle{ animation: auraPulse 1.1s ease-in-out infinite; }
+</style>
+</head>
+<body>
+<div id="wrap">
+<svg id="scene" viewBox="0 0 1650 460" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- consigne -->
+  <text x="20" y="28" class="instr">Faites glisser les coupelles et la fiole sur le plateau de la balance pour mesurer leur masse. Tu peux aussi verser une coupelle puis l'eau dans la fiole.</text>
+
+  <!-- table -->
+  <rect x="10" y="330" width="1630" height="18" rx="3" fill="#a97a4a"/>
+  <rect x="55" y="348" width="16" height="70" fill="#8a5a34"/>
+  <rect x="1560" y="348" width="16" height="70" fill="#8a5a34"/>
+
+  <!-- bouton réinitialiser -->
+  <g id="btnReset" class="uibtn">
+    <rect x="1500" y="16" width="130" height="28" rx="6" fill="#78909c"/>
+    <text x="1565" y="35" text-anchor="middle" font-size="13" fill="#ffffff" font-weight="600" pointer-events="none">Réinitialiser</text>
+  </g>
+
+  <!-- aura autour de la fiole (indique qu'on peut y verser) -->
+  <g id="fioleAura" class="aura">
+    <circle cx="0" cy="0" r="0" fill="none" stroke="#4fc3f7" stroke-width="4"/>
+  </g>
+
+  <!-- bouton "Verser" -->
+  <g id="btnVerser" class="uibtn" style="display:none;">
+    <rect x="-38" y="-14" width="76" height="28" rx="6" fill="#43a047"/>
+    <text x="0" y="5" text-anchor="middle" font-size="13" fill="#ffffff" font-weight="600" pointer-events="none">Verser</text>
+  </g>
+
+  <!-- objets posés sur la table : créés dynamiquement en JS -->
+  <g id="itemsLayer"></g>
+
+</svg>
+</div>
+
+<script>
+(function(){
+
+  /* =========================================================
+     1) Décodage des paramètres (XOR + base64url)
+        Schéma spécifique à cette animation (masse_volumique).
+        Miroir exact du générateur Python fourni séparément.
+        Ordre : [mfv, mcv, m1..m5, vol, sub, mf1..mf5]
+        (mf1..mf5 = masse fiole+solution une fois coupelle i + eau versées)
+     ========================================================= */
+  var XOR_KEY = "MVOL2026FRED";
+
+  function b64urlToBytes(p){
+    var b64 = p.replace(/-/g,'+').replace(/_/g,'/');
+    while (b64.length % 4) b64 += '=';
+    var bin = atob(b64);
+    var out = new Uint8Array(bin.length);
+    for (var i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function decodeParams(p){
+    var xored = b64urlToBytes(p);
+    var key = XOR_KEY;
+    var bytes = new Uint8Array(xored.length);
+    for (var i=0;i<xored.length;i++){
+      bytes[i] = xored[i] ^ key.charCodeAt(i % key.length);
+    }
+    var s = new TextDecoder('utf-8').decode(bytes);
+    return JSON.parse(s);
+  }
+
+  function round2(v){ return Math.round(v*100)/100; }
+
+  // valeur par défaut d'une fiole remplie (coupelle i + eau jusqu'au trait de
+  // jauge) : approximation physique raisonnable (densité croissante avec la
+  // masse de soluté) — sert seulement de valeur par défaut pour les tests
+  // locaux ; Frédéric peut fournir des valeurs réelles via le générateur Python.
+  function defaultMfilled(mfv, masses, vol){
+    return masses.map(function(m){
+      var concPer100 = m * (100/vol);
+      var density = 1 + 0.0068*concPer100;
+      return round2(mfv + density*vol);
+    });
+  }
+
+  // valeurs par défaut si rien n'est fourni
+  var cfg = {
+    mfv: 52.34,
+    mcv: 1.87,
+    masses: [2.14,4.58,6.02,8.91,10.35],
+    vol: 100,
+    sub: 'sel',
+    move: true
+  };
+  cfg.mfilled = defaultMfilled(cfg.mfv, cfg.masses, cfg.vol);
+
+  var qs = new URLSearchParams(location.search);
+
+  if (qs.get('p')){
+    try{
+      var d = decodeParams(qs.get('p'));
+      cfg.mfv = d[0]; cfg.mcv = d[1];
+      cfg.masses = [d[2],d[3],d[4],d[5],d[6]];
+      cfg.vol = d[7];
+      cfg.sub = d[8] === 1 ? 'sucre' : 'sel';
+      if (d.length >= 14){
+        cfg.mfilled = [d[9],d[10],d[11],d[12],d[13]];
+      } else {
+        cfg.mfilled = defaultMfilled(cfg.mfv, cfg.masses, cfg.vol);
+      }
+    }catch(e){ console.warn('Paramètre p invalide, valeurs par défaut utilisées.', e); }
+  }
+
+  // les paramètres en clair priment (pratique pour les tests locaux)
+  if (qs.get('mfv') !== null) cfg.mfv = parseFloat(qs.get('mfv'));
+  if (qs.get('mcv') !== null) cfg.mcv = parseFloat(qs.get('mcv'));
+  for (var k=1;k<=5;k++){
+    if (qs.get('m'+k) !== null) cfg.masses[k-1] = parseFloat(qs.get('m'+k));
+  }
+  if (qs.get('vol') !== null) cfg.vol = parseFloat(qs.get('vol'));
+  if (qs.get('sub') !== null) cfg.sub = qs.get('sub');
+  if (qs.get('move') !== null) cfg.move = qs.get('move') !== '0';
+  var mfOverridden = false;
+  for (k=1;k<=5;k++){
+    if (qs.get('mf'+k) !== null){ cfg.mfilled[k-1] = parseFloat(qs.get('mf'+k)); mfOverridden = true; }
+  }
+  if (!mfOverridden && !qs.get('p')){
+    cfg.mfilled = defaultMfilled(cfg.mfv, cfg.masses, cfg.vol);
+  }
+
+  /* =========================================================
+     2) Bibliothèque d'objets (SVG fournis par Frédéric)
+        Chaque asset est posé sur la table : son "ancre" (0,0)
+        correspond au point bas-centre de l'objet une fois posé.
+     ========================================================= */
+  var svgNS = "http://www.w3.org/2000/svg";
+  var svg = document.getElementById('scene');
+  var itemsLayer = document.getElementById('itemsLayer');
+  var TABLE_Y = 330;
+
+  var ASSETS = {
+    flacon: {
+      // pisette (remplace la bouteille d'eau)
+      vbW:160, vbH:260, contentTop:5, contentBottom:225,
+      html: '\
+        <path d="M 43,115 L 117,115 L 117,210 Q 117,225 102,225 L 58,225 Q 43,225 43,210 Z" fill="#e3f2fd"/>\
+        <line x1="80" y1="55" x2="80" y2="215" stroke="#b0bec5" stroke-width="2.5"/>\
+        <rect x="40" y="85" width="80" height="130" rx="12" fill="none" stroke="#333333" stroke-width="3"/>\
+        <path d="M 40,85 Q 40,70 65,70 L 65,55 L 95,55 L 95,70 Q 120,70 120,85" fill="none" stroke="#333333" stroke-width="3" stroke-linejoin="round"/>\
+        <rect x="60" y="43" width="40" height="12" rx="1" fill="#ffffff" stroke="#333333" stroke-width="3"/>\
+        <line x1="68" y1="46" x2="68" y2="52" stroke="#333333" stroke-width="1.5"/>\
+        <line x1="74" y1="46" x2="74" y2="52" stroke="#333333" stroke-width="1.5"/>\
+        <line x1="80" y1="46" x2="80" y2="52" stroke="#333333" stroke-width="1.5"/>\
+        <line x1="86" y1="46" x2="86" y2="52" stroke="#333333" stroke-width="1.5"/>\
+        <line x1="92" y1="46" x2="92" y2="52" stroke="#333333" stroke-width="1.5"/>\
+        <path d="M 80,43 L 80,25 Q 80,5 105,8 L 135,28 Q 140,32 137,37 L 132,45" fill="none" stroke="#333333" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'
+    },
+    fiole: {
+      // sans le liquide : la fiole reste VIDE au départ dans cet exercice
+      vbW:150, vbH:250, contentTop:30, contentBottom:230,
+      html: '\
+        <line x1="60" y1="90" x2="90" y2="90" stroke="#333333" stroke-width="1.5" stroke-dasharray="3,2"/>\
+        <path d="M 60,30 L 90,30 L 90,150 C 130,190 120,230 75,230 C 30,230 20,190 60,150 Z" fill="none" stroke="#333333" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>\
+        <line x1="57" y1="30" x2="93" y2="30" stroke="#333333" stroke-width="3"/>'
+    },
+    coupelleVide: {
+      vbW:160, vbH:80, contentTop:25, contentBottom:55,
+      html: '\
+        <path d="M 15,25 L 35,55 L 125,55 L 145,25" fill="none" stroke="#333333" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>\
+        <line x1="5" y1="25" x2="15" y2="25" stroke="#333333" stroke-width="3" stroke-linecap="round"/>\
+        <line x1="145" y1="25" x2="155" y2="25" stroke="#333333" stroke-width="3" stroke-linecap="round"/>'
+    },
+    coupelleRemplie: {
+      vbW:160, vbH:80, contentTop:25, contentBottom:55,
+      html: '\
+        <path d="M 28,45 L 35,55 L 125,55 L 132,45 Z" fill="#ffffff" stroke="#c7ced1" stroke-width="1.2"/>\
+        <ellipse cx="80" cy="45" rx="52" ry="3" fill="#ffffff" stroke="#c7ced1" stroke-width="1.2"/>\
+        <circle cx="55" cy="47" r="1.4" fill="#cfd8dc"/><circle cx="68" cy="44" r="1.1" fill="#cfd8dc"/>\
+        <circle cx="80" cy="48" r="1.5" fill="#cfd8dc"/><circle cx="93" cy="45" r="1.1" fill="#cfd8dc"/>\
+        <circle cx="105" cy="47" r="1.4" fill="#cfd8dc"/><circle cx="62" cy="50" r="1" fill="#cfd8dc"/>\
+        <circle cx="87" cy="51" r="1.2" fill="#cfd8dc"/><circle cx="74" cy="49" r="1" fill="#cfd8dc"/>\
+        <circle cx="99" cy="50" r="1" fill="#cfd8dc"/><circle cx="45" cy="46" r="1" fill="#cfd8dc"/>\
+        <path d="M 15,25 L 35,55 L 125,55 L 145,25" fill="none" stroke="#333333" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>\
+        <line x1="5" y1="25" x2="15" y2="25" stroke="#333333" stroke-width="3" stroke-linecap="round"/>\
+        <line x1="145" y1="25" x2="155" y2="25" stroke="#333333" stroke-width="3" stroke-linecap="round"/>'
+    },
+    balance: {
+      vbW:240, vbH:120, contentTop:38, contentBottom:101,
+      html: '\
+        <rect x="20" y="50" width="200" height="45" rx="8" fill="#e0e0e0" stroke="#333333" stroke-width="3"/>\
+        <rect x="35" y="38" width="170" height="12" rx="3" fill="#cfd8dc" stroke="#333333" stroke-width="3"/>\
+        <line x1="35" y1="50" x2="205" y2="50" stroke="#333333" stroke-width="1.5"/>\
+        <rect x="95" y="60" width="110" height="26" rx="4" fill="#b3e5fc" stroke="#78909c" stroke-width="1.5"/>\
+        <text id="displayText" x="195" y="79" font-family="monospace, Courier" font-size="16" font-weight="bold" fill="#0277bd" text-anchor="end">0.00 g</text>\
+        <rect x="35" y="65" width="22" height="14" rx="2" fill="#ffb74d" stroke="#333333" stroke-width="2"/>\
+        <text x="46" y="74" font-family="sans-serif" font-size="5" font-weight="bold" fill="#333333" text-anchor="middle" pointer-events="none">ON</text>\
+        <rect id="btnTare" x="63" y="65" width="22" height="14" rx="2" fill="#ffb74d" stroke="#333333" stroke-width="2" style="cursor:pointer"/>\
+        <text x="74" y="74" font-family="sans-serif" font-size="5" font-weight="bold" fill="#333333" text-anchor="middle" pointer-events="none">TARE</text>\
+        <rect x="40" y="95" width="20" height="6" fill="#757575" stroke="#333333" stroke-width="2"/>\
+        <rect x="180" y="95" width="20" height="6" fill="#757575" stroke="#333333" stroke-width="2"/>'
+    }
+  };
+
+  // place un asset : ancre (anchorX, TABLE_Y) = bas-centre de l'objet posé sur la table
+  function placeAsset(parentG, assetKey, renderedHeight){
+    var a = ASSETS[assetKey];
+    var scale = renderedHeight / a.vbH;
+    var renderedWidth = a.vbW * scale;
+    var contentBottomPx = a.contentBottom * scale;
+    var s = document.createElementNS(svgNS,'svg');
+    s.setAttribute('x', -renderedWidth/2);
+    s.setAttribute('y', -contentBottomPx);
+    s.setAttribute('width', renderedWidth);
+    s.setAttribute('height', renderedHeight);
+    s.setAttribute('viewBox', '0 0 '+a.vbW+' '+a.vbH);
+    s.innerHTML = a.html;
+    parentG.appendChild(s);
+    return {
+      scale: scale, width: renderedWidth, height: renderedHeight, contentBottomPx: contentBottomPx,
+      toLocalOuter: function(lx, ly){
+        return { x: -renderedWidth/2 + lx*scale, y: -contentBottomPx + ly*scale };
+      }
+    };
+  }
+
+  function labelYFor(assetKey, scale){
+    var a = ASSETS[assetKey];
+    return -((a.contentBottom - a.contentTop) * scale) - 12;
+  }
+
+  /* =========================================================
+     3) Mise en scène
+     ========================================================= */
+  var items = [];
+  var itemsById = {};
+
+  function buildItem(def){
+    var g = document.createElementNS(svgNS,'g');
+    g.setAttribute('class', (def.draggable !== false && cfg.move) ? 'draggable' : '');
+    g.setAttribute('id', 'item-'+def.id);
+    g.setAttribute('data-itemid', def.id);
+    def.homeX = def.x; def.homeY = TABLE_Y;
+    def.x = def.homeX; def.y = def.homeY;
+    g.setAttribute('transform','translate('+def.x+','+def.y+')');
+    var info = placeAsset(g, def.asset, def.renderH);
+    def.info = info;
+    def.assetKey = def.asset;
+
+    // zone de saisie invisible, plus grande que le dessin pour rester
+    // facile à attraper (souris comme doigt).
+    var PAD = def.pad != null ? def.pad : 16;
+    var hit = document.createElementNS(svgNS,'rect');
+    hit.setAttribute('x', -info.width/2 - PAD);
+    hit.setAttribute('y', -info.contentBottomPx - PAD);
+    hit.setAttribute('width', info.width + 2*PAD);
+    hit.setAttribute('height', info.height + 2*PAD);
+    hit.setAttribute('fill', 'transparent');
+    hit.setAttribute('pointer-events', 'all');
+    g.appendChild(hit);
+    def.hitEl = hit;
+
+    if (def.label){
+      var lbl = document.createElementNS(svgNS,'text');
+      lbl.setAttribute('class', def.sublabel ? 'sublabel' : 'label');
+      lbl.setAttribute('x','0');
+      lbl.setAttribute('y', labelYFor(def.asset, info.scale));
+      lbl.textContent = def.label;
+      g.appendChild(lbl);
+      def.labelEl = lbl;
+    }
+
+    itemsLayer.appendChild(g);
+    def.el = g;
+    def.onPan = false;
+    itemsById[def.id] = def;
+    items.push(def);
+    return def;
+  }
+
+  // bouteille d'eau — déplaçable : on peut la verser dans la fiole
+  var eau = buildItem({ id:'eau', x: 90, asset:'flacon', renderH:190, label:'eau', weighable:false, pad:20 });
+
+  // coupelles 1..5 (remplies) — même asset pour toutes : la quantité ne
+  // doit pas être devinable visuellement, seule la pesée le révèle.
+  var xs = [270, 420, 570, 720, 870];
+  var coupelles = [];
+  for (var i=0;i<5;i++){
+    (function(idx){
+      var c = buildItem({
+        id:'coupelle'+(idx+1), x: xs[idx], asset:'coupelleRemplie', renderH:55,
+        mass: round2(cfg.mcv + cfg.masses[idx]), label: String(idx+1), pad:12,
+        soluteIdx: idx, hasSalt: true
+      });
+      coupelles.push(c);
+    })(i);
+  }
+
+  // coupelle vide (celle qui manquait)
+  var coupelleVideFixe = buildItem({ id:'coupelleVide', x: 1020, asset:'coupelleVide', renderH:55, mass: round2(cfg.mcv), label:'vide', sublabel:true, pad:12 });
+
+  // fiole vide
+  var fiole = buildItem({ id:'fiole', x: 1195, asset:'fiole', renderH:230, mass: cfg.mfv, pad:18 });
+  fiole.state = 'empty'; // 'empty' | 'salt' | 'solution'
+  fiole.saltFrom = null; // quelle coupelle a fourni le sel
+
+  // volume imprimé sur le col, à côté du trait de jauge (donnée fournie,
+  // pas une valeur que l'élève doit deviner)
+  (function(){
+    var jaugePt = fiole.info.toLocalOuter(93, 90);
+    var volLbl = document.createElementNS(svgNS,'text');
+    volLbl.setAttribute('x', jaugePt.x);
+    volLbl.setAttribute('y', jaugePt.y + 4);
+    volLbl.setAttribute('font-size','12');
+    volLbl.setAttribute('fill','#455a64');
+    volLbl.textContent = cfg.vol + ' mL';
+    fiole.el.appendChild(volLbl);
+  })();
+
+  // balance (fixe)
+  var balanceG = document.createElementNS(svgNS,'g');
+  var balanceX = 1460;
+  balanceG.setAttribute('transform','translate('+balanceX+','+TABLE_Y+')');
+  var balanceInfo = placeAsset(balanceG, 'balance', 160);
+  itemsLayer.appendChild(balanceG);
+
+  var displayText = document.getElementById('displayText');
+
+  var panLocal = balanceInfo.toLocalOuter(120, 38);
+  var panCenter = { x: balanceX + panLocal.x, y: TABLE_Y + panLocal.y };
+  var panOccupant = null;
+
+  /* =========================================================
+     4) Verre à verser : aura + bouton "Verser"
+     ========================================================= */
+  var fioleAuraG = document.getElementById('fioleAura');
+  var fioleAuraCircle = fioleAuraG.querySelector('circle');
+  var btnVerser = document.getElementById('btnVerser');
+  var ZONE_RADIUS = 110;
+
+  fioleAuraG.setAttribute('transform','translate('+fiole.homeX+','+(TABLE_Y-90)+')');
+  fioleAuraCircle.setAttribute('r', 95);
+
+  function showAura(show){
+    fioleAuraG.classList.toggle('show', show);
+    if (show){ svg.appendChild(fioleAuraG); } // toujours au premier plan
+  }
+
+  var pendingPour = null; // item actuellement "posé en attente" près de la fiole
+  var pourAction = null;  // fonction appelée au clic sur "Verser"
+
+  function showVerserButton(x,y, action){
+    btnVerser.setAttribute('transform','translate('+x+','+y+')');
+    btnVerser.style.display = '';
+    svg.appendChild(btnVerser); // toujours au premier plan, au-dessus des objets
+    pourAction = action;
+  }
+  function hideVerserButton(){
+    btnVerser.style.display = 'none';
+    pourAction = null;
+  }
+  btnVerser.addEventListener('click', function(){
+    if (pourAction){ var a = pourAction; pourAction = null; a(); }
+  });
+
+  // un item "en attente de versement" peut être repris normalement si on
+  // clique/glisse dessus à nouveau (annule l'attente).
+  function cancelPending(){
+    if (pendingPour){
+      pendingPour.parked = false;
+      pendingPour = null;
+    }
+    hideVerserButton();
+    showAura(false);
+  }
+
+  var PARK_POS = { x: fiole.homeX + 6, y: TABLE_Y - 210 };
+
+  function pourableInfoFor(item){
+    if (fiole.onPan) return null; // la fiole doit être posée sur la table pour qu'on puisse y verser
+    if (item.id.indexOf('coupelle') === 0 && item.hasSalt && fiole.state === 'empty'){
+      return 'salt';
+    }
+    if (item.id === 'eau' && fiole.state === 'salt'){
+      return 'water';
+    }
+    return null;
+  }
+
+  /* =========================================================
+     5) Interaction : glisser-déposer
+     ========================================================= */
+  var pt = svg.createSVGPoint();
+  function toSvgCoords(evt){
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    var ctm = svg.getScreenCTM().inverse();
+    var p = pt.matrixTransform(ctm);
+    return {x:p.x, y:p.y};
+  }
+
+  var dragging = null, offset = {x:0,y:0};
+
+  function animateTo(item, tx, ty, duration, onDone){
+    var startX = item.x, startY = item.y;
+    var t0 = performance.now();
+    function step(now){
+      var t = Math.min(1, (now-t0)/duration);
+      var e = 1 - Math.pow(1-t, 3);
+      item.x = startX + (tx-startX)*e;
+      item.y = startY + (ty-startY)*e;
+      item.el.setAttribute('transform','translate('+item.x+','+item.y+')'+(item.extraTransform||''));
+      if (t < 1){ requestAnimationFrame(step); }
+      else if (onDone) onDone();
+    }
+    requestAnimationFrame(step);
+  }
+
+  function animateDisplay(targetMass){
+    var t0 = performance.now();
+    var duration = 550;
+    function step(now){
+      var t = Math.min(1, (now-t0)/duration);
+      var val = targetMass*t;
+      var jitter = (1-t) * (Math.random()-0.5) * 0.3;
+      displayText.textContent = (val+jitter).toFixed(2) + ' g';
+      if (t < 1){ requestAnimationFrame(step); }
+      else { displayText.textContent = targetMass.toFixed(2) + ' g'; }
+    }
+    requestAnimationFrame(step);
+  }
+
+  function resetDisplay(){ displayText.textContent = "0.00 g"; }
+
+  function dist(x1,y1,x2,y2){ return Math.hypot(x1-x2, y1-y2); }
+
+  function releaseFromPanIfNeeded(item){
+    if (item.onPan){
+      item.onPan = false;
+      if (panOccupant === item){ panOccupant = null; resetDisplay(); }
+    }
+  }
+
+  if (cfg.move){
+    svg.addEventListener('pointerdown', function(evt){
+      var node = evt.target;
+      var g = node.closest ? node.closest('.draggable') : null;
+      if (!g) return;
+      var item = itemsById[g.getAttribute('data-itemid')];
+      if (!item) return;
+      evt.preventDefault();
+      if (item.parked){ cancelPending(); }
+      dragging = item;
+      var p = toSvgCoords(evt);
+      offset.x = item.x - p.x;
+      offset.y = item.y - p.y;
+      itemsLayer.appendChild(item.el);
+    });
+
+    svg.addEventListener('pointermove', function(evt){
+      if (!dragging) return;
+      var p = toSvgCoords(evt);
+      dragging.x = p.x + offset.x;
+      dragging.y = p.y + offset.y;
+      dragging.el.setAttribute('transform','translate('+dragging.x+','+dragging.y+')');
+
+      var kind = pourableInfoFor(dragging);
+      if (kind && dist(dragging.x, dragging.y, fiole.homeX, TABLE_Y) < ZONE_RADIUS){
+        showAura(true);
+      } else if (!pendingPour){
+        showAura(false);
+      }
+    });
+
+    function endDrag(evt){
+      if (!dragging) return;
+      var item = dragging;
+      dragging = null;
+
+      // dépôt près de la fiole pour verser ?
+      var kind = pourableInfoFor(item);
+      if (kind && dist(item.x, item.y, fiole.homeX, TABLE_Y) < ZONE_RADIUS){
+        releaseFromPanIfNeeded(item);
+        item.parked = true;
+        pendingPour = item;
+        animateTo(item, PARK_POS.x, PARK_POS.y, 250, function(){
+          showAura(true);
+          var btnPos = { x: fiole.homeX + 6, y: TABLE_Y - 260 };
+          showVerserButton(btnPos.x, btnPos.y, function(){ doPour(item, kind); });
+        });
+        return;
+      }
+
+      var onPanNow = item.weighable !== false && dist(item.x, item.y, panCenter.x, panCenter.y) < 70;
+
+      if (onPanNow){
+        if (panOccupant && panOccupant !== item){
+          var prev = panOccupant;
+          prev.onPan = false;
+          animateTo(prev, prev.homeX, prev.homeY, 400);
+        }
+        panOccupant = item;
+        item.onPan = true;
+        animateTo(item, panCenter.x, panCenter.y, 250, function(){
+          animateDisplay(item.mass);
+        });
+      } else {
+        releaseFromPanIfNeeded(item);
+        animateTo(item, item.homeX, item.homeY, 350);
+      }
+    }
+
+    svg.addEventListener('pointerup', endDrag);
+    svg.addEventListener('pointercancel', endDrag);
+  }
+
+  document.getElementById('btnTare').addEventListener('click', function(){
+    if (panOccupant){
+      panOccupant.onPan = false;
+      animateTo(panOccupant, panOccupant.homeX, panOccupant.homeY, 350);
+      panOccupant = null;
+    }
+    resetDisplay();
+  });
+
+  /* =========================================================
+     6) Versement du sel (coupelle -> fiole)
+     ========================================================= */
+  function setCoupelleEmptied(c){
+    c.hasSalt = false;
+    c.mass = round2(cfg.mcv);
+    c.assetKey = 'coupelleVide';
+    var nested = c.el.querySelector('svg');
+    nested.innerHTML = ASSETS.coupelleVide.html;
+  }
+  function setCoupelleRefilled(c){
+    c.hasSalt = true;
+    c.mass = round2(cfg.mcv + cfg.masses[c.soluteIdx]);
+    c.assetKey = 'coupelleRemplie';
+    var nested = c.el.querySelector('svg');
+    nested.innerHTML = ASSETS.coupelleRemplie.html;
+  }
+
+  // petit tas de sel visible au fond de la fiole une fois le sel versé
+  var fioleSaltPile = null;
+  function showFioleSalt(show){
+    if (show && !fioleSaltPile){
+      fioleSaltPile = document.createElementNS(svgNS,'ellipse');
+      var pt2 = fiole.info.toLocalOuter(75, 222);
+      fioleSaltPile.setAttribute('cx', pt2.x);
+      fioleSaltPile.setAttribute('cy', pt2.y);
+      fioleSaltPile.setAttribute('rx', 18*fiole.info.scale/0.92);
+      fioleSaltPile.setAttribute('ry', 5*fiole.info.scale/0.92);
+      fioleSaltPile.setAttribute('fill', '#e8eef0');
+      fioleSaltPile.setAttribute('stroke', '#b0bec5');
+      fiole.el.appendChild(fioleSaltPile);
+    } else if (!show && fioleSaltPile){
+      fioleSaltPile.remove();
+      fioleSaltPile = null;
+    }
+  }
+
+  // liquide animé (rempli jusqu'au trait de jauge) à l'intérieur de la fiole
+  var fioleLiquid = null, fioleClip = null;
+  function ensureFioleLiquid(){
+    if (fioleLiquid) return;
+    var defs = document.createElementNS(svgNS,'defs');
+    fioleClip = document.createElementNS(svgNS,'clipPath');
+    var clipId = 'fioleClip';
+    fioleClip.setAttribute('id', clipId);
+    var clipPath = document.createElementNS(svgNS,'path');
+    clipPath.setAttribute('d','M 60,30 L 90,30 L 90,150 C 130,190 120,230 75,230 C 30,230 20,190 60,150 Z');
+    fioleClip.appendChild(clipPath);
+    defs.appendChild(fioleClip);
+    var nested = fiole.el.querySelector('svg');
+    nested.insertBefore(defs, nested.firstChild);
+
+    fioleLiquid = document.createElementNS(svgNS,'rect');
+    fioleLiquid.setAttribute('x','0');
+    fioleLiquid.setAttribute('width','150');
+    fioleLiquid.setAttribute('y','250');
+    fioleLiquid.setAttribute('height','0');
+    fioleLiquid.setAttribute('fill','#90caf9');
+    fioleLiquid.setAttribute('clip-path','url(#'+clipId+')');
+    nested.insertBefore(fioleLiquid, nested.querySelector('line'));
+  }
+
+  function animateFill(duration, onDone){
+    ensureFioleLiquid();
+    var targetY = 90; // trait de jauge
+    var startY = 250;
+    var t0 = performance.now();
+    function step(now){
+      var t = Math.min(1, (now-t0)/duration);
+      var e = t*t*(3-2*t); // smoothstep
+      var y = startY + (targetY-startY)*e;
+      fioleLiquid.setAttribute('y', y);
+      fioleLiquid.setAttribute('height', 250-y);
+      if (t < 1){ requestAnimationFrame(step); }
+      else if (onDone) onDone();
+    }
+    requestAnimationFrame(step);
+  }
+
+  function animateAgitation(duration, onDone){
+    var t0 = performance.now();
+    var baseTransform = 'translate('+fiole.x+','+fiole.y+')';
+    function step(now){
+      var t = Math.min(1, (now-t0)/duration);
+      var damp = 1-t;
+      var angle = Math.sin(t*Math.PI*7) * 9 * damp;
+      fiole.el.setAttribute('transform', baseTransform+' rotate('+angle.toFixed(2)+')');
+      if (t < 1){ requestAnimationFrame(step); }
+      else { fiole.el.setAttribute('transform', baseTransform); if (onDone) onDone(); }
+    }
+    requestAnimationFrame(step);
+  }
+
+  // fait pencher un objet posé (rotation autour de son ancre) ; angle en degrés
+  function setTilt(item, angle, duration, onDone){
+    var startAngle = item.tiltAngle || 0;
+    var t0 = performance.now();
+    var baseTransform = 'translate('+item.x+','+item.y+')';
+    function step(now){
+      var t = Math.min(1, (now-t0)/duration);
+      var e = 1 - Math.pow(1-t, 3);
+      var a = startAngle + (angle-startAngle)*e;
+      item.tiltAngle = a;
+      item.el.setAttribute('transform', baseTransform+' rotate('+a.toFixed(2)+')');
+      if (t < 1){ requestAnimationFrame(step); }
+      else if (onDone) onDone();
+    }
+    requestAnimationFrame(step);
+  }
+
+  // petits grains qui tombent d'un point à un autre (versement du solide)
+  function emitGrains(fromX, fromY, toX, toY, duration, count){
+    var g = document.createElementNS(svgNS,'g');
+    svg.appendChild(g);
+    var parts = [];
+    for (var i=0;i<count;i++){
+      var el = document.createElementNS(svgNS,'rect');
+      var s = 2.2 + Math.random()*1.8;
+      el.setAttribute('width', s); el.setAttribute('height', s);
+      el.setAttribute('fill', '#ffffff');
+      el.setAttribute('stroke', '#9aa5ab'); el.setAttribute('stroke-width','0.6');
+      g.appendChild(el);
+      parts.push({ el:el, delay: Math.random()*duration*0.45, jitter:(Math.random()-0.5)*16 });
+    }
+    var t0 = performance.now();
+    function step(now){
+      var elapsed = now - t0;
+      var allDone = true;
+      parts.forEach(function(p){
+        var pt = elapsed - p.delay;
+        if (pt < 0){ p.el.setAttribute('opacity','0'); allDone = false; return; }
+        var t = Math.min(1, pt/(duration*0.55));
+        if (t < 1) allDone = false;
+        var e = t*t;
+        var x = fromX + (toX-fromX)*e + p.jitter*(1-t);
+        var y = fromY + (toY-fromY)*e;
+        p.el.setAttribute('x', x-1.5);
+        p.el.setAttribute('y', y-1.5);
+        p.el.setAttribute('opacity', t>0.8 ? Math.max(0,(1-(t-0.8)/0.2)) : '1');
+      });
+      if (!allDone){ requestAnimationFrame(step); } else { g.remove(); }
+    }
+    requestAnimationFrame(step);
+  }
+
+  // filet d'eau animé entre le bec de la pisette et le goulot de la fiole
+  function emitStream(fromX, fromY, toX, toY, duration){
+    var line = document.createElementNS(svgNS,'line');
+    line.setAttribute('x1',fromX); line.setAttribute('y1',fromY);
+    line.setAttribute('x2',fromX); line.setAttribute('y2',fromY);
+    line.setAttribute('stroke', '#64b5f6'); line.setAttribute('stroke-width','4');
+    line.setAttribute('stroke-linecap','round');
+    svg.appendChild(line);
+    var t0 = performance.now();
+    var growDur = duration*0.22, shrinkStart = duration*0.75;
+    function step(now){
+      var el = now - t0;
+      if (el < growDur){
+        var g = el/growDur;
+        line.setAttribute('x2', fromX+(toX-fromX)*g);
+        line.setAttribute('y2', fromY+(toY-fromY)*g);
+      } else {
+        line.setAttribute('x2', toX); line.setAttribute('y2', toY);
+      }
+      if (el > shrinkStart){
+        var s = Math.max(0, 1-(el-shrinkStart)/(duration-shrinkStart));
+        line.setAttribute('x1', fromX+(toX-fromX)*(1-s));
+        line.setAttribute('y1', fromY+(toY-fromY)*(1-s));
+      }
+      if (el < duration){ requestAnimationFrame(step); } else { line.remove(); }
+    }
+    requestAnimationFrame(step);
+  }
+
+  function doPour(item, kind){
+    hideVerserButton();
+    showAura(false);
+    item.parked = false;
+    pendingPour = null;
+
+    var neckPt = fiole.info.toLocalOuter(75, 55);
+    var neckAbs = { x: fiole.homeX + neckPt.x, y: TABLE_Y + neckPt.y };
+
+    if (kind === 'salt'){
+      var idx = item.soluteIdx;
+      var rimPt = item.info.toLocalOuter(80, 25);
+      var rimAbs = { x: item.x + rimPt.x, y: item.y + rimPt.y };
+
+      setTilt(item, -115, 350, function(){
+        emitGrains(rimAbs.x, rimAbs.y, neckAbs.x, neckAbs.y, 650, 11);
+        setTimeout(function(){
+          setTilt(item, 0, 300, function(){
+            fiole.state = 'salt';
+            fiole.saltFrom = idx;
+            fiole.mass = round2(cfg.mfv + cfg.masses[idx]);
+            showFioleSalt(true);
+            setCoupelleEmptied(item);
+            animateTo(item, item.homeX, item.homeY, 450);
+          });
+        }, 500);
+      });
+    } else if (kind === 'water'){
+      var spoutPt = item.info.toLocalOuter(137, 37);
+      var spoutAbs = { x: item.x + spoutPt.x, y: item.y + spoutPt.y };
+
+      setTilt(item, -55, 400, function(){
+        emitStream(spoutAbs.x, spoutAbs.y, neckAbs.x, neckAbs.y, 1100);
+        animateFill(1100, function(){
+          setTilt(item, 0, 350, function(){
+            showFioleSalt(false);
+            animateAgitation(1300, function(){
+              fiole.state = 'solution';
+              fiole.mass = cfg.mfilled[fiole.saltFrom];
+              animateTo(item, item.homeX, item.homeY, 400);
+            });
+          });
+        });
+      });
+    }
+  }
+
+  /* =========================================================
+     7) Réinitialisation
+     ========================================================= */
+  function resetAll(){
+    dragging = null;
+    cancelPending();
+
+    if (panOccupant){ panOccupant.onPan = false; }
+    panOccupant = null;
+    resetDisplay();
+
+    coupelles.forEach(function(c){
+      setCoupelleRefilled(c);
+      c.onPan = false;
+      c.el.setAttribute('transform','translate('+c.homeX+','+c.homeY+')');
+      c.x = c.homeX; c.y = c.homeY;
+    });
+
+    coupelleVideFixe.onPan = false;
+    coupelleVideFixe.el.setAttribute('transform','translate('+coupelleVideFixe.homeX+','+coupelleVideFixe.homeY+')');
+    coupelleVideFixe.x = coupelleVideFixe.homeX; coupelleVideFixe.y = coupelleVideFixe.homeY;
+
+    eau.onPan = false;
+    eau.el.setAttribute('transform','translate('+eau.homeX+','+eau.homeY+')');
+    eau.x = eau.homeX; eau.y = eau.homeY;
+
+    fiole.state = 'empty';
+    fiole.saltFrom = null;
+    fiole.mass = cfg.mfv;
+    fiole.onPan = false;
+    fiole.x = fiole.homeX; fiole.y = fiole.homeY;
+    fiole.el.setAttribute('transform','translate('+fiole.homeX+','+fiole.homeY+')');
+    showFioleSalt(false);
+    if (fioleLiquid){ fioleLiquid.setAttribute('y','250'); fioleLiquid.setAttribute('height','0'); }
+  }
+
+  document.getElementById('btnReset').addEventListener('click', resetAll);
+
+})();
+</script>
+</body>
+</html>
