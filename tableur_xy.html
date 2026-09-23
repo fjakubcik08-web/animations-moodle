@@ -609,6 +609,15 @@ let undoStack      = [];          // historique pour Ctrl+Z
 const MAX_UNDO     = 60;
 const _p = new URLSearchParams(location.search);
 let uncertainty = +(_p.get('incertitude') || _p.get('uncertainty') || 5);
+
+// Pré-remplissage du nom/unité des colonnes à l'ouverture, ex :
+// ?col1=Csel&unit1=g/L&col2=rho&unit2=g/L
+if (_p.get('col1')  !== null) colNames[0] = _p.get('col1');
+if (_p.get('unit1') !== null) colUnits[0] = _p.get('unit1');
+if (_p.get('col2')  !== null) colNames[1] = _p.get('col2');
+if (_p.get('unit2') !== null) colUnits[1] = _p.get('unit2');
+if (_p.get('col3')  !== null) colNames[2] = _p.get('col3');
+if (_p.get('unit3') !== null) colUnits[2] = _p.get('unit3');
 let chartDrawn = false;
 let chartScale = null;
 let chartSeries = null;   // série de points pour trendlines
