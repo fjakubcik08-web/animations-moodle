@@ -342,9 +342,16 @@ function buildTable() {
 buildTable();
 
 /* ---------- validation ---------- */
-function withinTol(actual, expected, precision) {
+// reference par colonne = max(|n_EI|, |n_EF|) de l'espece.
+// La tolerance est 2 % de cette reference (et pas de la valeur de la case) :
+// un n_EI juste a 2 % pres (accepte par la question numerique) reste juste
+// sur toute la colonne, meme quand n_EI - x devient petit pres de xmax,
+// et les cases attendues a 0 ont une tolerance a l'echelle du probleme.
+const REF = (P.expected_EI || []).map((v, j) =>
+  Math.max(1e-12, Math.abs(v), Math.abs((P.expected_EF || [])[j] || 0)));
+function withinTol(actual, expected, precision, j) {
   if (!isFinite(actual) || !isFinite(expected)) return false;
-  const tol = (expected === 0) ? Math.max(precision, 1e-4) : Math.abs(expected) * precision;
+  const tol = Math.max(Math.abs(expected), REF[j]) * precision;
   return Math.abs(actual - expected) <= tol;
 }
 function parseNum(raw) {
@@ -397,30 +404,32 @@ document.getElementById('btn-valider').addEventListener('click', () => {
     // EI (numerique)
     const eiInput = document.getElementById(`EI-${j}`);
     const eiVal = parseNum(eiInput.value);
-    const eiOk = withinTol(eiVal, P.expected_EI[j], P.precision || 0.02);
+    const eiOk = withinTol(eiVal, P.expected_EI[j], P.precision || 0.02, j);
     if (P.show_feedback) eiInput.className = eiInput.value.trim() === '' ? '' : (eiOk ? 'ok' : 'ko');
-    okEI.push(eiOk); valEI.push(round4(eiVal));
+    // cellule juste (dans la tolerance) -> on hashe la valeur ATTENDUE, sinon
+    // un 0.0119 tape pour 0.01193 attendu donnait un code different de Moodle
+    okEI.push(eiOk); valEI.push(round4(eiOk ? P.expected_EI[j] : eiVal));
 
     // EC (expression en x) -- evaluee TELLE QUE TAPEE aux points de test
     const ecInput = document.getElementById(`EC-${j}`);
     const ecVals = P.x_tests.map(x => safeEvalAt(ecInput.value, 'x', x));
-    const ecOk = ecVals.every((v, k) => withinTol(v, P.expected_Ei[j][k], P.precision || 0.02));
+    const ecOk = ecVals.every((v, k) => withinTol(v, P.expected_Ei[j][k], P.precision || 0.02, j));
     if (P.show_feedback) ecInput.className = ecInput.value.trim() === '' ? '' : (ecOk ? 'ok' : 'ko');
-    okEC.push(ecOk); valEC.push(ecVals.map(round4));
+    okEC.push(ecOk); valEC.push((ecOk ? P.expected_Ei[j] : ecVals).map(round4));
 
     // EFE (expression en xmax)
     const efeInput = document.getElementById(`EFE-${j}`);
     const efeVals = P.xmax_tests.map(xm => safeEvalAt(efeInput.value, 'xmax', xm));
-    const efeOk = efeVals.every((v, k) => withinTol(v, P.expected_EFexpr[j][k], P.precision || 0.02));
+    const efeOk = efeVals.every((v, k) => withinTol(v, P.expected_EFexpr[j][k], P.precision || 0.02, j));
     if (P.show_feedback) efeInput.className = efeInput.value.trim() === '' ? '' : (efeOk ? 'ok' : 'ko');
-    okEFE.push(efeOk); valEFE.push(efeVals.map(round4));
+    okEFE.push(efeOk); valEFE.push((efeOk ? P.expected_EFexpr[j] : efeVals).map(round4));
 
     // EFN (numerique)
     const efnInput = document.getElementById(`EFN-${j}`);
     const efnVal = parseNum(efnInput.value);
-    const efnOk = withinTol(efnVal, P.expected_EF[j], P.precision || 0.02);
+    const efnOk = withinTol(efnVal, P.expected_EF[j], P.precision || 0.02, j);
     if (P.show_feedback) efnInput.className = efnInput.value.trim() === '' ? '' : (efnOk ? 'ok' : 'ko');
-    okEFN.push(efnOk); valEFN.push(round4(efnVal));
+    okEFN.push(efnOk); valEFN.push(round4(efnOk ? P.expected_EF[j] : efnVal));
   }
 
   // codes de ligne, calcules a partir de ce que l'eleve a tape -- toujours affiches
