@@ -224,6 +224,12 @@ tbody tr.row-sel td { background: #eef3fc; }
   display: block; position: absolute; top: 0; left: 0;
 }
 #overlay-canvas { cursor: crosshair; }
+#zoom-btn {
+  margin-left: 6px; padding: 5px 12px; border-radius: 4px; cursor: pointer;
+  font-size: 12px; font-weight: bold; border: 1px solid #b0bec5;
+  background: #eceff1; color: #455a64;
+}
+#zoom-btn.on { background: #ef6c00; border-color: #ef6c00; color: #fff; }
 
 .codes { display: flex; gap: 8px; flex-shrink: 0; }
 .code-box {
@@ -540,6 +546,7 @@ tbody tr.row-sel td { background: #eef3fc; }
         <span class="hint">Cliquez sur les en-têtes pour sélectionner les colonnes à tracer</span>
       </div>
       <button id="trace-btn" onclick="trace()">▶ Tracer</button>
+      <button id="zoom-btn" onclick="toggleZoom()" title="Loupe autour du curseur">&#128269; Zoom</button>
     </div>
     <!-- Barre de styles par série (visible après tracé) -->
     <div id="styles-bar" style="display:none;"></div>
@@ -2757,6 +2764,7 @@ function exportJPG() {
 // ══════════════════════════════════════════
 //  CURSEUR GRAPHE
 // ══════════════════════════════════════════
+let zoomOn = false;
 (function() {
   let ov, octx;
   function init() {
@@ -2832,7 +2840,43 @@ function exportJPG() {
     octx.fillStyle = '#333';
     octx.fillText(label, bx + 6, by + 13);
     octx.restore();
+
+    if (zoomOn) drawLoupe(px, py);
   }
+
+  // ── Loupe : agrandit le graphique autour du curseur (n'apparaît pas à l'export)
+  const LOUPE_R = 70, LOUPE_Z = 3;
+  function drawLoupe(px, py) {
+    const src = document.getElementById('chart-canvas');
+    const r = LOUPE_R, s = r / LOUPE_Z;
+    // position : en haut à gauche du curseur, basculée si elle sort du cadre
+    let cx = px - r - 24, cy = py - r - 24;
+    if (cx - r < 0) cx = px + r + 24;
+    if (cy - r < 0) cy = py + r + 24;
+    if (cx + r > ov.width)  cx = ov.width - r - 2;
+    if (cy + r > ov.height) cy = ov.height - r - 2;
+    octx.save();
+    octx.beginPath(); octx.arc(cx, cy, r, 0, Math.PI * 2); octx.closePath();
+    octx.fillStyle = '#fff'; octx.fill();
+    octx.clip();
+    octx.imageSmoothingEnabled = true;
+    octx.drawImage(src, px - s, py - s, 2 * s, 2 * s, cx - r, cy - r, 2 * r, 2 * r);
+    // réticule au centre de la loupe
+    octx.strokeStyle = 'rgba(239,108,0,0.85)'; octx.lineWidth = 1;
+    octx.beginPath(); octx.moveTo(cx - r, cy); octx.lineTo(cx + r, cy); octx.stroke();
+    octx.beginPath(); octx.moveTo(cx, cy - r); octx.lineTo(cx, cy + r); octx.stroke();
+    octx.restore();
+    octx.save();
+    octx.beginPath(); octx.arc(cx, cy, r, 0, Math.PI * 2);
+    octx.strokeStyle = '#ef6c00'; octx.lineWidth = 2.5; octx.stroke();
+    octx.restore();
+  }
+  window.toggleZoom = function() {
+    zoomOn = !zoomOn;
+    const b = document.getElementById('zoom-btn');
+    if (b) b.classList.toggle('on', zoomOn);
+    if (!zoomOn && octx) octx.clearRect(0, 0, ov.width, ov.height);
+  };
   document.addEventListener('DOMContentLoaded', init);
   setTimeout(init, 0);
 })();
