@@ -106,10 +106,11 @@ function rawQuery(){
   });
   return o;
 }
-var P = { mode: DEF.mode, sp: DEF.sp.slice(), t: null, g: DEF.g, r: DEF.r, pr: DEF.pr };
+var P = { mode: DEF.mode, sp: DEF.sp.slice(), t: null, g: DEF.g, r: DEF.r, pr: DEF.pr, o: 1 };
 var Q = rawQuery();
 if (Q.p){ try { var d = decodeParams(Q.p);
-  if (d.mode) P.mode = d.mode; if (d.sp) P.sp = d.sp; if (d.t) P.t = d.t; if (d.g !== undefined) P.g = String(d.g);
+  if (d.mode) P.mode = d.mode; if (d.sp) P.sp = d.sp; if (d.t) P.t = d.t;
+  if (d.o !== undefined) P.o = +d.o; if (d.g !== undefined) P.g = String(d.g);
   if (d.r) P.r = d.r; if (d.pr) P.pr = d.pr;
 } catch(e){ console.warn("p illisible", e); } }
 /* paramètres en clair prioritaires (tests locaux) */
@@ -117,6 +118,7 @@ if (Q.sp !== undefined) P.sp = Q.sp ? Q.sp.split(",").map(function(s){return s.t
 if (Q.t !== undefined) P.t = Q.t;
 if (Q.g !== undefined) P.g = Q.g;
 if (Q.mode !== undefined) P.mode = Q.mode;
+if (Q.o !== undefined) P.o = +Q.o;   /* o=1 : sens d'écriture imposé (défaut), o=0 : libre en demi-équation */
 if (P.mode !== "demi") P.mode = "bilan";
 if (!P.t) P.t = TXT[P.mode];
 var DEMI = P.mode === "demi";
@@ -222,8 +224,8 @@ function level(L,R){
   function same(x,y){ var kx = Object.keys(x).sort(), ky = Object.keys(y).sort();
     return kx.length === ky.length && kx.every(function(k,j){ return k === ky[j]; }); }
   var S = SOL;
-  /* demi-équation (Ox + n e- = Red) : non orientée, les deux sens sont acceptés */
-  if (DEMI && same(a,SOL.p) && same(b,SOL.r)) S = {r:SOL.p, p:SOL.r};
+  /* demi-équation : sens libre seulement si o=0 (par défaut le sens est imposé) */
+  if (DEMI && !P.o && same(a,SOL.p) && same(b,SOL.r)) S = {r:SOL.p, p:SOL.r};
   if (!same(a,S.r) || !same(b,S.p)) return 0;
   var st = [], ex = [];
   Object.keys(a).forEach(function(k){ st.push(a[k]); ex.push(S.r[k]); });
