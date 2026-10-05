@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Équation chimique (convention chempy)</title>
+<style>
+  :root{
+    --bleu:#1f5fa8; --bleu-clair:#e8f0fa; --gris:#5b6470; --bord:#cfd6df;
+    --fond:#ffffff; --texte:#1d2430; --err:#b3261e; --err-fond:#fdecea;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--fond);color:var(--texte);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;font-size:15px}
+  .wrap{padding:12px 14px;max-width:900px}
+  .consigne{font-weight:600;margin:0 0 10px}
+  .palette{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .chip{border:1px solid var(--bord);background:var(--bleu-clair);color:var(--texte);
+    border-radius:6px;padding:4px 10px;cursor:pointer;font-size:15px;line-height:1.3}
+  .chip:hover{border-color:var(--bleu)}
+  .chip .raw{display:block;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--gris)}
+  .row{display:flex;gap:6px;align-items:stretch;flex-wrap:wrap}
+  #saisie{flex:1 1 320px;min-width:200px;font-family:ui-monospace,Consolas,monospace;font-size:16px;
+    padding:8px 10px;border:1px solid var(--bord);border-radius:6px;outline:none}
+  #saisie:focus{border-color:var(--bleu);box-shadow:0 0 0 2px rgba(31,95,168,.15)}
+  .btn{border:1px solid var(--bord);background:#f4f6f9;border-radius:6px;padding:6px 12px;
+    cursor:pointer;font-size:15px;color:var(--texte)}
+  .btn:hover{border-color:var(--bleu)}
+  .btn.prim{background:var(--bleu);border-color:var(--bleu);color:#fff;font-weight:600}
+  .btn:disabled{opacity:.45;cursor:default}
+  .aide{color:var(--gris);font-size:12.5px;margin:6px 0 0}
+  .aide code{background:#f1f3f6;padding:0 4px;border-radius:3px}
+  #rendu{margin-top:10px;min-height:46px;padding:10px 12px;border:1px dashed var(--bord);
+    border-radius:6px;font-size:21px;font-family:"Cambria Math","Times New Roman",serif;
+    display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+  #rendu .vide{color:#a0a7b1;font-size:14px;font-family:inherit}
+  #rendu .op{margin:0 6px}
+  #rendu .coef{margin-right:2px}
+  #rendu .bad{color:var(--err);border-bottom:2px wavy var(--err)}
+  #rendu sub,#rendu sup{font-size:65%}
+  #rendu .etat{font-size:70%;margin-left:1px}
+  #msg{min-height:18px;font-size:13px;color:var(--err);margin-top:4px}
+  .codes{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .code{font-family:ui-monospace,Consolas,monospace;font-size:18px;font-weight:700;letter-spacing:1px;
+    border:1px solid var(--bord);border-radius:6px;padding:5px 10px;background:#f7f9fb;
+    user-select:all;-webkit-user-select:all;min-width:120px;text-align:center}
+  .code.off{color:#b0b6bf;font-weight:400}
+  .lab{color:var(--gris);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="consigne" id="consigne"></p>
+  <div class="palette" id="palette"></div>
+
+  <div class="row">
+    <input id="saisie" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+           placeholder="ex : 2 H2 + O2 -> 2 H2O">
+    <button class="btn" id="bPlus" title="Ajouter un +">+</button>
+    <button class="btn" id="bElec" title="Ajouter un électron">e<sup>−</sup></button>
+    <button class="btn" id="bFleche" title="Ajouter la flèche">→</button>
+    <button class="btn" id="bEff" title="Tout effacer">Effacer</button>
+  </div>
+  <p class="aide">Séparer les espèces par <code> + </code> entouré d'espaces. Charges : <code>Cu+2</code>, <code>SO4-2</code>, <code>Na+</code>, <code>Cl-</code>. Électron : <code>e-</code>.</p>
+
+  <div id="rendu"><span class="vide">Aperçu de l'équation</span></div>
+  <div id="msg"></div>
+
+  <div class="codes">
+    <button class="btn prim" id="bVal">Valider</button>
+    <span class="lab">Code à recopier</span><span class="code off" id="codeL">————————</span>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- Paramètres (XOR + base64url, clé propre à cette animation) ---------- */
+var KEY = "EqChempy-Bayle-K7";
+/* défaut : demi-équation du couple Cr2O7-2 / Cr+3 */
+var DEF = { mode: "demi", sp: ["Cr+3", "HO-", "H2O", "e-", "Cr2O7-2", "H+"], g: "0",
+            r: {"Cr2O7-2":1, "H+":14, "e-":6}, pr: {"Cr+3":2, "H2O":7} };
+var TXT = { demi: "Écrire la demi-équation électronique du couple :",
+            bilan: "Écrire l'équation de la réaction :" };
+
+function b64urlToBytes(s){
+  s = s.replace(/-/g,"+").replace(/_/g,"/");
+  while (s.length % 4) s += "=";
+  var bin = atob(s), out = new Uint8Array(bin.length);
+  for (var i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function decodeParams(p){
+  var b = b64urlToBytes(p), k = new TextEncoder().encode(KEY);
+  for (var i=0;i<b.length;i++) b[i] ^= k[i % k.length];
+  return JSON.parse(new TextDecoder("utf-8").decode(b));
+}
+/* lecture brute de la query : un '+' tapé reste un '+' (Cu+2) */
+function rawQuery(){
+  var q = location.search.replace(/^\?/,""), o = {};
+  if (!q) return o;
+  q.split("&").forEach(function(kv){
+    var i = kv.indexOf("="); if (i<0) return;
+    try { o[kv.slice(0,i)] = decodeURIComponent(kv.slice(i+1)); } catch(e){}
+  });
+  return o;
+}
+var P = { mode: DEF.mode, sp: DEF.sp.slice(), t: null, g: DEF.g, r: DEF.r, pr: DEF.pr };
+var Q = rawQuery();
+if (Q.p){ try { var d = decodeParams(Q.p);
+  if (d.mode) P.mode = d.mode; if (d.sp) P.sp = d.sp; if (d.t) P.t = d.t; if (d.g !== undefined) P.g = String(d.g);
+  if (d.r) P.r = d.r; if (d.pr) P.pr = d.pr;
+} catch(e){ console.warn("p illisible", e); } }
+/* paramètres en clair prioritaires (tests locaux) */
+if (Q.sp !== undefined) P.sp = Q.sp ? Q.sp.split(",").map(function(s){return s.trim();}).filter(Boolean) : [];
+if (Q.t !== undefined) P.t = Q.t;
+if (Q.g !== undefined) P.g = Q.g;
+if (Q.mode !== undefined) P.mode = Q.mode;
+if (P.mode !== "demi") P.mode = "bilan";
+if (!P.t) P.t = TXT[P.mode];
+var DEMI = P.mode === "demi";
+var SOL_TXT = Q.sol;   /* ?sol=Cu+2 + SO4-2 -> CuSO4 (tests locaux, prioritaire) */
+
+/* ---------- Hash identique à hash6() Python ---------- */
+function hash6(s){
+  var h = 2166136261 >>> 0;
+  for (var i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h,16777619) >>> 0; }
+  return h.toString(36).toUpperCase().padStart(6,"0").slice(0,6);
+}
+
+/* ---------- Analyse d'une espèce (convention chempy) ---------- */
+var RE_SP = /^((?:[A-Z][a-z]?\d*|\((?:[A-Z][a-z]?\d*)+\)\d*)+)([+-]\d*)?(\((?:s|l|g|aq)\))?$/;
+function normSpecies(s){
+  s = s.trim();
+  if (s === "e-" || s === "e-1") return {ok:true, n:"e-", f:"e", ch:"-", st:""};
+  var m = RE_SP.exec(s);
+  if (!m) return {ok:false, n:s};
+  var ch = m[2] || "";
+  if (ch === "+1") ch = "+"; if (ch === "-1") ch = "-";
+  if (ch === "+0" || ch === "-0") ch = "";
+  var key = m[1] === "HO" ? "OH" : m[1];   /* HO- et OH- : même espèce */
+  return {ok:true, n:key+ch+(m[3]||""), f:m[1], ch:ch, st:m[3]||""};
+}
+
+function parseSide(txt){
+  var terms = (" "+txt+" ").split(/\s+\+\s+/), res = [];
+  for (var i=0;i<terms.length;i++){
+    var t = terms[i].trim();
+    if (!t) { res.push({err:"espèce manquante autour d'un « + »"}); continue; }
+    var m = /^(\d+)?\s*(.+)$/.exec(t);
+    var c = m[1] !== undefined ? parseInt(m[1],10) : 1;
+    var sp = normSpecies(m[2]);
+    var item = {c:c, cTxt:m[1]!==undefined, sp:sp};
+    if (!sp.ok) item.err = "« "+m[2]+" » n'est pas une espèce lisible";
+    else if (c === 0) item.err = "coefficient nul";
+    res.push(item);
+  }
+  return res;
+}
+
+function parseEq(txt){
+  var s = txt.replace(/[→⟶⇒]|={1,2}>?/g," -> ").replace(/\s+-{1,2}>\s+/g," -> ").trim();
+  if (!s) return {empty:true};
+  var parts = s.split(" -> ");
+  if (parts.length === 1) return {L:parseSide(parts[0]), R:null, err:"il manque la flèche (->) ou le signe = entouré d'espaces"};
+  if (parts.length > 2) return {L:parseSide(parts[0]), R:parseSide(parts.slice(1).join(" ")), err:"une seule flèche (ou un seul =) attendue"};
+  var L = parseSide(parts[0]), R = parseSide(parts[1]), err = null;
+  if (!parts[0].trim()) err = "aucun réactif";
+  else if (!parts[1].trim()) err = "aucun produit";
+  [L,R].forEach(function(side){ side.forEach(function(it){ if (it.err && !err) err = it.err; }); });
+  return {L:L, R:R, err:err};
+}
+
+function sideMap(side){
+  var m = {};
+  side.forEach(function(it){ m[it.sp.n] = (m[it.sp.n]||0) + it.c; });
+  return m;
+}
+
+/* ---------- Rendu ---------- */
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function renderFormula(f){ return esc(f).replace(/(\d+)/g,"<sub>$1</sub>"); }
+function renderCharge(ch){
+  if (!ch) return "";
+  var sg = ch[0] === "+" ? "+" : "\u2212", n = ch.slice(1);
+  return "<sup>"+n+sg+"</sup>";
+}
+function renderSide(side){
+  return side.map(function(it){
+    var h = "";
+    if (it.cTxt) h += '<span class="coef">'+it.c+"</span>";
+    if (!it.sp.ok) h += '<span class="bad">'+esc(it.sp.n)+"</span>";
+    else h += renderFormula(it.sp.f) + renderCharge(it.sp.ch) + (it.sp.st ? '<span class="etat">'+esc(it.sp.st)+"</span>" : "");
+    return "<span>"+h+"</span>";
+  }).join('<span class="op">+</span>');
+}
+
+var elIn = document.getElementById("saisie"), elR = document.getElementById("rendu"),
+    elMsg = document.getElementById("msg"), elCL = document.getElementById("codeL"),
+    bVal = document.getElementById("bVal");
+
+/* ---------- Solution attendue (jamais affichée) ---------- */
+function normMap(m){
+  var o = {};
+  Object.keys(m||{}).forEach(function(k){ var n = normSpecies(k).n; o[n] = (o[n]||0) + parseInt(m[k],10); });
+  return o;
+}
+var SOL = null;
+if (SOL_TXT !== undefined){
+  var es = parseEq(SOL_TXT);
+  if (!es.empty && !es.err) SOL = {r:sideMap(es.L), p:sideMap(es.R)};
+} else if (P.r && P.pr){
+  SOL = {r:normMap(P.r), p:normMap(P.pr)};
+}
+
+/* niveau : 0 espèces fausses / mauvais côté ; 1 bonnes espèces non équilibrée ;
+   2 équilibrée mais coefficients non minimaux (proportionnelle) ; 3 exacte */
+function level(L,R){
+  if (!SOL) return null;
+  var a = sideMap(L), b = sideMap(R), ks = [], i;
+  function same(x,y){ var kx = Object.keys(x).sort(), ky = Object.keys(y).sort();
+    return kx.length === ky.length && kx.every(function(k,j){ return k === ky[j]; }); }
+  var S = SOL;
+  /* demi-équation (Ox + n e- = Red) : non orientée, les deux sens sont acceptés */
+  if (DEMI && same(a,SOL.p) && same(b,SOL.r)) S = {r:SOL.p, p:SOL.r};
+  if (!same(a,S.r) || !same(b,S.p)) return 0;
+  var st = [], ex = [];
+  Object.keys(a).forEach(function(k){ st.push(a[k]); ex.push(S.r[k]); });
+  Object.keys(b).forEach(function(k){ st.push(b[k]); ex.push(S.p[k]); });
+  var eq = true, prop = true;
+  for (i=0;i<st.length;i++){
+    if (st[i] !== ex[i]) eq = false;
+    if (st[i]*ex[0] !== ex[i]*st[0]) prop = false;
+  }
+  return eq ? 3 : (prop ? 2 : 1);
+}
+function codeLevel(n){ return "C-" + hash6("L|" + n + "|" + P.g); }
+
+function clearCodes(){
+  elCL.textContent = "————————"; elCL.classList.add("off");
+}
+var current = null;
+function update(){
+  clearCodes();
+  var e = parseEq(elIn.value); current = e;
+  if (e.empty){ elR.innerHTML = '<span class="vide">Aperçu de l\'équation</span>'; elMsg.textContent = ""; bVal.disabled = true; return; }
+  var h = renderSide(e.L);
+  if (e.R) h += '<span class="op">' + (DEMI ? "=" : "\u2192") + '</span>' + renderSide(e.R);
+  elR.innerHTML = h;
+  elMsg.textContent = e.err ? "\u26A0 " + e.err : "";
+  bVal.disabled = !!e.err;
+}
+function validate(){
+  if (!current || current.empty || current.err) return;
+  var n = level(current.L, current.R);
+  if (n === null){ elMsg.textContent = "\u26A0 paramètres de l'exercice manquants"; return; }
+  elCL.textContent = codeLevel(n);
+  elCL.classList.remove("off");
+}
+
+function insertAtCursor(txt, smart){
+  var v = elIn.value, a = elIn.selectionStart, b = elIn.selectionEnd;
+  if (a == null){ a = b = v.length; }
+  var before = v.slice(0,a), after = v.slice(b);
+  if (smart){
+    if (before && !/\s$/.test(before)) txt = " " + txt;
+    if (after && !/^\s/.test(after)) txt = txt + " ";
+  }
+  elIn.value = before + txt + after;
+  var pos = before.length + txt.length;
+  elIn.focus(); elIn.setSelectionRange(pos,pos);
+  update();
+}
+
+/* ---------- Init ---------- */
+document.getElementById("consigne").textContent = P.t;
+/* espèces toujours proposées (oxydoréduction), même si inutiles : H2O, H+, HO- (+ e- en demi-équation) */
+(function(){
+  var extra = ["H2O", "H+", "HO-"].concat(DEMI ? ["e-"] : []);
+  var vus = {}; P.sp.forEach(function(s){ vus[normSpecies(s).n] = 1; });
+  extra.forEach(function(s){ if (!vus[normSpecies(s).n]){ P.sp.push(s); vus[normSpecies(s).n] = 1; } });
+})();
+var pal = document.getElementById("palette");
+if (!P.sp.length) pal.style.display = "none";
+P.sp.forEach(function(raw){
+  var sp = normSpecies(raw);
+  var b = document.createElement("button");
+  b.className = "chip"; b.type = "button";
+  b.innerHTML = (sp.ok ? renderFormula(sp.f)+renderCharge(sp.ch)+(sp.st?'<span style="font-size:70%">'+esc(sp.st)+"</span>":"") : esc(raw))
+              + '<span class="raw">'+esc(raw)+"</span>";
+  b.addEventListener("click", function(){ insertAtCursor(raw, true); });
+  pal.appendChild(b);
+});
+document.getElementById("bPlus").addEventListener("click", function(){ insertAtCursor(" + ", false); });
+var bF = document.getElementById("bFleche"), bE = document.getElementById("bElec");
+if (DEMI){ bF.textContent = "="; bF.title = "Ajouter le signe ="; elIn.placeholder = "ex : Fe+3 + e- = Fe+2"; }
+else bE.style.display = "none";
+bF.addEventListener("click", function(){ insertAtCursor(DEMI ? " = " : " -> ", false); });
+bE.addEventListener("click", function(){ insertAtCursor("e-", true); });
+document.getElementById("bEff").addEventListener("click", function(){ elIn.value = ""; elIn.focus(); update(); });
+elIn.addEventListener("input", update);
+elIn.addEventListener("keydown", function(ev){ if (ev.key === "Enter") validate(); });
+bVal.addEventListener("click", validate);
+update();
+
+/* exposé pour tests */
+window.__eq = {hash6:hash6, parseEq:parseEq, level:level, codeLevel:codeLevel, decodeParams:decodeParams};
+})();
+</script>
+</body>
+</html>
