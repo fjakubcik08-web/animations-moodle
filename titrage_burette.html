@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Titrage — burette</title>
+<style>
+  :root{ --bleu:#1f4e79; --bleu2:#2e75b6; --gris:#eef2f6; --txt:#22313f; }
+  html,body{ margin:0; padding:0; background:#fff; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--txt); }
+  #wrap{ max-width:900px; margin:0 auto; padding:6px; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
+  canvas{ width:100%; height:auto; display:block; background:#f7f9fb; border:1px solid #d5dde5; border-radius:8px; touch-action:none; }
+  #bar{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:8px; }
+  button{ font:inherit; font-size:15px; padding:10px 18px; border-radius:8px; border:1px solid #b9c6d3; background:var(--gris); color:var(--txt); cursor:pointer; touch-action:none; }
+  button:hover{ background:#e2e9f0; }
+  #bBur{ background:var(--bleu2); color:#fff; border-color:var(--bleu); min-width:220px; font-weight:600; }
+  #bBur.on{ background:var(--bleu); }
+  #bAgit.on{ background:#2e9d5b; color:#fff; border-color:#23784a; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv" width="900" height="620"></canvas>
+  <div id="bar">
+    <button id="bBur" title="Clic : une goutte — maintenir : écoulement">Burette ▼ (clic = 1 goutte · maintenir = couler)</button>
+    <button id="bAgit">Agitateur : OFF</button>
+    <button id="bReset">Recommencer</button>
+  </div>
+</div>
+<script>
+"use strict";
+/* =====================================================================
+   PARAMÈTRES (URL)
+   ?p=<base64url( XOR( JSON utf-8 , KEY ) )>
+   Clés : tn  nom du titrant (syntaxe chimie : _ indice, ^ exposant, {} groupe)
+          c   concentration du titrant (texte, ex "2.00e-2") en mol/L
+          td  nom du titré
+          vt  volume de titré (texte, ex "20.0") en mL
+          ve  volume à l'équivalence (nombre, mL)
+          cb  couleur avant équivalence (hex)
+          ca  couleur après équivalence (hex)
+          ct  couleur de la solution titrante dans la burette (hex)
+   Les paramètres en clair (?ve=12.4&cb=ffcc00 ...) prennent le dessus sur p.
+   ===================================================================== */
+const KEY = "TitrageBurette#PB26";
+
+function xorDecode(p){
+  try{
+    let b64 = p.replace(/-/g,"+").replace(/_/g,"/");
+    while(b64.length % 4) b64 += "=";
+    const bin = atob(b64);
+    const k = new TextEncoder().encode(KEY);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i) ^ k[i % k.length];
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }catch(e){ return {}; }
+}
+
+const DEF = { tn:"(K^+ + MnO_4^-)", c:"2.00e-2", td:"(Fe^{2+} + SO_4^{2-})", vt:"20.0",
+              ve:12.4, cb:"#dfeccb", ca:"#e7a3d3", ct:"#7b2a8e" };
+const P = Object.assign({}, DEF);
+(function(){
+  const q = new URLSearchParams(location.search);
+  if(q.get("p")) Object.assign(P, xorDecode(q.get("p")));
+  for(const k of Object.keys(DEF)) if(q.has(k)) P[k] = q.get(k);
+  for(const k of ["cb","ca","ct"]){ let s=String(P[k]).trim(); if(s[0]!=="#") s="#"+s; P[k]=s; }
+  P.ve = parseFloat(String(P.ve).replace(",", "."));
+  if(!isFinite(P.ve)) P.ve = DEF.ve;
+})();
+const VT  = parseFloat(String(P.vt).replace(",", ".")) || 20;
+const VEQ = P.ve;
+const VMAX = 25;            // burette 25 mL
+const DROP = 0.05;          // volume d'une goutte (mL)
+const FLOW = 0.8;           // débit en écoulement continu (mL/s)
+
+/* ---------- utilitaires ---------- */
+function hex2rgb(h){
+  h = h.replace("#","");
+  if(h.length===3) h = h.split("").map(c=>c+c).join("");
+  const n = parseInt(h,16);
+  return isFinite(n) ? [(n>>16)&255,(n>>8)&255,n&255] : [200,200,200];
+}
+const CB = hex2rgb(P.cb), CA = hex2rgb(P.ca), CT = hex2rgb(P.ct);
+/* couleur visible du titrant (solution incolore -> légère teinte bleutée pour voir le ménisque) */
+const CTV = ((0.299*CT[0]+0.587*CT[1]+0.114*CT[2])/255 > 0.82) ? [175,205,230] : CT;
+const lerp = (a,b,t)=>a+(b-a)*t;
+const mix = (c1,c2,t)=>c1.map((v,i)=>Math.round(lerp(v,c2[i],t)));
+const rgba = (c,a)=>`rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
+
+const SUP = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","-":"⁻","+":"⁺"};
+function fmtNum(s){
+  s = String(s).trim().replace(",", ".");
+  const m = s.match(/^([+-]?[\d.]+)\s*[eE]\s*([+-]?\d+)$/);
+  if(m){
+    const e = String(parseInt(m[2],10)).split("").map(ch=>SUP[ch]||ch).join("");
+    return m[1].replace(".", ",") + " × 10" + e;
+  }
+  return s.replace(".", ",");
+}
+
+/* texte chimique : _x / _{..} indice, ^x / ^{..} exposant (indice+exposant empilés) */
+function parseChem(s){
+  const out=[]; let i=0;
+  const grab=()=>{ if(s[i]==="{"){ const j=s.indexOf("}",i); const r=s.slice(i+1,j<0?s.length:j); i=j<0?s.length:j+1; return r; } return s[i++]||""; };
+  let buf="";
+  while(i<s.length){
+    const ch=s[i];
+    if(ch==="_"||ch==="^"){ if(buf){out.push({t:buf,m:0});buf="";} i++; out.push({t:grab(),m:ch==="_"?1:2}); }
+    else { buf+=ch; i++; }
+  }
+  if(buf) out.push({t:buf,m:0});
+  return out;
+}
+function chemWidth(ctx,s,size){ return drawChem(ctx,s,0,0,size,true); }
+function drawChem(ctx,s,x,y,size,measureOnly){
+  const segs=parseChem(s); let cx=x, lastSubStart=null, lastSubW=0;
+  for(let k=0;k<segs.length;k++){
+    const g=segs[k];
+    if(g.m===0){
+      ctx.font=`${size}px system-ui,sans-serif`;
+      if(!measureOnly) ctx.fillText(g.t,cx,y);
+      cx+=ctx.measureText(g.t).width; lastSubStart=null;
+    }else{
+      const sz=Math.round(size*0.68);
+      ctx.font=`${sz}px system-ui,sans-serif`;
+      const w=ctx.measureText(g.t).width;
+      if(g.m===1){
+        if(!measureOnly) ctx.fillText(g.t,cx,y+size*0.28);
+        lastSubStart=cx; lastSubW=w; cx+=w;
+      }else{
+        let sx=cx;
+        if(lastSubStart!==null){ sx=lastSubStart; }
+        if(!measureOnly) ctx.fillText(g.t,sx,y-size*0.42);
+        cx = (lastSubStart!==null) ? Math.max(cx, sx+w) : cx+w;
+        lastSubStart=null;
+      }
+    }
+  }
+  return cx-x;
+}
+
+/* ---------- canvas / HiDPI ---------- */
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+const W=900, H=620;
+(function(){ const d=Math.max(1,Math.min(3,window.devicePixelRatio||1)); cv.width=W*d; cv.height=H*d; ctx.setTransform(d,0,0,d,0,0); })();
+
+/* ---------- géométrie ---------- */
+const BX = 300;                                  // axe burette / bécher
+const BUR = { top:22, y0:52, mlPx:10, w:16 };     // y(v) = y0 + v*mlPx
+const yBur = v => BUR.y0 + v*BUR.mlPx;
+const BUR_END = yBur(VMAX)+18;                   // bas du tube gradué
+const COCK_Y = BUR_END+14;                       // robinet
+const TIP_Y = COCK_Y+44;                         // extrémité de la pointe
+const BK = { cx:BX, top:TIP_Y-18, bot:530, w:160 };   // bécher
+const BK_CAP = (VT+VMAX<=90) ? 100 : 250;
+const BK_INNER = (BK.bot-8) - (BK.top+16);        // hauteur utile
+const yBk = v => (BK.bot-8) - v/BK_CAP*BK_INNER;
+
+/* zoom */
+const ZM = { x:600, y:18, w:282, h:520, cy:278, px:140, tx:690, tw:120 };
+
+/* ---------- état ---------- */
+let Vout=0;       // volume sorti de la burette (lecture)
+let Vin=0;        // volume arrivé dans le bécher
+let Vmix=0;       // volume homogénéisé
+let drops=[];     // gouttes en vol
+let ripples=[];
+let holding=false, flowing=false, tDown=0;
+let agitOn=false, agitSpeed=0, theta=0;
+let zc=0;         // centre du zoom (mL), lissé
+let plumeAge=0;
+let msgT=0;       // durée restante du message « agitateur »
+
+function reset(){
+  Vout=0; Vin=0; Vmix=0; drops=[]; ripples=[]; holding=false; flowing=false; zc=0; plumeAge=0;
+  agitOn=false; agitSpeed=0; updAgitBtn();
+}
+
+/* ---------- commandes ---------- */
+const bBur=document.getElementById("bBur"), bAgit=document.getElementById("bAgit");
+function release(withDrop){
+  if(!holding) return;
+  if(withDrop && !flowing) addDrop();
+  holding=false; flowing=false; bBur.classList.remove("on");
+}
+function addDrop(){
+  if(Vout >= VMAX-1e-9) return;
+  const dv=Math.min(DROP, VMAX-Vout);
+  Vout=+(Vout+dv).toFixed(6);
+  drops.push({y:TIP_Y+2, vy:40, v:dv});
+}
+bBur.addEventListener("pointerdown",e=>{ e.preventDefault();
+  if(!agitOn){ msgT=2.8; return; }
+  bBur.setPointerCapture(e.pointerId); holding=true; flowing=false; tDown=performance.now(); bBur.classList.add("on"); });
+bBur.addEventListener("pointerup",e=>{ e.preventDefault(); release(true); });
+bBur.addEventListener("pointercancel",()=>release(false));
+bBur.addEventListener("contextmenu",e=>e.preventDefault());
+function updAgitBtn(){ bAgit.textContent="Agitateur : "+(agitOn?"ON":"OFF"); bAgit.classList.toggle("on",agitOn); }
+bAgit.addEventListener("click",()=>{ agitOn=!agitOn; if(!agitOn) release(false); else msgT=0; updAgitBtn(); });
+document.getElementById("bReset").addEventListener("click",reset);
+
+/* ---------- simulation ---------- */
+function step(dt){
+  const now=performance.now();
+  if(holding && !flowing && now-tDown>220) flowing=true;
+  if(flowing){
+    const dv=Math.min(FLOW*dt, VMAX-Vout);
+    if(dv>0){ Vout+=dv; Vin+=dv; plumeAge=0; }
+    else { flowing=false; }
+  }
+  // gouttes
+  const surf = yBk(VT+Vin);
+  for(const d of drops){ d.vy+=900*dt; d.y+=d.vy*dt; }
+  drops=drops.filter(d=>{
+    if(d.y>=surf){ Vin+=d.v; plumeAge=0; ripples.push({r:2,a:0.6}); return false; }
+    return true;
+  });
+  for(const r of ripples){ r.r+=40*dt; r.a-=1.2*dt; }
+  ripples=ripples.filter(r=>r.a>0);
+  // agitation
+  agitSpeed += ((agitOn?1:0)-agitSpeed)*Math.min(1,dt*1.8);
+  theta += agitSpeed*17*dt;
+  // homogénéisation
+  const k = 0.12 + 7*agitSpeed;
+  Vmix += (Vin-Vmix)*(1-Math.exp(-k*dt));
+  plumeAge += dt;
+  msgT = Math.max(0, msgT-dt);
+  // zoom
+  zc += (Vout-zc)*Math.min(1,dt*6);
+}
+
+/* ---------- dessin ---------- */
+function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+function drawStand(){
+  // tige de potence
+  const g=ctx.createLinearGradient(178,0,192,0);
+  g.addColorStop(0,"#8a96a3"); g.addColorStop(.5,"#c9d2db"); g.addColorStop(1,"#7d8996");
+  ctx.fillStyle=g; ctx.fillRect(178,14,13,500);
+  ctx.fillStyle="#b6c0ca"; ctx.beginPath(); ctx.ellipse(184.5,14,6.5,2.5,0,0,7); ctx.fill();
+  // noix + pince
+  const cy=BUR.y0+70;
+  ctx.fillStyle="#9aa6b2"; rr(172,cy-12,26,24,4); ctx.fill();
+  ctx.fillStyle="#555"; ctx.beginPath(); ctx.arc(162,cy,7,0,7); ctx.fill();
+  ctx.fillStyle="#666"; ctx.fillRect(162,cy-2,12,4);
+  ctx.strokeStyle="#7d8996"; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(196,cy); ctx.lineTo(BX-14,cy); ctx.stroke();
+  ctx.fillStyle="#d23a3a"; rr(BX-16,cy-9,7,18,3); ctx.fill(); rr(BX+9,cy-9,7,18,3); ctx.fill();
+}
+
+function drawBurette(){
+  const x=BX-BUR.w/2, w=BUR.w;
+  // liquide titrant
+  const yl=yBur(Vout);
+  ctx.fillStyle=rgba(CTV,0.55);
+  ctx.fillRect(x+2,yl,w-4,BUR_END-yl);
+  // partie conique + pointe (pleine)
+  ctx.beginPath(); ctx.moveTo(x+2,BUR_END); ctx.lineTo(BX+w/2-2,BUR_END); ctx.lineTo(BX+3,COCK_Y-6); ctx.lineTo(BX-3,COCK_Y-6); ctx.closePath(); ctx.fill();
+  ctx.fillRect(BX-2,COCK_Y-6,4,TIP_Y-COCK_Y+6);
+  // verre
+  ctx.strokeStyle="#8fa4b8"; ctx.lineWidth=1.4;
+  ctx.beginPath();
+  ctx.moveTo(x,BUR.top); ctx.lineTo(x,BUR_END); ctx.lineTo(BX-4,COCK_Y-6); ctx.lineTo(BX-4,COCK_Y+8);
+  ctx.moveTo(x+w,BUR.top); ctx.lineTo(x+w,BUR_END); ctx.lineTo(BX+4,COCK_Y-6); ctx.lineTo(BX+4,COCK_Y+8);
+  ctx.moveTo(BX-3,COCK_Y+8); ctx.lineTo(BX-2.5,TIP_Y); ctx.lineTo(BX+2.5,TIP_Y); ctx.lineTo(BX+3,COCK_Y+8);
+  ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(BX,BUR.top,w/2+2,3,0,0,7); ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,.35)"; ctx.fillRect(x+3,BUR.top+4,3,BUR_END-BUR.top-8);
+  // graduations (vue d'ensemble)
+  ctx.strokeStyle="rgba(40,50,60,.55)"; ctx.lineWidth=0.8; ctx.fillStyle="rgba(40,50,60,.7)"; ctx.font="8px system-ui";
+  for(let v=0; v<=VMAX; v++){
+    const y=yBur(v), L=(v%5===0)?8:4;
+    ctx.beginPath(); ctx.moveTo(x+1,y); ctx.lineTo(x+1+L,y); ctx.stroke();
+    if(v%5===0) ctx.fillText(String(v), x-15, y+3);
+  }
+  // robinet
+  ctx.fillStyle="#1f6f6a"; ctx.beginPath(); ctx.arc(BX-14,COCK_Y,7,0,7); ctx.fill();
+  ctx.fillStyle="#e9eef2"; ctx.strokeStyle="#9aa"; ctx.lineWidth=1;
+  rr(BX-8,COCK_Y-6,16,12,3); ctx.fill(); ctx.stroke();
+  ctx.save(); ctx.translate(BX+12,COCK_Y); ctx.rotate(holding?-Math.PI/2:0);
+  ctx.fillStyle="#dfe5ea"; rr(-2,-4,22,8,3); ctx.fill(); ctx.strokeStyle="#9aa"; ctx.stroke(); ctx.restore();
+  // cadre zone zoomée
+  const a=yBur(zc-(ZM.cy-ZM.y)/ZM.px), b=yBur(zc+(ZM.y+ZM.h-ZM.cy)/ZM.px);
+  ctx.strokeStyle="rgba(46,117,182,.9)"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+  ctx.strokeRect(x-5,a,w+10,b-a); ctx.setLineDash([]);
+}
+
+function drawLabelBurette(){
+  const tx=BX+34, ty=BUR.y0+120;
+  ctx.font="15px system-ui"; const w1=chemWidth(ctx,P.tn,15);
+  const l2="C = "+fmtNum(P.c)+" mol·L⁻¹"; ctx.font="13px system-ui"; const w2=ctx.measureText(l2).width;
+  const w=Math.max(w1,w2)+18;
+  ctx.fillStyle="#fff"; ctx.strokeStyle="#9fb2c4"; ctx.lineWidth=1; rr(tx,ty,w,46,6); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle="#9fb2c4"; ctx.beginPath(); ctx.moveTo(BX+BUR.w/2,ty+23); ctx.lineTo(tx,ty+23); ctx.stroke();
+  ctx.fillStyle="#1f2d3a"; drawChem(ctx,P.tn,tx+9,ty+19,15);
+  ctx.font="13px system-ui"; ctx.fillText(l2,tx+9,ty+38);
+}
+
+function drawAgitator(){
+  // plateau
+  ctx.fillStyle="#cfd6dc"; ctx.beginPath(); ctx.ellipse(BX,BK.bot+6,120,14,0,0,7); ctx.fill();
+  ctx.fillStyle="#e7ecf0"; ctx.beginPath(); ctx.ellipse(BX,BK.bot+2,112,11,0,0,7); ctx.fill();
+  // boîtier
+  ctx.fillStyle="#37474f"; ctx.beginPath(); ctx.moveTo(140,BK.bot+8); ctx.lineTo(470,BK.bot+8); ctx.lineTo(470,600); ctx.lineTo(140,600); ctx.closePath(); ctx.fill();
+  ctx.fillStyle="#4b5d67"; ctx.fillRect(140,BK.bot+8,330,8);
+  // ON/OFF + LED
+  ctx.strokeStyle="#22303a"; ctx.lineWidth=2; rr(170,548,110,36,4); ctx.stroke();
+  ctx.fillStyle="#e8eef2"; ctx.font="bold 12px system-ui"; ctx.fillText("ON / OFF",182,571);
+  ctx.fillStyle= agitOn ? "#3dff7a" : "#2b5a3a"; ctx.beginPath(); ctx.arc(260,566,5,0,7); ctx.fill();
+  if(agitOn){ ctx.fillStyle="rgba(61,255,122,.25)"; ctx.beginPath(); ctx.arc(260,566,10,0,7); ctx.fill(); }
+  // bouton rotatif
+  ctx.strokeStyle="#cfd6dc"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(400,566,22,Math.PI*0.75,Math.PI*2.25); ctx.stroke();
+  ctx.fillStyle="#d32f2f"; ctx.beginPath(); ctx.arc(400,566,16,0,7); ctx.fill();
+  ctx.fillStyle="#b71c1c"; ctx.beginPath(); ctx.arc(400,566,9,0,7); ctx.fill();
+}
+
+function liquidColor(){
+  const f = clamp((Vmix-(VEQ-DROP))/DROP, 0, 1);   // bascule franche sur la goutte qui atteint Véq
+  return mix(CB,CA,f);
+}
+
+function drawBecher(){
+  const {cx,top,bot,w}=BK, L=cx-w/2, R=cx+w/2;
+  // liquide
+  const V=VT+Vin, yl=yBk(V), col=liquidColor();
+  const dip = 5*agitSpeed;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(L+2,top,w-4,bot-top-2); ctx.clip();
+  ctx.fillStyle=rgba(col,0.82);
+  ctx.beginPath(); ctx.moveTo(L+2,yl-dip*0.3);
+  ctx.quadraticCurveTo(cx,yl+dip*1.6,R-2,yl-dip*0.3);
+  ctx.lineTo(R-2,bot-2); ctx.lineTo(L+2,bot-2); ctx.closePath(); ctx.fill();
+  // surface
+  ctx.fillStyle=rgba(mix(col,[255,255,255],0.35),0.7);
+  ctx.beginPath(); ctx.ellipse(cx,yl+dip*0.6,w/2-3,4+dip*0.4,0,0,7); ctx.fill();
+  // panache non mélangé (couleur après équivalence localement)
+  const pl = Vin-Vmix;
+  if(pl>0.002 && Vmix<VEQ-1e-4){
+    const a = clamp(pl/0.06,0,1)*0.85;
+    const spread = 1 - Math.exp(-plumeAge*0.4);
+    const ang = theta*0.35;
+    const px = cx + Math.sin(ang)*20*agitSpeed, py = yl + 14 + spread*18;
+    const rad = 10 + 26*spread + 30*clamp(pl/0.6,0,1);
+    const gr=ctx.createRadialGradient(px,py,1,px,py,rad);
+    gr.addColorStop(0,rgba(CA,a)); gr.addColorStop(1,rgba(CA,0));
+    ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(px,py,rad,0,7); ctx.fill();
+  }
+  // vaguelettes
+  for(const r of ripples){ ctx.strokeStyle=`rgba(255,255,255,${r.a})`; ctx.lineWidth=1.2; ctx.beginPath(); ctx.ellipse(cx,yl+1,r.r,r.r*0.25,0,0,7); ctx.stroke(); }
+  ctx.restore();
+  // barreau aimanté
+  const by=bot-9, Rx=34, Ry=5;
+  for(let g=3; g>=0; g--){
+    const th = theta - g*0.18*agitSpeed;
+    const c=Math.cos(th), s=Math.sin(th);
+    ctx.lineCap="round";
+    if(g===0){ ctx.strokeStyle="rgba(90,100,110,.9)"; ctx.lineWidth=9; ctx.beginPath(); ctx.moveTo(cx-Rx*c,by-Ry*s); ctx.lineTo(cx+Rx*c,by+Ry*s); ctx.stroke(); }
+    ctx.strokeStyle = g===0 ? "rgba(248,248,248,1)" : `rgba(150,160,170,${0.25*agitSpeed})`;
+    ctx.lineWidth=7;
+    ctx.beginPath(); ctx.moveTo(cx-Rx*c,by-Ry*s); ctx.lineTo(cx+Rx*c,by+Ry*s); ctx.stroke();
+  }
+  ctx.strokeStyle="rgba(120,120,120,.6)"; ctx.lineWidth=1;
+  { const c=Math.cos(theta), s=Math.sin(theta);
+    ctx.beginPath(); ctx.moveTo(cx-Rx*c,by-Ry*s-3.5); ctx.lineTo(cx+Rx*c,by+Ry*s-3.5); ctx.stroke(); }
+  ctx.lineCap="butt";
+  // verre
+  ctx.strokeStyle="#8fa4b8"; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.moveTo(L-6,top-4); ctx.quadraticCurveTo(L-2,top,L,top+6); ctx.lineTo(L,bot-6);
+  ctx.quadraticCurveTo(L,bot,L+8,bot); ctx.lineTo(R-8,bot); ctx.quadraticCurveTo(R,bot,R,bot-6); ctx.lineTo(R,top); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(cx,top,w/2,5,0,0,7); ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,.25)"; ctx.fillRect(L+4,top+8,5,bot-top-20);
+  // graduations bécher
+  ctx.strokeStyle="rgba(60,70,80,.6)"; ctx.fillStyle="rgba(60,70,80,.7)"; ctx.font="9px system-ui"; ctx.lineWidth=1;
+  const st = BK_CAP===100?10:25;
+  for(let v=st; v<=BK_CAP*0.9+1e-9; v+=st){
+    const y=yBk(v); ctx.beginPath(); ctx.moveTo(R-30,y); ctx.lineTo(R-8,y); ctx.stroke();
+    if(v%(st*2)===0) ctx.fillText(String(v),R-30,y-3);
+  }
+  // étiquette titré
+  ctx.font="14px system-ui"; const w1=chemWidth(ctx,P.td,14);
+  const l2="V = "+fmtNum(P.vt)+" mL"; ctx.font="13px system-ui"; const w2=ctx.measureText(l2).width;
+  const lw=Math.max(w1,w2)+16, lx=L+14, ly=top+30;
+  ctx.fillStyle="rgba(255,255,255,.92)"; ctx.strokeStyle="#9fb2c4"; rr(lx,ly,lw,42,5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#1f2d3a"; drawChem(ctx,P.td,lx+8,ly+17,14);
+  ctx.font="13px system-ui"; ctx.fillText(l2,lx+8,ly+35);
+}
+
+function drawFlow(){
+  const surf=yBk(VT+Vin);
+  ctx.fillStyle=rgba(CTV,0.8); ctx.strokeStyle=rgba(CTV,0.8);
+  if(flowing){
+    ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(BX,TIP_Y); ctx.lineTo(BX,surf); ctx.stroke();
+  }
+  for(const d of drops){ ctx.beginPath(); ctx.ellipse(BX,d.y,2.6,3.4,0,0,7); ctx.fill(); }
+  if(holding && !flowing){ ctx.beginPath(); ctx.ellipse(BX,TIP_Y+2,2.2,2.6,0,0,7); ctx.fill(); }
+}
+
+function drawZoom(){
+  const {x,y,w,h,cy,px,tx,tw}=ZM;
+  const yz = v => cy + (v-zc)*px;
+  ctx.fillStyle="#ffffff"; ctx.strokeStyle="#2e75b6"; ctx.lineWidth=2; rr(x,y,w,h,10); ctx.fill(); ctx.stroke();
+  ctx.save(); rr(x+1,y+1,w-2,h-2,9); ctx.clip();
+  ctx.fillStyle="#eef3f8"; ctx.fillRect(x,y,w,h);
+  // tube
+  const topV=-3, botV=VMAX+1.2;
+  const t0=Math.max(y,yz(topV)), t1=Math.min(y+h,yz(botV));
+  ctx.fillStyle="rgba(220,232,242,.9)"; ctx.fillRect(tx,t0,tw,t1-t0);
+  // liquide + ménisque
+  const yl=yz(Vout), md=14;
+  ctx.fillStyle=rgba(CTV,0.55);
+  ctx.beginPath(); ctx.moveTo(tx,yl-md);
+  ctx.bezierCurveTo(tx+tw*0.12,yl+md/3, tx+tw*0.88,yl+md/3, tx+tw,yl-md);
+  ctx.lineTo(tx+tw,t1); ctx.lineTo(tx,t1); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle=rgba(mix(CTV,[20,30,40],0.55),0.95); ctx.lineWidth=2.4;
+  ctx.beginPath(); ctx.moveTo(tx,yl-md); ctx.bezierCurveTo(tx+tw*0.12,yl+md/3, tx+tw*0.88,yl+md/3, tx+tw,yl-md); ctx.stroke();
+  // graduations
+  ctx.strokeStyle="#1b2733"; ctx.fillStyle="#1b2733";
+  const kmin=Math.max(0,Math.floor((zc-(cy-y)/px)*10)-1), kmax=Math.min(VMAX*10,Math.ceil((zc+(y+h-cy)/px)*10)+1);
+  for(let k=kmin;k<=kmax;k++){
+    const yy=yz(k/10);
+    let L=22, lw=1.1;
+    if(k%10===0){ L=78; lw=1.8; } else if(k%5===0){ L=48; lw=1.4; }
+    ctx.lineWidth=lw; ctx.beginPath(); ctx.moveTo(tx,yy); ctx.lineTo(tx+L,yy); ctx.stroke();
+    if(k%10===0){ ctx.font="bold 17px system-ui"; ctx.fillText(String(k/10),tx+84,yy+6); }
+  }
+  // parois
+  ctx.strokeStyle="#8fa4b8"; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.moveTo(tx,t0); ctx.lineTo(tx,t1); ctx.moveTo(tx+tw,t0); ctx.lineTo(tx+tw,t1); ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,.35)"; ctx.fillRect(tx+tw-14,t0,6,t1-t0);
+  ctx.restore();
+  ctx.fillStyle="#2e75b6"; ctx.font="bold 13px system-ui"; ctx.fillText("Zoom burette (mL)",x+12,y+h+18);
+}
+
+function drawMsg(){
+  if(msgT<=0) return;
+  const a=Math.min(1,msgT/0.4);
+  const txt="⚠ Mettre l'agitateur en marche avant de verser";
+  ctx.font="bold 16px system-ui"; const w=ctx.measureText(txt).width+32;
+  const x=BX-w/2+20, y=BK.top-58;
+  ctx.globalAlpha=a;
+  ctx.fillStyle="#fff4e5"; ctx.strokeStyle="#e08a00"; ctx.lineWidth=2; rr(x,y,w,38,8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#8a4b00"; ctx.fillText(txt,x+16,y+25);
+  ctx.globalAlpha=1;
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  drawStand();
+  drawAgitator();
+  drawBecher();
+  drawFlow();
+  drawBurette();
+  drawLabelBurette();
+  drawZoom();
+  drawMsg();
+}
+
+let last=performance.now();
+function loop(t){
+  const dt=Math.min(0.05,(t-last)/1000); last=t;
+  step(dt); draw();
+  requestAnimationFrame(loop);
+}
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
