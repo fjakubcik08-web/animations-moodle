@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Legos ioniques</title>
+<style>
+  html,body{margin:0;background:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+  #wrap{max-width:780px;margin:0 auto;padding:6px;box-sizing:border-box;}
+  canvas{width:100%;height:auto;display:block;touch-action:none;border:1px solid #c9d6e3;border-radius:8px;background:#f4f8fb;}
+  .bar{display:flex;justify-content:flex-end;gap:8px;margin-top:6px;}
+  button{font:inherit;font-size:14px;padding:5px 12px;border:1px solid #2f6aa3;background:#fff;color:#2f6aa3;border-radius:6px;cursor:pointer;}
+  button:hover{background:#2f6aa3;color:#fff;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div class="bar"><button id="reset">↺ Recommencer</button></div>
+</div>
+<script>
+(function(){
+"use strict";
+
+/* ===================== Paramètres URL ===================== */
+// ?p=<base64url( JSON ^ KEY )>   JSON = {"c":"Fe","a":"SO_4","fx":1,"cap":14,"sg":1}
+// Règle : une seule taille de brique par rangée (verrouillée par la 1re brique posée, déverrouillée par « Recommencer »)
+// Règle : si l'assemblage neutre contient k unités de formule (k>1), il se sépare puis on n'en garde qu'une
+// sg=1 : signes + / − affichés sur chaque brique (un par tenon)
+// k = 16 lettres : codes 2 lettres des briques rouge 1,2,3,4 puis verte 1,2,3,4 (ex. "AVUGKMPLRTXBWZHN")
+//     affichés uniquement sur l'étiquette des boîtes de la palette, jamais sur les briques
+// Paramètres en clair prioritaires : ?c=Fe&a=SO_4&fx=1&cap=14
+// Syntaxe étiquettes : _4 ou _{12} = indice ; ^+ ou ^{2-} = exposant
+const KEY = "Bayle-Lego-Ion#7";
+function decodeP(s){
+  s = s.replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length % 4) s += '=';
+  const bin = atob(s), b = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) b[i] = bin.charCodeAt(i) ^ KEY.charCodeAt(i % KEY.length);
+  return JSON.parse(new TextDecoder().decode(b));
+}
+const cfg = {c:"", a:"", fx:1, cap:14, sg:1, k:""};
+const qs = new URLSearchParams(location.search);
+if(qs.get("p")){ try{ Object.assign(cfg, decodeP(qs.get("p"))); }catch(e){ console.warn("p invalide"); } }
+if(qs.has("c")) cfg.c = qs.get("c");
+if(qs.has("a")) cfg.a = qs.get("a");
+if(qs.has("fx")) cfg.fx = parseInt(qs.get("fx"),10);
+if(qs.has("cap")) cfg.cap = parseInt(qs.get("cap"),10);
+if(qs.has("sg")) cfg.sg = parseInt(qs.get("sg"),10);
+if(qs.has("k")) cfg.k = qs.get("k");
+cfg.cap = Math.max(4, Math.min(16, cfg.cap|0 || 14));
+window.__legoCfg = cfg; // debug
+
+/* ===================== Canvas ===================== */
+const W = 760, H = 450;
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+function resize(){
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W*dpr; cv.height = H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+resize(); window.addEventListener("resize", resize);
+
+/* ===================== Géométrie brique ===================== */
+const U  = Math.min(36, Math.floor(560/cfg.cap));  // largeur d'un tenon
+const BH = U*1.15;   // hauteur face avant
+const DX = U*0.28, DY = U*0.30;   // profondeur (perspective)
+const SH = U*0.18, SR = U*0.27, SRY = SR*0.42;  // tenon
+const COL = {
+  r:{front:"#d42a2a", top:"#ec5a52", side:"#a11b1b", stud:"#f06a62", edge:"#7d1212"},
+  g:{front:"#1f9a3e", top:"#3dbb5d", side:"#14762d", stud:"#4ccb6b", edge:"#0d5420"}
+};
+
+// zone de construction
+const X0 = Math.round((W - cfg.cap*U - DX)/2);
+const YR = 192;            // haut face avant rangée rouge
+const YG = YR + BH;        // haut face avant rangée verte (= jonction)
+const PLATE = {x:X0-24, y:YR-DY-SH-18, w:cfg.cap*U+DX+48, h:(YG+BH+16)-(YR-DY-SH-18)};
+
+// palettes
+const PAL_Y = {r:60, g:H-30-BH};
+function paletteBricks(color){
+  const gap = 34, tot = 10*U + 3*gap + DX;
+  let x = Math.round((W - tot)/2) + 40, out = [];
+  for(let n=1;n<=4;n++){ out.push({n, x, y:PAL_Y[color], color}); x += n*U + gap; }
+  return out;
+}
+const PAL = {r:paletteBricks("r"), g:paletteBricks("g")};
+
+/* ===================== Étiquette (indices/exposants) ===================== */
+function parseLabel(s){
+  const t=[]; let i=0;
+  while(i<s.length){
+    const ch=s[i];
+    if((ch==="_"||ch==="^") && i+1<s.length){
+      let txt;
+      if(s[i+1]==="{"){ const j=s.indexOf("}",i+2); txt=s.slice(i+2, j<0?s.length:j); i = j<0?s.length:j+1; }
+      else { txt=s[i+1]; i+=2; }
+      t.push({txt, m: ch==="_"?1:-1});
+    } else {
+      let j=i; while(j<s.length && s[j]!=="_" && s[j]!=="^") j++;
+      t.push({txt:s.slice(i,j), m:0}); i=j;
+    }
+  }
+  return t;
+}
+const LBL = {r:parseLabel(cfg.c||""), g:parseLabel(cfg.a||"")};
+const KS = String(cfg.k||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+const CODES = KS.length===16 ? {r:[0,1,2,3].map(i=>KS.substr(2*i,2)), g:[0,1,2,3].map(i=>KS.substr(8+2*i,2))} : null;
+function brickText(color, n){ return LBL[color]; }   // les codes ne sont jamais sur les briques (seulement sur les boîtes)
+function labelWidth(tok, fs){
+  let w=0;
+  for(const k of tok){ ctx.font = `600 ${k.m? fs*0.65 : fs}px system-ui,sans-serif`; w += ctx.measureText(k.txt).width; }
+  return w;
+}
+function drawLabel(tok, cx, cy, maxW, maxFs){
+  if(!tok.length) return;
+  let fs = maxFs || 16; while(fs>7 && labelWidth(tok,fs) > maxW) fs -= 1;
+  const w = labelWidth(tok,fs); let x = cx - w/2;
+  ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  for(const k of tok){
+    const f = k.m? fs*0.65 : fs;
+    ctx.font = `600 ${f}px system-ui,sans-serif`;
+    const y = cy + (k.m===1? fs*0.32 : k.m===-1? -fs*0.38 : 0);
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.strokeText(k.txt, x, y);
+    ctx.fillStyle = "#fff"; ctx.fillText(k.txt, x, y);
+    x += ctx.measureText(k.txt).width;
+  }
+}
+
+/* ===================== Dessin brique ===================== */
+function drawBrick(x, y, n, color, opts){
+  opts = opts || {};
+  const c = COL[color], w = n*U;
+  ctx.save();
+  if(opts.alpha!=null) ctx.globalAlpha = opts.alpha;
+  if(opts.shadow){ ctx.shadowColor="rgba(0,0,0,.28)"; ctx.shadowBlur=14; ctx.shadowOffsetY=6; }
+  // face avant
+  ctx.fillStyle = c.front; ctx.fillRect(x, y, w, BH);
+  ctx.shadowColor = "transparent";
+  // face dessus
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+w,y); ctx.lineTo(x+w+DX,y-DY); ctx.lineTo(x+DX,y-DY); ctx.closePath();
+  ctx.fillStyle = c.top; ctx.fill();
+  // face droite
+  ctx.beginPath(); ctx.moveTo(x+w,y); ctx.lineTo(x+w+DX,y-DY); ctx.lineTo(x+w+DX,y-DY+BH); ctx.lineTo(x+w,y+BH); ctx.closePath();
+  ctx.fillStyle = c.side; ctx.fill();
+  // contours
+  ctx.strokeStyle = c.edge; ctx.lineWidth = 1;
+  ctx.strokeRect(x+.5, y+.5, w-1, BH-1);
+  // tenons
+  for(let i=0;i<n;i++){
+    const sx = x + (i+0.5)*U + DX/2, sy = y - DY/2;
+    ctx.fillStyle = c.side;
+    ctx.beginPath(); ctx.ellipse(sx, sy, SR, SRY, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillRect(sx-SR, sy-SH, 2*SR, SH);
+    ctx.fillStyle = c.stud;
+    ctx.beginPath(); ctx.ellipse(sx, sy-SH, SR, SRY, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = c.edge; ctx.lineWidth = .6; ctx.stroke();
+  }
+  // reflet
+  ctx.fillStyle = "rgba(255,255,255,.10)"; ctx.fillRect(x+2, y+2, w-4, BH*0.28);
+  const txt = brickText(color, n), hasL = txt.length > 0;
+  if(cfg.sg){
+    // un signe par tenon : [+ +] ou [− − −]
+    const sign = color==="r" ? "+" : "\u2212";
+    const sy = y + BH*(hasL ? 0.74 : 0.55);
+    ctx.font = `700 ${Math.round(U*(hasL?0.42:0.55))}px system-ui,sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for(let i=0;i<n;i++){
+      const sx = x + (i+0.5)*U;
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.strokeText(sign, sx, sy);
+      ctx.fillStyle = "#fff"; ctx.fillText(sign, sx, sy);
+    }
+    if(hasL) drawLabel(txt, x + w/2, y + BH*0.32, w - 6, 13);
+  } else {
+    drawLabel(txt, x + w/2, y + BH*0.56, w - 6);
+  }
+  ctx.restore();
+}
+function drawBox(b){
+  // boîte de rangement + étiquette (code 2 lettres)
+  const x = b.x-10, y = b.y-DY-SH-26, w = b.n*U+DX+20, h = BH+DY+SH+34;
+  ctx.save();
+  ctx.fillStyle = "#ffffff"; ctx.strokeStyle = "#b9c8d6"; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x,y,w,h,7) : ctx.rect(x,y,w,h); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#e9eff5"; ctx.fillRect(x+1, y+h-9, w-2, 8);
+  if(CODES){
+    const code = CODES[b.color][b.n-1];
+    ctx.font = "700 14px ui-monospace,Consolas,monospace";
+    const tw = ctx.measureText(code).width + 12;
+    ctx.fillStyle = "#2f6aa3";
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x+w/2-tw/2, y-7, tw, 18, 4) : ctx.rect(x+w/2-tw/2, y-7, tw, 18); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(code, x+w/2, y+2);
+  }
+  ctx.restore();
+}
+function brickHit(px, py, x, y, n){
+  return px>=x && px<=x+n*U+DX && py>=y-DY-SH && py<=y+BH;
+}
+
+/* ===================== État ===================== */
+let rows = {r:[], g:[]};
+let drag = null;     // {color,n,px,py,offX,offY}
+let msg = null;      // {txt,t}
+let lock = {r:null, g:null};   // taille verrouillée par rangée (jusqu'à « Recommencer »)
+let fly = [];        // briques qui retournent dans leur base
+let neutralPrev = false, burstT = -1e9, sparkNext = 0, sparkT = -1e9, sparkX = 0;
+const rowY = {r:YR, g:YG};
+const sum = a => a.reduce((s,v)=>s+v,0);
+function isNeutral(){ const a=sum(rows.r), b=sum(rows.g); return a>0 && a===b; }
+
+function dragBrickPos(){ return {x: drag.px - drag.offX, y: drag.py - drag.offY}; }
+function overRow(){
+  if(!drag) return false;
+  const p = dragBrickPos(), cx = p.x + drag.n*U/2, cy = p.y + BH/2;
+  if(cx < PLATE.x-40 || cx > PLATE.x+PLATE.w+40) return false;
+  if(drag.color==="r") return cy > PLATE.y-50 && cy < YG + BH*0.25;
+  return cy > YR + BH*0.75 && cy < PLATE.y+PLATE.h+50;
+}
+function insertIndex(){
+  const p = dragBrickPos(), cx = p.x + drag.n*U/2, list = rows[drag.color];
+  let x = X0, idx = 0;
+  for(const n of list){ if(x + n*U/2 < cx) idx++; x += n*U; }
+  return idx;
+}
+
+/* ===================== Pointeur ===================== */
+function ptr(e){
+  const r = cv.getBoundingClientRect();
+  return {x:(e.clientX-r.left)*W/r.width, y:(e.clientY-r.top)*H/r.height};
+}
+cv.addEventListener("pointerdown", e=>{
+  if(split) return;
+  const p = ptr(e);
+  // briques posées (de droite à gauche pour prendre celle du dessus)
+  for(const color of ["r","g"]){
+    const list = rows[color]; let xs=[], x=X0;
+    for(const n of list){ xs.push(x); x+=n*U; }
+    for(let i=list.length-1;i>=0;i--){
+      if(brickHit(p.x,p.y,xs[i],rowY[color],list[i])){
+        drag = {color, n:list[i], px:p.x, py:p.y, offX:p.x-xs[i], offY:p.y-rowY[color]};
+        list.splice(i,1); cv.setPointerCapture(e.pointerId); return;
+      }
+    }
+  }
+  // palettes
+  for(const color of ["r","g"]){
+    for(const b of PAL[color]){
+      if(brickHit(p.x,p.y,b.x,b.y,b.n)){
+        drag = {color, n:b.n, px:p.x, py:p.y, offX:p.x-b.x, offY:p.y-b.y};
+        cv.setPointerCapture(e.pointerId); return;
+      }
+    }
+  }
+});
+cv.addEventListener("pointermove", e=>{
+  const p = ptr(e);
+  if(drag){ drag.px=p.x; drag.py=p.y; cv.style.cursor="grabbing"; return; }
+  let hover=false;
+  for(const color of ["r","g"]){
+    for(const b of PAL[color]) if(brickHit(p.x,p.y,b.x,b.y,b.n)) hover=true;
+    let x=X0; for(const n of rows[color]){ if(brickHit(p.x,p.y,x,rowY[color],n)) hover=true; x+=n*U; }
+  }
+  cv.style.cursor = hover? "grab" : "default";
+});
+// Unité de formule = PPCM(taille cation, taille anion) tenons par rangée.
+// Si l'assemblage neutre en contient plusieurs, il se sépare en k composés identiques et on n'en garde qu'un.
+const gcd = (a,b)=> b ? gcd(b, a%b) : a;
+const lcm = (a,b)=> a*b/gcd(a,b);
+let split = null;    // {t0, L, k, g} séparation en cours
+function canDrop(){
+  if(!overRow()) return false;
+  const L = lock[drag.color];
+  return (L===null || L===drag.n) && sum(rows[drag.color]) + drag.n <= cfg.cap;
+}
+function endDrag(){
+  if(!drag) return;
+  if(canDrop()){
+    rows[drag.color].splice(insertIndex(),0,drag.n);
+    lock[drag.color] = drag.n;
+    const S = sum(rows.r);
+    if(lock.r && lock.g && S>0 && S===sum(rows.g)){
+      const L = lcm(lock.r, lock.g), k = S/L;
+      if(k > 1){
+        const g = Math.max(6, Math.min(26, (W-14 - X0 - S*U - DX)/(k-1)));
+        split = {t0:performance.now(), L, k, g};
+        msg = {txt:`${k} fois le même composé ! On n'en garde qu'un.`, t:performance.now(), bad:true, info:true};
+      }
+    }
+  } else {
+    const now = performance.now(), p = dragBrickPos(), home = PAL[drag.color][drag.n-1];
+    const L = lock[drag.color];
+    const bad = false;
+    if(overRow() && (L===null || L===drag.n) && sum(rows[drag.color]) + drag.n > cfg.cap)
+      msg = {txt:"Plus de place sur la plaque", t:now};
+    fly.push({color:drag.color, n:drag.n, x0:p.x, y0:p.y, x1:home.x, y1:home.y, t0:now, bad});
+  }
+  drag = null; cv.style.cursor="default";
+}
+cv.addEventListener("pointerup", endDrag);
+cv.addEventListener("pointercancel", endDrag);
+document.getElementById("reset").addEventListener("click", ()=>{ rows={r:[],g:[]}; lock={r:null,g:null}; drag=null; fly=[]; split=null; });
+
+/* ===================== Effet électrique ===================== */
+function bolt(xa, ya, xb, yb, amp, step){
+  const dx=xb-xa, dy=yb-ya, L=Math.hypot(dx,dy), k=Math.max(2,Math.round(L/step));
+  const nx=-dy/L, ny=dx/L;
+  ctx.beginPath(); ctx.moveTo(xa,ya);
+  for(let i=1;i<k;i++){ const t=i/k, o=(Math.random()*2-1)*amp; ctx.lineTo(xa+dx*t+nx*o, ya+dy*t+ny*o); }
+  ctx.lineTo(xb,yb);
+}
+function strokeElectric(width, alpha){
+  ctx.save();
+  ctx.shadowColor="rgba(90,190,255,1)"; ctx.shadowBlur=16;
+  ctx.strokeStyle=`rgba(110,200,255,${alpha})`; ctx.lineWidth=width+3; ctx.stroke();
+  ctx.shadowBlur=6; ctx.strokeStyle=`rgba(255,255,255,${alpha})`; ctx.lineWidth=width; ctx.stroke();
+  ctx.restore();
+}
+function drawElectric(now, L){
+  const xa = X0, xb = X0 + L*U, y = YG;
+  const tb = (now - burstT)/1000;
+  // décharge initiale
+  if(tb < 1.4){
+    const a = 1 - tb/1.4;
+    for(let i=0;i<3;i++){ bolt(xa-6, y, xb+DX*0.5+6, y, 7*a+2, 9); strokeElectric(1.6, a); }
+    for(let i=0;i<4;i++){
+      const sx = xa + Math.random()*(xb-xa);
+      const up = Math.random()<.5;
+      bolt(sx, y, sx+(Math.random()*2-1)*U, up? YR-DY-SH : YG+BH, 6, 7);
+      strokeElectric(1.1, a*0.9);
+    }
+    ctx.save(); ctx.fillStyle=`rgba(170,225,255,${0.35*a})`;
+    ctx.fillRect(xa, YR-DY-SH, xb-xa+DX, 2*BH+DY+SH); ctx.restore();
+  }
+  // halo permanent pulsé le long de la jonction
+  const pulse = 0.35 + 0.2*Math.sin(now/260);
+  ctx.save(); ctx.shadowColor="rgba(90,190,255,1)"; ctx.shadowBlur=14;
+  ctx.strokeStyle=`rgba(140,210,255,${pulse})`; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(xa, y); ctx.lineTo(xb, y); ctx.stroke(); ctx.restore();
+  // petites étincelles aléatoires
+  if(now > sparkNext){ sparkT = now; sparkX = xa + Math.random()*(xb-xa); sparkNext = now + 600 + Math.random()*1200; }
+  const ts = (now - sparkT)/180;
+  if(ts < 1){
+    for(let i=0;i<2;i++){ bolt(sparkX-U*0.6, y, sparkX+U*0.6, y+(Math.random()*2-1)*4, 5, 5); strokeElectric(1.2, 1-ts); }
+  }
+}
+
+/* ===================== Rendu ===================== */
+function drawRow(color, gapIdx, gapN){
+  const list = rows[color]; let x = X0;
+  for(let i=0;i<=list.length;i++){
+    if(i===gapIdx){
+      ctx.save(); ctx.setLineDash([4,4]); ctx.strokeStyle = color==="r"?"#d42a2a":"#1f9a3e"; ctx.lineWidth=1.5;
+      ctx.strokeRect(x+1, rowY[color]+1, gapN*U-2, BH-2); ctx.restore();
+      x += gapN*U;
+    }
+    if(i<list.length){ drawBrick(x, rowY[color], list[i], color); x += list[i]*U; }
+  }
+}
+// ---- séparation en k composés identiques ----
+const SPLIT_OPEN = 700, SPLIT_HOLD = 1900;
+function splitPositions(color, e){
+  const out = []; let cum = 0;
+  for(const n of rows[color]){
+    const j = Math.floor(cum / split.L);
+    out.push({n, j, x: X0 + cum*U + j*split.g*e});
+    cum += n;
+  }
+  return out;
+}
+function drawSplit(now){
+  const dt = now - split.t0;
+  if(dt >= SPLIT_HOLD){
+    // les unités en trop retournent dans leurs boîtes, on garde la 1re
+    for(const color of ["g","r"]){
+      for(const b of splitPositions(color, 1)) if(b.j > 0){
+        const home = PAL[color][b.n-1];
+        fly.push({color, n:b.n, x0:b.x, y0:rowY[color], x1:home.x, y1:home.y, t0:now, bad:false});
+      }
+      rows[color] = rows[color].slice(0, split.L / lock[color]);
+    }
+    split = null; neutralPrev = false;
+    drawRow("g", -1, 0); drawRow("r", -1, 0);
+    return;
+  }
+  const t = Math.min(1, dt/SPLIT_OPEN), e = 1 - Math.pow(1-t, 3);
+  for(const color of ["g","r"])
+    for(const b of splitPositions(color, e)) drawBrick(b.x, rowY[color], b.n, color);
+  // fissures puis étincelles sur chaque unité
+  for(let j=0;j<split.k;j++){
+    const xa = X0 + j*split.L*U + j*split.g*e, xb = xa + split.L*U;
+    if(j>0 && t<1){ bolt(xa - split.g*e/2, YR-DY-SH, xa - split.g*e/2, YG+BH, 4, 6); strokeElectric(1.4, 1-t); }
+    if(cfg.fx && t>=1){
+      const a = 0.5 + 0.4*Math.sin((now + j*170)/90);
+      bolt(xa, YG, xb, YG, 4, 8); strokeElectric(1.3, a);
+    }
+  }
+}
+
+function frame(now){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle="#f4f8fb"; ctx.fillRect(0,0,W,H);
+
+  // titres palettes
+  ctx.fillStyle="#3b5b7a"; ctx.font="600 15px system-ui,sans-serif"; ctx.textBaseline="middle"; ctx.textAlign="left";
+  ctx.fillText("Cations", 18, PAL_Y.r + BH/2);
+  ctx.fillText("Anions",  18, PAL_Y.g + BH/2);
+  // séparateurs
+  ctx.strokeStyle="#d6e1eb"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(10, PAL_Y.r+BH+16); ctx.lineTo(W-10, PAL_Y.r+BH+16);
+  ctx.moveTo(10, PAL_Y.g-DY-SH-42); ctx.lineTo(W-10, PAL_Y.g-DY-SH-42); ctx.stroke();
+
+  for(const b of PAL.r){ drawBox(b); drawBrick(b.x, b.y, b.n, "r"); }
+  for(const b of PAL.g){ drawBox(b); drawBrick(b.x, b.y, b.n, "g"); }
+
+  // plaque
+  ctx.fillStyle="#e3eaf1"; ctx.strokeStyle="#b9c8d6"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(PLATE.x,PLATE.y,PLATE.w,PLATE.h,10) : ctx.rect(PLATE.x,PLATE.y,PLATE.w,PLATE.h);
+  ctx.fill(); ctx.stroke();
+  // emplacements fantômes
+  ctx.save(); ctx.setLineDash([3,5]); ctx.lineWidth=1;
+  ctx.strokeStyle="rgba(212,42,42,.30)"; ctx.strokeRect(X0, YR, cfg.cap*U, BH);
+  ctx.strokeStyle="rgba(31,154,62,.30)"; ctx.strokeRect(X0, YG, cfg.cap*U, BH);
+  ctx.restore();
+
+  const ok = drag && canDrop();
+  const gi = (ok && drag.color==="g") ? insertIndex() : -1;
+  const ri = (ok && drag.color==="r") ? insertIndex() : -1;
+  if(split){
+    drawSplit(now);
+  } else {
+    drawRow("g", gi, drag?drag.n:0);
+    drawRow("r", ri, drag?drag.n:0);
+    // neutralité
+    const neu = isNeutral();
+    if(neu && !neutralPrev && !drag) burstT = now;
+    if(!drag) neutralPrev = neu;
+    if(cfg.fx && neu && !drag) drawElectric(now, sum(rows.r));
+  }
+
+  // message
+  const MD = msg && msg.bad ? 2600 : 1400;
+  if(msg && now - msg.t < MD){
+    const t = (now-msg.t)/MD;
+    ctx.save(); ctx.globalAlpha = t < 0.8 ? 1 : (1-t)/0.2;
+    ctx.font="600 14px system-ui,sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    const y = PLATE.y + PLATE.h + 15;
+    if(msg.bad){
+      const tw = ctx.measureText(msg.txt).width + 28, sc = 1 + 0.08*Math.max(0, 1 - (now-msg.t)/250);
+      ctx.translate(W/2, y); ctx.scale(sc, sc);
+      ctx.fillStyle = msg.info ? "#e8f2fc" : "#fdecec"; ctx.strokeStyle = msg.info ? "#2f6aa3" : "#c00000"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-tw/2,-13,tw,26,13) : ctx.rect(-tw/2,-13,tw,26); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = msg.info ? "#1f4f80" : "#a00000"; ctx.fillText(msg.txt, 0, 1);
+    } else {
+      ctx.fillStyle="#a11b1b"; ctx.fillText(msg.txt, W/2, y);
+    }
+    ctx.restore();
+  }
+
+  // retours vers la base
+  const SHAKE = 650;
+  fly = fly.filter(f=>{
+    const dt = now - f.t0;
+    if(f.bad && dt < SHAKE){
+      // brique refusée : tremblement + voile rouge + ✕
+      const k = 1 - dt/SHAKE, x = f.x0 + Math.sin(dt*0.07)*7*k;
+      drawBrick(x, f.y0, f.n, f.color, {alpha:.95});
+      const w = f.n*U;
+      ctx.save();
+      ctx.fillStyle = `rgba(200,0,0,${0.35*k+0.1})`; ctx.fillRect(x, f.y0, w, BH);
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 6; ctx.lineCap = "round";
+      const cx = x + w/2, cy = f.y0 + BH/2, r = Math.min(w, BH)*0.32;
+      ctx.beginPath(); ctx.moveTo(cx-r,cy-r); ctx.lineTo(cx+r,cy+r); ctx.moveTo(cx+r,cy-r); ctx.lineTo(cx-r,cy+r); ctx.stroke();
+      ctx.strokeStyle = "#c00000"; ctx.lineWidth = 3.5; ctx.stroke();
+      ctx.restore();
+      return true;
+    }
+    const t = Math.min(1, (dt - (f.bad?SHAKE:0))/380), e = 1 - Math.pow(1-t, 3);
+    drawBrick(f.x0+(f.x1-f.x0)*e, f.y0+(f.y1-f.y0)*e, f.n, f.color, {shadow:t<1, alpha:.95});
+    return t < 1;
+  });
+
+  // brique en main
+  if(drag){ const p = dragBrickPos(); drawBrick(p.x, p.y, drag.n, drag.color, {shadow:true, alpha:.95}); }
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
