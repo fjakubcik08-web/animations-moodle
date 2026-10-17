@@ -308,8 +308,8 @@ function draw(cursorX) {
   ctx.fillRect(0, 0, W, H);
 
   // ── Grille mineure ──
-  ctx.lineWidth = 0.7;
-  ctx.strokeStyle = '#ebebeb';
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#c4ccd6';
   const Dx = dx * freqx, Dy = dy * freqy;
 
   for (let x = snap(xmin, dx); x <= xmax + dx*1e-6; x = round_(x + dx, dx)) {
@@ -322,8 +322,8 @@ function draw(cursorX) {
   }
 
   // ── Grille majeure ──
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = '#cccccc';
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = '#7f8a96';
   for (let x = snap(xmin, Dx); x <= xmax + Dx*1e-6; x = round_(x + Dx, Dx)) {
     const c = cx(x);
     ctx.beginPath(); ctx.moveTo(c, PAD.t); ctx.lineTo(c, H - PAD.b); ctx.stroke();
@@ -341,6 +341,27 @@ function draw(cursorX) {
   }
   if (xmin <= 0 && 0 <= xmax) {
     ctx.beginPath(); ctx.moveTo(cx(0), PAD.t); ctx.lineTo(cx(0), H - PAD.b); ctx.stroke();
+  }
+
+  // ── Tirets de graduation sur les axes (secondaires courts, principales longues) ──
+  ctx.strokeStyle = '#444444';
+  if (ymin <= 0 && 0 <= ymax) {
+    const ya = cy(0);
+    for (let x = snap(xmin, dx); x <= xmax + dx*1e-6; x = round_(x + dx, dx)) {
+      const major = Math.abs(x / Dx - Math.round(x / Dx)) < 1e-6;
+      const h = major ? 7 : 4;
+      ctx.lineWidth = major ? 1.8 : 1.2;
+      ctx.beginPath(); ctx.moveTo(cx(x), ya - h); ctx.lineTo(cx(x), ya + h); ctx.stroke();
+    }
+  }
+  if (xmin <= 0 && 0 <= xmax) {
+    const xa = cx(0);
+    for (let y = snap(ymin, dy); y <= ymax + dy*1e-6; y = round_(y + dy, dy)) {
+      const major = Math.abs(y / Dy - Math.round(y / Dy)) < 1e-6;
+      const h = major ? 7 : 4;
+      ctx.lineWidth = major ? 1.8 : 1.2;
+      ctx.beginPath(); ctx.moveTo(xa - h, cy(y)); ctx.lineTo(xa + h, cy(y)); ctx.stroke();
+    }
   }
 
   // ── Étiquettes ──
