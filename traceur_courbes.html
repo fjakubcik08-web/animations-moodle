@@ -81,6 +81,19 @@
 
   .slider-wrap { margin-top: 12px; }
 
+  .curStepBtn {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 0.85em;
+    font-weight: 600;
+    background: #eaf4ff;
+    color: #2980b9;
+    border: 1px solid #acd;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .curStepBtn:hover { background: #d7ebff; }
+
   .slider-label {
     font-size: 0.85em;
     color: #555;
@@ -134,10 +147,14 @@
 <div class="card" id="graphCard" style="display:none">
   <canvas id="gc" width="648" height="424"></canvas>
   <div id="sliderWrap" class="slider-wrap" style="display:none">
-    <div class="slider-label">Déplace le curseur :</div>
-    <input type="range" id="slider" min="0" max="1000" value="500"
-           oninput="moveCursor(this.value)">
+    <div class="slider-label">Clique-glisse sur le graphique pour déplacer le curseur :</div>
     <div class="coords-box" id="coordsBox"></div>
+    <div id="curStepBtns" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+      <button type="button" data-pct="-1"   class="curStepBtn">-1%</button>
+      <button type="button" data-pct="-0.1" class="curStepBtn">-0,1%</button>
+      <button type="button" data-pct="0.1"  class="curStepBtn">+0,1%</button>
+      <button type="button" data-pct="1"    class="curStepBtn">+1%</button>
+    </div>
   </div>
 </div>
 
@@ -263,10 +280,22 @@ function draw(cursorX) {
   const canvas = document.getElementById('gc');
   const ctx    = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
-  // Marges : gauche plus large pour les étiquettes y
-  const PAD = { l: 52, r: 14, t: 14, b: 30 };
+
+  // Marges : gauche/bas agrandies uniquement si nomX/nomY sont fournis
+  // (garde EXACTEMENT le même rendu qu'avant pour tout code encodé sans
+  // ces deux champs -> aucune régression sur les questions déjà déployées).
+  const hasNomX = !!(p.nomX && String(p.nomX).trim());
+  const hasNomY = !!(p.nomY && String(p.nomY).trim());
+  const PAD = {
+    l: 52 + (hasNomY ? 12 : 0),
+    r: 14,
+    t: 14,
+    b: 30 + (hasNomX ? 16 : 0)
+  };
   const pw = W - PAD.l - PAD.r;
   const ph = H - PAD.t - PAD.b;
+  // mémorisé pour le clic-glisse (conversion pixel canvas -> x mathématique)
+  G.plot = { PAD, pw, ph };
 
   const { xmin, xmax, ymin, ymax, dx, dy, freqx, freqy } = p;
 
@@ -346,6 +375,27 @@ function draw(cursorX) {
   ctx.strokeStyle = '#aaa';
   ctx.lineWidth = 1;
   ctx.strokeRect(PAD.l, PAD.t, pw, ph);
+
+  // ── Noms des axes (nomX / nomY) — n'apparaissent que si fournis dans le param ──
+  if (hasNomX) {
+    ctx.fillStyle = '#2c3e50';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText(String(p.nomX), W - PAD.r, H - 6);
+  }
+  if (hasNomY) {
+    ctx.save();
+    ctx.fillStyle = '#2c3e50';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const yMid = PAD.t + ph / 2;
+    ctx.translate(14, yMid);
+    ctx.rotate(-Math.PI / 2);
+    // centre sur le milieu vertical de la zone de tracé, texte lisible de bas en haut
+    ctx.fillText(String(p.nomY), 0, 0);
+    ctx.restore();
+  }
 
   // ── Courbes ──
   const NPTS = 1200;
@@ -428,27 +478,91 @@ function fmtCoord(n) {
 // ============================================================
 //  CURSEUR / SLIDER
 // ============================================================
-function moveCursor(val) {
-  if (!G.params) return;
+// ============================================================
+//  CURSEUR PAR CLIC-GLISSE SUR LE CANVAS (souris + tactile)
+// ============================================================
+let draggingCursor = false;
+
+function xFromClientX(clientX) {
+  const canvas = document.getElementById('gc');
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;  // le canvas peut être redimensionné en CSS
+  const canvasX = (clientX - rect.left) * scaleX;
+  const { PAD, pw } = G.plot;
   const { xmin, xmax } = G.params;
-  const xv = xmin + (val / 1000) * (xmax - xmin);
+  const t = clamp((canvasX - PAD.l) / pw, 0, 1);
+  return xmin + t * (xmax - xmin);
+}
+
+function cursorFromClientX(clientX) {
+  if (!G.params || !G.plot) return;
+  const xv = xFromClientX(clientX);
+  G.cursorX = xv;
   draw(xv);
   showCoords(xv);
 }
 
+// -------- boutons pas fixe (+/-1% et +/-0,1% de l'echelle des abscisses) --------
+// Uniquement utiles/visibles quand le curseur (slider) est actif ; le conteneur
+// #sliderWrap est deja masque sinon (meme logique que le reste du curseur).
+function moveCursorByPct(pct) {
+  if (!G.params) return;
+  const { xmin, xmax } = G.params;
+  const base = (G.cursorX ?? (xmin + xmax) / 2);
+  const delta = (pct / 100) * (xmax - xmin);
+  const xv = clamp(base + delta, xmin, xmax);
+  G.cursorX = xv;
+  draw(xv);
+  showCoords(xv);
+}
+
+document.querySelectorAll('.curStepBtn').forEach(btn => {
+  btn.addEventListener('click', () => moveCursorByPct(parseFloat(btn.dataset.pct)));
+});
+
+(function initDragCursor() {
+  const canvas = document.getElementById('gc');
+  canvas.addEventListener('mousedown', (e) => {
+    if (!G.params || !G.params.slider) return;
+    draggingCursor = true;
+    cursorFromClientX(e.clientX);
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!draggingCursor) return;
+    cursorFromClientX(e.clientX);
+  });
+  window.addEventListener('mouseup', () => { draggingCursor = false; });
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (!G.params || !G.params.slider) return;
+    draggingCursor = true;
+    cursorFromClientX(e.touches[0].clientX);
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    if (!draggingCursor) return;
+    cursorFromClientX(e.touches[0].clientX);
+  }, { passive: true });
+  window.addEventListener('touchend', () => { draggingCursor = false; });
+})();
+
 function showCoords(xv) {
+  // Si nomX/nomY sont fournis, on les utilise a la place des lettres x/y
+  // generiques dans le lecteur de coordonnees du curseur.
+  const xLabel = (G.params.nomX && String(G.params.nomX).trim()) ? G.params.nomX : 'x';
+  const yLabelBase = (G.params.nomY && String(G.params.nomY).trim()) ? G.params.nomY : 'y';
+
   const validFns = G.fns.filter(Boolean);
   const parts = G.fns.map((fn, i) => {
     if (!fn) return '';
     const yv = fn(xv);
     if (isNaN(yv) || !isFinite(yv)) return '';
-    const label = validFns.length > 1 ? `y<sub>${i+1}</sub>` : 'y';
+    const label = validFns.length > 1 ? `${yLabelBase}<sub>${i+1}</sub>` : yLabelBase;
     const col   = getColor(G.params.colors[i]);
     return `<span style="color:${col};font-weight:700">${label}&nbsp;=&nbsp;${fmtCoord(yv)}</span>`;
   }).filter(Boolean);
 
   document.getElementById('coordsBox').innerHTML =
-    `<b>x&nbsp;=&nbsp;${fmtCoord(xv)}</b>&nbsp;&nbsp;&rarr;&nbsp;&nbsp;${parts.join('&nbsp;&nbsp;&nbsp;')}`;
+    `<b>${xLabel}&nbsp;=&nbsp;${fmtCoord(xv)}</b>&nbsp;&nbsp;&rarr;&nbsp;&nbsp;${parts.join('&nbsp;&nbsp;&nbsp;')}`;
 }
 
 // ============================================================
@@ -497,6 +611,10 @@ function afficher() {
       freqx:  Array.isArray(p.freq) ? (p.freq[0] ?? 5) : (p.freqx ?? 5),
       freqy:  Array.isArray(p.freq) ? (p.freq[1] ?? 5) : (p.freqy ?? 5),
       slider: p.slider ?? false,
+      // NOUVEAU (v2) : noms d'axes optionnels, absents -> '' -> comportement
+      // identique a la v1 (rien affiche), donc rien ne casse sur les anciens codes.
+      nomX:   p.nomX ?? '',
+      nomY:   p.nomY ?? '',
     };
 
     // 4. Compilation des équations
@@ -507,17 +625,21 @@ function afficher() {
     document.getElementById('graphCard').style.display = 'block';
     draw(null);
 
-    // 6. Slider
+    // 6. Curseur (clic-glisse)
     const sw = document.getElementById('sliderWrap');
+    const canvasEl = document.getElementById('gc');
     if (params.slider) {
       sw.style.display = 'block';
+      canvasEl.style.cursor = 'crosshair';
       const mid = (params.xmin + params.xmax) / 2;
-      document.getElementById('slider').value = 500;
+      G.cursorX = mid;
       draw(mid);
       showCoords(mid);
     } else {
+      canvasEl.style.cursor = 'default';
       sw.style.display = 'none';
       document.getElementById('coordsBox').innerHTML = '';
+      G.cursorX = null;
     }
 
   } catch (err) {
