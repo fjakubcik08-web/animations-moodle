@@ -19,6 +19,7 @@
     background:#3d566e; color:#fff; font-size:12px; cursor:pointer; text-align:center;
   }
   #toolbar button:hover, #toolbar label.filebtn:hover { background:#4d6a85; }
+  #toolbar button:disabled { opacity:.6; cursor:wait; }
   #toolbar input[type=file] { display:none; }
   #toolbar input[type=color] { width:100%; height:28px; border:none; border-radius:5px; margin:4px 0; cursor:pointer; }
   .fmt-btn.active { background:#e67e22 !important; }
@@ -47,9 +48,7 @@
   #toolbar .palette { background:#1e2b38; padding:6px; border-radius:5px; }
 
   /* -------- Éléments sur l'affiche -------- */
-  .el {
-    position:absolute; cursor:move; user-select:none;
-  }
+  .el { position:absolute; cursor:move; user-select:none; }
   .el.selected { outline:2px dashed #2980b9; }
   .el .handle {
     position:absolute; right:-7px; bottom:-7px; width:14px; height:14px;
@@ -170,25 +169,21 @@
 
 <script>
 const stage = document.getElementById('stage');
-const props = document.getElementById('props');
 let selected = null;
 let zTop = 1;
 let clipboardEl = null;
 
-/* ---------- Bibliothèque de clipart SVG (dossier /clipart/ sur GitHub) ----------
-   Le dossier est lu automatiquement via jsDelivr (CDN + API qui reflète ton repo GitHub).
-   Ajoute/supprime des .svg dans /clipart/ sur ton repo, ils apparaissent ici sans
-   toucher à ce fichier. Change juste REPO_BRANCH si ta branche n'est pas "main". */
+/* ---------- Bibliothèque de clipart SVG (dossier sur GitHub) ---------- */
 const REPO_USER   = 'fjakubcik08-web';
 const REPO_NAME   = 'animations-moodle';
 const REPO_BRANCH = 'main';
 const CLIPART_FOLDER = 'svg';
 
-/* ---------- Formats d'affiche (en px, ratio conservé pour l'écran) ---------- */
+/* ---------- Formats d'affiche ---------- */
 const FORMATS = {
-  portrait: {w:595, h:842},   // A4 portrait
-  paysage:  {w:842, h:595},   // A4 paysage
-  carre:    {w:700, h:700}    // carré réseaux sociaux
+  portrait: {w:595, h:842},
+  paysage:  {w:842, h:595},
+  carre:    {w:700, h:700}
 };
 function setFormat(fmt){
   stage.style.width = FORMATS[fmt].w+'px';
@@ -204,7 +199,7 @@ document.getElementById('bgColor').addEventListener('input', e=>{
   stage.style.background = e.target.value;
 });
 
-/* ---------- Palettes de couleurs rapides (fond / texte / forme) ---------- */
+/* ---------- Palettes ---------- */
 const PALETTE_COLORS = ['#000000','#ffffff','#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c','#3498db','#9b59b6','#e84393','#7f8c8d','#795548'];
 function buildPalette(containerId, onPick){
   const el = document.getElementById(containerId);
@@ -274,7 +269,7 @@ function rgbToHex(rgb){
   return '#' + m.slice(0,3).map(x=>(+x).toString(16).padStart(2,'0')).join('');
 }
 
-/* ---------- Création d'éléments génériques (drag + resize) ---------- */
+/* ---------- Drag + resize ---------- */
 function makeDraggable(wrap){
   let dragging=false, resizing=false, startX, startY, startL, startT, startW, startH;
 
@@ -311,7 +306,7 @@ function addHandle(wrap){
   wrap.appendChild(h);
 }
 
-/* ---------- Position d'apparition : dans la zone actuellement visible, pas en haut du poster ---------- */
+/* ---------- Position d'apparition ---------- */
 let spawnCount = 0;
 function spawnPoint(){
   const wrapEl = document.getElementById('stage-wrap');
@@ -358,7 +353,7 @@ document.getElementById('btnItalic').addEventListener('click', ()=>{
   if(selected){ const t=selected.querySelector('.el-text'); t.style.fontStyle = t.style.fontStyle==='italic'?'normal':'italic'; }
 });
 
-/* ---------- Formes (rectangle, cercle, triangle, flèche, double-flèche) ---------- */
+/* ---------- Formes ---------- */
 const SHAPE_PATHS = {
   triangle: 'M50,5 L95,95 L5,95 Z',
   arrow:    'M0,35 L60,35 L60,15 L100,50 L60,85 L60,65 L0,65 Z',
@@ -416,7 +411,58 @@ document.getElementById('shapeColor').addEventListener('input', e=>{
   }
 });
 
-/* ---------- Images (fonction commune : upload, clipart SVG, coller) ---------- */
+/* ==========================================================================
+   SVG : normalisation
+   Beaucoup de SVG (icônes) n'ont qu'un viewBox, sans width/height.
+   Le navigateur les affiche dans un <img>, mais une fois dessinés sur un
+   canvas (= ce que fait html2canvas à l'export) leur taille intrinsèque
+   vaut 0 → ils disparaissent. On force width/height depuis le viewBox,
+   et on embarque le SVG en data:URL (plus de CORS, brouillon autonome).
+   ========================================================================== */
+function normalizeSvgText(txt){
+  const doc = new DOMParser().parseFromString(txt, 'image/svg+xml');
+  const svg = doc.documentElement;
+  if(!svg || svg.nodeName.toLowerCase() !== 'svg') throw new Error('SVG invalide');
+  const wAttr = svg.getAttribute('width')  || '';
+  const hAttr = svg.getAttribute('height') || '';
+  const wOk = wAttr && !/%/.test(wAttr) && parseFloat(wAttr) > 0;
+  const hOk = hAttr && !/%/.test(hAttr) && parseFloat(hAttr) > 0;
+  let vb = svg.getAttribute('viewBox');
+  if(!vb && wOk && hOk){
+    vb = `0 0 ${parseFloat(wAttr)} ${parseFloat(hAttr)}`;
+    svg.setAttribute('viewBox', vb);
+  }
+  if(!(wOk && hOk)){
+    let W = 512, H = 512;
+    if(vb){
+      const p = vb.trim().split(/[\s,]+/).map(Number);
+      if(p.length === 4 && p[2] > 0 && p[3] > 0){ W = p[2]; H = p[3]; }
+    }
+    svg.setAttribute('width', W);
+    svg.setAttribute('height', H);
+  }
+  if(!svg.getAttribute('xmlns')) svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  return new XMLSerializer().serializeToString(svg);
+}
+function svgTextToDataUrl(txt){
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(normalizeSvgText(txt))));
+}
+async function svgUrlToDataUrl(url){
+  const res = await fetch(url, { cache:'no-store' });
+  if(!res.ok) throw new Error('SVG introuvable');
+  return svgTextToDataUrl(await res.text());
+}
+function svgDataUrlToText(src){
+  const i = src.indexOf(',');
+  const head = src.slice(0, i), body = src.slice(i+1);
+  if(/;base64/i.test(head)) return decodeURIComponent(escape(atob(body)));
+  return decodeURIComponent(body);
+}
+function isSvgSrc(src){
+  return /^data:image\/svg\+xml/i.test(src) || /\.svg(\?|#|$)/i.test(src);
+}
+
+/* ---------- Images (upload, clipart, coller) ---------- */
 function addImageElement(src, w, h){
   const wrap = document.createElement('div');
   wrap.className = 'el el-image-wrap';
@@ -424,7 +470,7 @@ function addImageElement(src, w, h){
   wrap.style.left=p0.x+'px'; wrap.style.top=p0.y+'px';
   wrap.style.width=(w||220)+'px'; wrap.style.height=(h||160)+'px';
   const img = document.createElement('img');
-  img.crossOrigin = 'anonymous'; // nécessaire pour l'export si l'image vient de GitHub
+  if(!src.startsWith('data:')) img.crossOrigin = 'anonymous';
   img.src = src;
   wrap.appendChild(img);
   addHandle(wrap);
@@ -435,16 +481,28 @@ function addImageElement(src, w, h){
   return wrap;
 }
 
+function readImageFile(file){
+  const reader = new FileReader();
+  if(file.type === 'image/svg+xml'){
+    reader.onload = ev => {
+      let src;
+      try { src = svgTextToDataUrl(ev.target.result); } catch(e){ return alert('SVG illisible.'); }
+      addImageElement(src, 160, 160);
+    };
+    reader.readAsText(file);
+  } else {
+    reader.onload = ev => addImageElement(ev.target.result, 220, 160);
+    reader.readAsDataURL(file);
+  }
+}
+
 document.getElementById('fileInput').addEventListener('change', e=>{
   const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ev=> addImageElement(ev.target.result, 220, 160);
-  reader.readAsDataURL(file);
+  if(file) readImageFile(file);
   e.target.value = '';
 });
 
-/* ---------- Clipart SVG (façon "Word") : lu dynamiquement depuis /clipart/ sur GitHub ---------- */
+/* ---------- Clipart SVG depuis GitHub ---------- */
 const clipartPanel = document.getElementById('clipartPanel');
 const clipartGrid = document.getElementById('clipartGrid');
 
@@ -460,7 +518,6 @@ document.getElementById('refreshClipart').addEventListener('click', loadClipartL
 async function loadClipartLibrary(){
   clipartGrid.innerHTML = '<p class="clipart-msg">Chargement de la bibliothèque…</p>';
   try {
-    // API GitHub directe : reflète le repo en temps réel, sans cache CDN
     const apiUrl = `https://api.github.com/repos/${REPO_USER}/${REPO_NAME}/contents/${CLIPART_FOLDER}?ref=${REPO_BRANCH}`;
     const res = await fetch(apiUrl, { cache:'no-store', headers:{ 'Accept':'application/vnd.github+json' } });
     if(!res.ok) throw new Error('dossier introuvable ('+res.status+')');
@@ -474,15 +531,17 @@ async function loadClipartLibrary(){
       return;
     }
     files.forEach(f=>{
-      const rawUrl = f.download_url; // raw.githubusercontent.com, CORS ok, temps réel
+      const rawUrl = f.download_url;
       const nom = f.name.replace(/\.svg$/i, '');
       const item = document.createElement('div');
       item.className = 'clipart-item';
       item.title = nom;
       item.innerHTML = `<img src="${rawUrl}" alt="${nom}"><span>${nom}</span>`;
-      item.addEventListener('click', ()=>{
-        addImageElement(rawUrl, 140, 140);
+      item.addEventListener('click', async ()=>{
         clipartPanel.classList.add('hidden');
+        let src = rawUrl;
+        try { src = await svgUrlToDataUrl(rawUrl); } catch(e){ /* repli : URL brute */ }
+        addImageElement(src, 140, 140);
       });
       clipartGrid.appendChild(item);
     });
@@ -491,7 +550,7 @@ async function loadClipartLibrary(){
   }
 }
 
-/* ---------- Élément : devant / supprimer ---------- */
+/* ---------- Devant / supprimer ---------- */
 document.getElementById('btnFront').addEventListener('click', ()=>{
   if(selected) selected.style.zIndex = ++zTop;
 });
@@ -504,7 +563,7 @@ document.addEventListener('keydown', e=>{
   }
 });
 
-/* ---------- Copier / dupliquer un élément (Ctrl+C puis Ctrl+V) ---------- */
+/* ---------- Copier / dupliquer ---------- */
 document.addEventListener('keydown', e=>{
   const ctrl = e.ctrlKey || e.metaKey;
   if(!ctrl) return;
@@ -531,21 +590,18 @@ function duplicateClipboardEl(){
   selectEl(clone);
   clone.style.zIndex = ++zTop;
 }
-/* ---------- Coller une image depuis le presse-papier (capture d'écran, image copiée) ---------- */
 document.addEventListener('paste', e=>{
   const target = e.target;
   const editingText = target.closest && target.closest('.el-text');
-  const items = (e.clipboardData || window.clipboardData) ? (e.clipboardData || window.clipboardData).items : null;
+  const cd = e.clipboardData || window.clipboardData;
+  const items = cd ? cd.items : null;
   let imageItem = null;
   if(items){
     for(const it of items){ if(it.type.indexOf('image') !== -1){ imageItem = it; break; } }
   }
   if(imageItem){
     e.preventDefault();
-    const blob = imageItem.getAsFile();
-    const reader = new FileReader();
-    reader.onload = ev => addImageElement(ev.target.result, 220, 160);
-    reader.readAsDataURL(blob);
+    readImageFile(imageItem.getAsFile());
   } else if(!editingText && clipboardEl){
     e.preventDefault();
     duplicateClipboardEl();
@@ -555,19 +611,24 @@ stage.addEventListener('pointerdown', e=>{
   if(e.target === stage) selectEl(null);
 });
 
-/* ---------- Sauvegarde locale (brouillon) ---------- */
+/* ---------- Brouillon local ---------- */
 document.getElementById('btnSave').addEventListener('click', ()=>{
-  localStorage.setItem('affiche_brouillon', stage.innerHTML);
-  localStorage.setItem('affiche_bg', stage.style.background);
-  localStorage.setItem('affiche_fmt', document.querySelector('.fmt-btn.active').dataset.fmt);
-  alert('Brouillon sauvegardé sur cet appareil.');
+  try {
+    localStorage.setItem('affiche_brouillon', stage.innerHTML);
+    localStorage.setItem('affiche_bg', stage.style.background);
+    localStorage.setItem('affiche_fmt', document.querySelector('.fmt-btn.active').dataset.fmt);
+    alert('Brouillon sauvegardé sur cet appareil.');
+  } catch(e){ alert('Sauvegarde impossible (stockage plein ou bloqué).'); }
 });
 document.getElementById('btnLoad').addEventListener('click', ()=>{
-  const html = localStorage.getItem('affiche_brouillon');
+  let html = null;
+  try { html = localStorage.getItem('affiche_brouillon'); } catch(e){}
   if(!html){ alert('Aucun brouillon trouvé sur cet appareil.'); return; }
   stage.innerHTML = html;
-  stage.style.background = localStorage.getItem('affiche_bg') || '#ffffff';
-  setFormat(localStorage.getItem('affiche_fmt') || 'portrait');
+  try {
+    stage.style.background = localStorage.getItem('affiche_bg') || '#ffffff';
+    setFormat(localStorage.getItem('affiche_fmt') || 'portrait');
+  } catch(e){}
   stage.querySelectorAll('.el').forEach(wrap=>{ makeDraggable(wrap); });
   selectEl(null);
 });
@@ -575,14 +636,83 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
   if(confirm('Tout effacer ?')){ stage.innerHTML=''; selected=null; updatePropsPanel(); }
 });
 
-/* ---------- Export ---------- */
-function prepareExport(cb){
-  if(selected) selectEl(null);
-  document.querySelectorAll('.handle').forEach(h=>h.style.display='none');
-  html2canvas(stage, {scale:2, useCORS:true}).then(canvas=>{
-    document.querySelectorAll('.handle').forEach(h=>h.style.display='block');
-    cb(canvas);
+/* ==========================================================================
+   EXPORT
+   html2canvas 1.4.1 : (1) rate les SVG sans width/height, (2) ignore
+   object-fit:contain (déforme). On pré-rastérise donc chaque image nous-mêmes
+   en PNG à la taille exacte de son cadre, et on l'injecte dans le clone.
+   ========================================================================== */
+const EXPORT_SCALE = 2;
+
+function loadImg(src){
+  return new Promise((resolve, reject)=>{
+    const im = new Image();
+    if(!src.startsWith('data:')) im.crossOrigin = 'anonymous';
+    im.onload = ()=> resolve(im);
+    im.onerror = reject;
+    im.src = src;
   });
+}
+
+async function rasterizeImages(){
+  const map = {};
+  const imgs = [...stage.querySelectorAll('.el-image-wrap img')];
+  for(let k = 0; k < imgs.length; k++){
+    const img = imgs[k];
+    img.dataset.exp = k;
+    try {
+      let src = img.getAttribute('src');
+      if(isSvgSrc(src)){
+        src = src.startsWith('data:') ? svgTextToDataUrl(svgDataUrlToText(src))
+                                       : await svgUrlToDataUrl(src);
+      }
+      const im = await loadImg(src);
+      const W = img.parentElement.clientWidth, H = img.parentElement.clientHeight;
+      const c = document.createElement('canvas');
+      c.width  = Math.max(1, Math.round(W * EXPORT_SCALE));
+      c.height = Math.max(1, Math.round(H * EXPORT_SCALE));
+      const iw = im.naturalWidth  || im.width  || W;
+      const ih = im.naturalHeight || im.height || H;
+      const r = Math.min(c.width / iw, c.height / ih);   // = object-fit:contain
+      const dw = iw * r, dh = ih * r;
+      c.getContext('2d').drawImage(im, (c.width-dw)/2, (c.height-dh)/2, dw, dh);
+      map[k] = c.toDataURL('image/png');
+    } catch(e){ /* on laisse html2canvas se débrouiller avec l'original */ }
+  }
+  return map;
+}
+
+let exporting = false;
+async function prepareExport(cb){
+  if(exporting) return;
+  exporting = true;
+  const btns = [document.getElementById('btnPng'), document.getElementById('btnPdf')];
+  btns.forEach(b=> b.disabled = true);
+  if(selected) selectEl(null);
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  try {
+    const map = await rasterizeImages();
+    const canvas = await html2canvas(stage, {
+      scale: EXPORT_SCALE,
+      useCORS: true,
+      backgroundColor: null,
+      onclone: doc => {
+        doc.querySelectorAll('.handle').forEach(h=> h.style.display = 'none');
+        doc.querySelectorAll('.el.selected').forEach(el=> el.classList.remove('selected'));
+        doc.querySelectorAll('.el-image-wrap img').forEach(i=>{
+          const d = map[i.dataset.exp];
+          if(d){ i.removeAttribute('crossorigin'); i.src = d; i.style.objectFit = 'fill'; }
+        });
+      }
+    });
+    cb(canvas);
+  } catch(e){
+    alert('Export impossible : ' + e.message);
+  } finally {
+    stage.querySelectorAll('img[data-exp]').forEach(i=> i.removeAttribute('data-exp'));
+    btns.forEach(b=> b.disabled = false);
+    exporting = false;
+  }
 }
 document.getElementById('btnPng').addEventListener('click', ()=>{
   prepareExport(canvas=>{
