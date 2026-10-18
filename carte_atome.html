@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carte atome</title>
+<style>
+  html,body{margin:0;padding:0;background:#0f1a2b;height:100%;}
+  body{display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+  canvas{display:block;-webkit-tap-highlight-color:transparent;max-width:100vw;max-height:100vh;border-radius:18px;}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<script>
+/* =========================================================
+   Carte atome (modèle de Bohr) — Z = 1 à 30
+   Paramètres (codés dans ?p=... ou en clair, le clair l'emporte) :
+     z   : numéro atomique 1..30             (défaut 11)
+     a   : nombre de masse (défaut : isotope le plus courant)
+   Noyau flou + loupe : un clic ouvre une vue agrandie (nucléons comptables).
+   Codage : chaîne "z=11;a=23;..." XOR clé "CarteBohrZ20" puis base64 url-safe.
+   ========================================================= */
+const KEY = "CarteBohrZ20";
+
+const ELEM = [null,
+ ["H","Hydrogène",1],["He","Hélium",4],["Li","Lithium",7],["Be","Béryllium",9],
+ ["B","Bore",11],["C","Carbone",12],["N","Azote",14],["O","Oxygène",16],
+ ["F","Fluor",19],["Ne","Néon",20],["Na","Sodium",23],["Mg","Magnésium",24],
+ ["Al","Aluminium",27],["Si","Silicium",28],["P","Phosphore",31],["S","Soufre",32],
+ ["Cl","Chlore",35],["Ar","Argon",40],["K","Potassium",39],["Ca","Calcium",40],
+ ["Sc","Scandium",45],["Ti","Titane",48],["V","Vanadium",51],["Cr","Chrome",52],
+ ["Mn","Manganèse",55],["Fe","Fer",56],["Co","Cobalt",59],["Ni","Nickel",58],
+ ["Cu","Cuivre",63],["Zn","Zinc",64]];
+
+function decodeP(p){
+  try{
+    let b = p.replace(/-/g,"+").replace(/_/g,"/");
+    while(b.length%4) b += "=";
+    const bin = atob(b);
+    let s = "";
+    for(let i=0;i<bin.length;i++) s += String.fromCharCode(bin.charCodeAt(i) ^ KEY.charCodeAt(i%KEY.length));
+    const o = {};
+    s.split(";").forEach(kv=>{ const [k,v]=kv.split("="); if(k) o[k.trim()] = v; });
+    return o;
+  }catch(e){ return {}; }
+}
+
+const q = new URLSearchParams(location.search);
+let P = q.has("p") ? decodeP(q.get("p")) : {};
+for(const k of ["z","a"]) if(q.has(k)) P[k] = q.get(k);
+
+const int = (v,d)=>{ const n=parseInt(v,10); return isNaN(n)?d:n; };
+const Z   = Math.min(30, Math.max(1, int(P.z,11)));
+const A   = Math.min(3*Z+10, Math.max(Z, int(P.a, ELEM[Z][2])));
+const N   = A - Z;
+const NUC = 1, ELE = true, MV = true;
+
+/* répartition électronique par couche K, L, M, N (configurations réelles, Cr et Cu compris) */
+const SHELLS_21_30 = {21:[2,8,9,2],22:[2,8,10,2],23:[2,8,11,2],24:[2,8,13,1],25:[2,8,13,2],
+                      26:[2,8,14,2],27:[2,8,15,2],28:[2,8,16,2],29:[2,8,18,1],30:[2,8,18,2]};
+function shells(z){
+  if(z>20) return SHELLS_21_30[z];
+  const cap=[2,8,8,2], out=[]; let r=z;
+  for(const c of cap){ if(r<=0) break; const k=Math.min(c,r); out.push(k); r-=k; }
+  return out;
+}
+const SH = shells(Z);
+
+/* ---------- canvas ---------- */
+const W=500, H=500;
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+const dpr=window.devicePixelRatio||1;
+cv.width=W*dpr; cv.height=H*dpr;
+function fit(){
+  const s=Math.min(window.innerWidth/W, window.innerHeight/H, 1.6);
+  cv.style.width=(W*s)+"px"; cv.style.height=(H*s)+"px";
+}
+fit(); addEventListener("resize",fit);
+ctx.scale(dpr,dpr);
+
+const CX=W/2, CY=H/2;
+const C = {
+  bg1:"#13233a", bg2:"#0c1626", border:"#2b4a72",
+  shell:"rgba(120,170,230,0.28)",
+  e:"#5fc3ff", eGlow:"rgba(95,195,255,0.55)",
+  p:"#e2574c", pHi:"#ff9b8f", n:"#8a96a8", nHi:"#d3dae4",
+  txt:"#e8eef7", sub:"#8fa7c4"
+};
+
+/* générateur pseudo-aléatoire déterministe */
+function rng(seed){ return ()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; }; }
+
+/* nucléons : empilement en spirale de Fermat, ordre p/n mélangé */
+const RP = 7.2;
+const nucleons=[];
+(function(){
+  const r=rng(Z*97+A*13), tot=Z+N;
+  const kinds=[]; for(let i=0;i<Z;i++) kinds.push("p"); for(let i=0;i<N;i++) kinds.push("n");
+  for(let i=kinds.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [kinds[i],kinds[j]]=[kinds[j],kinds[i]]; }
+  const ga=Math.PI*(3-Math.sqrt(5));
+  for(let i=0;i<tot;i++){
+    const rad = RP*1.05*Math.sqrt(i+0.5);
+    nucleons.push({k:kinds[i], r:rad, a:i*ga, ph:r()*6.28, depth:r()});
+  }
+  nucleons.sort((u,v)=>v.r-u.r);           // les plus centraux dessinés en dernier
+})();
+const RNUC = RP*1.05*Math.sqrt(Z+N) + RP;
+
+/* couches */
+const R0 = Math.max(RNUC+26, 52), DR = (205-R0)/Math.max(1,3);
+const shellR = SH.map((_,i)=>R0 + i*Math.min(DR,46));
+
+function ball(x,y,r,col,hi){
+  const g=ctx.createRadialGradient(x-r*0.35,y-r*0.35,r*0.1,x,y,r);
+  g.addColorStop(0,hi); g.addColorStop(1,col);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+}
+
+function roundRect(x,y,w,h,r){
+  ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+
+function drawCard(t){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,C.bg1); g.addColorStop(1,C.bg2);
+  ctx.fillStyle=g; roundRect(1,1,W-2,H-2,18); ctx.fill();
+  ctx.strokeStyle=C.border; ctx.lineWidth=2; ctx.stroke();
+
+}
+
+/* ---------- noyau ---------- */
+const CAN_BLUR = ("filter" in ctx);
+function drawBlob(t){
+  const r=RNUC*(1+0.04*Math.sin(t*1.2));
+  const g=ctx.createRadialGradient(CX,CY,0,CX,CY,r*1.4);
+  g.addColorStop(0,"rgba(230,140,130,0.95)");
+  g.addColorStop(0.55,"rgba(180,120,130,0.55)");
+  g.addColorStop(1,"rgba(150,120,140,0)");
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(CX,CY,r*1.4,0,7); ctx.fill();
+}
+function drawNucleons(t){
+  const rot = t*0.05;
+  for(const u of nucleons){
+    const x = CX + u.r*Math.cos(u.a+rot) + (MV?1.0*Math.sin(t*1.6+u.ph):0);
+    const y = CY + u.r*Math.sin(u.a+rot) + (MV?1.0*Math.cos(t*1.4+u.ph):0);
+    if(u.k==="p") ball(x,y,RP,C.p,C.pHi); else ball(x,y,RP,C.n,C.nHi);
+  }
+}
+function drawNucleus(t){
+  if(NUC===2){ drawNucleons(t); return; }
+  if(CAN_BLUR){                       // amas reconnaissable mais flou : pas comptable
+    ctx.save(); ctx.filter="blur(3.6px)"; drawNucleons(t); ctx.restore();
+  } else drawBlob(t);
+}
+
+/* loupe */
+const LOUPE = NUC===1;
+const LX = CX + (RNUC+10)*0.72, LY = CY + (RNUC+10)*0.72, LR = 13;
+function drawLoupeIcon(t, hover){
+  const s = 1 + (MV?0.06*Math.sin(t*2.2):0) + (hover?0.12:0);
+  ctx.save(); ctx.translate(LX,LY); ctx.scale(s,s);
+  ctx.fillStyle="rgba(15,30,52,0.92)"; ctx.strokeStyle=hover?"#9fd4ff":"#6f9fd0"; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.arc(0,0,LR,0,7); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle="#e8eef7"; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(-2,-2,5,0,7); ctx.stroke();
+  ctx.lineWidth=2.6; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(1.8,1.8); ctx.lineTo(6.5,6.5); ctx.stroke();
+  ctx.restore();
+}
+
+/* vue agrandie : nucléons figés et bien séparés */
+const NTOT = Z+N;
+const ZS = Math.min(30, 150/Math.sqrt(NTOT));     // pas de la spirale
+const ZR = Math.min(17, ZS*0.6);                 // rayon d'un nucléon
+const zoomPts = [];
+(function(){
+  const ga=Math.PI*(3-Math.sqrt(5)), r=rng(Z*31+A*7+5);
+  const kinds=[]; for(let i=0;i<Z;i++) kinds.push("p"); for(let i=0;i<N;i++) kinds.push("n");
+  for(let i=kinds.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [kinds[i],kinds[j]]=[kinds[j],kinds[i]]; }
+  for(let i=0;i<NTOT;i++){
+    const rad=ZS*Math.sqrt(i+0.5), a=i*ga+0.4;
+    zoomPts.push({k:kinds[i], x:rad*Math.cos(a), y:rad*Math.sin(a), ph:r()*6.28, f:0.8+0.6*r()});
+  }
+})();
+const LENS = 190;
+/* paires de nucléons voisins : liaisons + échanges (interaction forte) */
+const zoomPairs = [];
+(function(){
+  const r=rng(Z*53+A*11+3);
+  for(let i=0;i<zoomPts.length;i++) for(let j=i+1;j<zoomPts.length;j++){
+    const d=Math.hypot(zoomPts[i].x-zoomPts[j].x, zoomPts[i].y-zoomPts[j].y);
+    if(d < ZS*1.85) zoomPairs.push({i, j, ph:r()*20, per:3+r()*5, dir:r()<0.5, pp:r()*6.28});
+  }
+})();
+const ZGAP = ZS*1.546 - 2*ZR;                   // écart mini entre deux nucléons
+const ZAMP = Math.min(3.5, ZGAP*0.3);           // vibration < demi-écart : jamais de chevauchement
+let zoom = 0, zoomTarget = 0;     // 0 fermé → 1 ouvert
+
+function drawZoom(t){
+  if(zoom<=0.001) return;
+  const e = zoom*zoom*(3-2*zoom);
+  ctx.save();
+  ctx.globalAlpha = e;
+  ctx.fillStyle="rgba(6,12,22,0.82)"; ctx.fillRect(0,0,W,H);
+  ctx.translate(CX,CY); ctx.scale(0.3+0.7*e, 0.3+0.7*e);
+  const g=ctx.createRadialGradient(0,0,0,0,0,LENS);
+  g.addColorStop(0,"#1a3150"); g.addColorStop(1,"#0f1e33");
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,LENS,0,7); ctx.fill();
+  ctx.strokeStyle="#6f9fd0"; ctx.lineWidth=3; ctx.stroke();
+  // positions courantes (vibration)
+  const pos = zoomPts.map(u=>[
+    u.x + (MV ? ZAMP*Math.sin(t*2.1*u.f+u.ph) : 0),
+    u.y + (MV ? ZAMP*Math.cos(t*1.7*u.f+u.ph*1.3) : 0)]);
+  // liaisons : traits fins qui respirent lentement
+  ctx.lineCap="round";
+  for(const q of zoomPairs){
+    const [x1,y1]=pos[q.i], [x2,y2]=pos[q.j];
+    const al = 0.07 + 0.09*(0.5+0.5*Math.sin(t*0.9+q.pp));
+    ctx.strokeStyle=`rgba(255,226,160,${al})`; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  }
+  // échanges : petite lueur qui voyage d'un nucléon à son voisin, de temps en temps
+  const DUR=0.7;
+  for(const q of zoomPairs){
+    const c=((t+q.ph)%q.per);
+    if(c>DUR) continue;
+    const k=c/DUR, s0=k*k*(3-2*k);
+    const [a,b] = q.dir ? [pos[q.i],pos[q.j]] : [pos[q.j],pos[q.i]];
+    const fade=Math.sin(Math.PI*k);
+    for(let m=0;m<5;m++){
+      const sm=Math.max(0,s0-m*0.06);
+      const x=a[0]+(b[0]-a[0])*sm, y=a[1]+(b[1]-a[1])*sm;
+      ctx.fillStyle=`rgba(255,236,180,${0.75*fade*(1-m/5)})`;
+      ctx.beginPath(); ctx.arc(x,y,3*(1-m/7),0,7); ctx.fill();
+    }
+    // léger éclat sur le nucléon d'arrivée
+    if(k>0.8){
+      const g=ctx.createRadialGradient(b[0],b[1],0,b[0],b[1],ZR*1.6);
+      g.addColorStop(0,`rgba(255,236,180,${0.25*(k-0.8)/0.2})`); g.addColorStop(1,"rgba(255,236,180,0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(b[0],b[1],ZR*1.6,0,7); ctx.fill();
+    }
+  }
+  // nucléons
+  zoomPts.forEach((u,i)=>{
+    const [x,y]=pos[i];
+    if(u.k==="p") ball(x,y,ZR,C.p,C.pHi); else ball(x,y,ZR,C.n,C.nHi);
+  });
+  ctx.restore();
+  // légende
+  ctx.save(); ctx.globalAlpha=e;
+  ctx.font="500 17px system-ui,sans-serif"; ctx.textBaseline="middle"; ctx.textAlign="left";
+  const LY2=472, items=[[C.p,C.pHi,"charge +"],[C.n,C.nHi,"neutre"]];
+  const wTxt=items.map(it=>ctx.measureText(it[2]).width);
+  const tot=items.length*26 + wTxt.reduce((a,b)=>a+b,0) + 40;
+  let x0=(W-tot)/2;
+  items.forEach((it,i)=>{
+    ball(x0+9,LY2,9,it[0],it[1]);
+    ctx.fillStyle="#e8eef7"; ctx.fillText(it[2], x0+26, LY2+1);
+    x0 += 26 + wTxt[i] + 40;
+  });
+  ctx.restore();
+  // bouton fermer
+  ctx.save(); ctx.globalAlpha=e;
+  ctx.fillStyle="rgba(15,30,52,0.95)"; ctx.strokeStyle="#6f9fd0"; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.arc(W-32,32,15,0,7); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle="#e8eef7"; ctx.lineWidth=2.4; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(W-38,26); ctx.lineTo(W-26,38); ctx.moveTo(W-26,26); ctx.lineTo(W-38,38); ctx.stroke();
+  ctx.restore();
+}
+
+/* interactions */
+let hover=false;
+function toCanvas(ev){
+  const r=cv.getBoundingClientRect();
+  return [(ev.clientX-r.left)*W/r.width, (ev.clientY-r.top)*H/r.height];
+}
+function onNucleus(x,y){
+  return Math.hypot(x-CX,y-CY) < RNUC+6 || Math.hypot(x-LX,y-LY) < LR+6;
+}
+cv.addEventListener("click",ev=>{
+  if(!LOUPE) return;
+  const [x,y]=toCanvas(ev);
+  if(zoomTarget===1) zoomTarget=0;          // clic n'importe où (ou sur ×) : fermer
+  else if(onNucleus(x,y)) zoomTarget=1;
+});
+cv.addEventListener("mousemove",ev=>{
+  if(!LOUPE) return;
+  const [x,y]=toCanvas(ev);
+  hover = zoomTarget===0 && onNucleus(x,y);
+  cv.style.cursor = (zoomTarget===1 || hover) ? "pointer" : "default";
+});
+
+function drawShells(t){
+  ctx.strokeStyle=C.shell; ctx.lineWidth=1.4;
+  for(const r of shellR){ ctx.beginPath(); ctx.arc(CX,CY,r,0,7); ctx.stroke(); }
+  if(!ELE) return;
+  SH.forEach((n,i)=>{
+    const r=shellR[i], w=0.35/(i+1);
+    for(let k=0;k<n;k++){
+      const a = (n===2 && i>0 ? k*Math.PI : k*2*Math.PI/n) + t*w + i*0.7;
+      // traînée
+      for(let s=1;s<=10;s++){
+        const aa=a-s*0.012;
+        ctx.fillStyle=`rgba(95,195,255,${0.35*(1-s/10)})`;
+        ctx.beginPath(); ctx.arc(CX+r*Math.cos(aa),CY+r*Math.sin(aa),4.2*(1-s/14),0,7); ctx.fill();
+      }
+      const x=CX+r*Math.cos(a), y=CY+r*Math.sin(a);
+      const g=ctx.createRadialGradient(x,y,0,x,y,14);
+      g.addColorStop(0,C.eGlow); g.addColorStop(1,"rgba(95,195,255,0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,14,0,7); ctx.fill();
+      ball(x,y,5.2,C.e,"#dff4ff");
+    }
+  });
+}
+
+let t0=performance.now(), last=t0;
+function frame(now){
+  const t = MV ? (now-t0)/1000 : 0.8;
+  const dt = Math.min(0.05,(now-last)/1000); last=now;
+  zoom += Math.sign(zoomTarget-zoom)*Math.min(Math.abs(zoomTarget-zoom), dt*4);
+  ctx.clearRect(0,0,W,H);
+  drawCard(t);
+  drawShells(t);
+  drawNucleus(t);
+  if(LOUPE && zoom<0.5) drawLoupeIcon(t, hover);
+  drawZoom(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
