@@ -56,13 +56,15 @@ var rnd = mulberry(SEED);
 var rndShuffle = mulberry(SEED ^ 0x5bd1e995);
 
 /* ---------- Grille A x B ---------- */
-/* formats possibles : A colonnes (A ≠ x pour ne pas donner les paquets ligne par ligne) */
+/* formats possibles : A colonnes, B lignes, avec A et B non multiples de x (sinon les paquets se lisent directement) */
 var GRIDS = [];
 (function(){
   var s = Math.sqrt(N), a0 = Math.max(2, Math.floor(s*0.8)), a1 = Math.max(a0, Math.ceil(s*1.8));
   for(var a=a0; a<=a1; a++){
     var b = Math.ceil(N/a);
-    if(a === X || b < 2) continue;
+    if(b < 2) continue;
+    if(N % a === 0) continue;                                    /* dernière ligne toujours incomplète */
+    if(X > 0 && (a % X === 0 || b % X === 0)) continue;
     GRIDS.push([a,b]);
   }
   if(!GRIDS.length){ var a = Math.ceil(s); GRIDS.push([a, Math.ceil(N/a)]); }
@@ -99,6 +101,64 @@ function layout(){
   GRIDS.forEach(function(g){ cell = Math.min(cell, (tray.w-2*pad)/g[0], (tray.h-2*pad)/g[1]); });
   R = Math.max(3.5, Math.min(26, cell*0.43));
   trayPath = wobblyRect(tray.x, tray.y, tray.w, tray.h, 16, 2.2, 101);
+  makeWood();
+}
+
+/* ---------- Table en bois verni (pré-rendue hors écran) ---------- */
+var wood = null;
+function makeWood(){
+  var w = Math.ceil(tray.w), h = Math.ceil(tray.h);
+  wood = document.createElement("canvas");
+  wood.width = Math.round(w*DPR); wood.height = Math.round(h*DPR);
+  var c = wood.getContext("2d"); c.setTransform(DPR,0,0,DPR,0,0);
+  var r = mulberry(4242);
+  var tones = ["#9c5a2a","#a6642f","#93542a","#a86b36","#8f5126"];
+  var nP = Math.max(4, Math.round(h/90)), ph = h/nP;
+  for(var p=0;p<nP;p++){
+    var y0 = p*ph;
+    c.fillStyle = tones[Math.floor(r()*tones.length)];
+    c.fillRect(0, y0, w, ph+1);
+    /* veinage */
+    c.save(); c.beginPath(); c.rect(0,y0,w,ph); c.clip();
+    var nG = Math.round(ph/3.2);
+    for(var g=0; g<nG; g++){
+      var gy = y0 + r()*ph, amp = 1+r()*4, f = 0.004+r()*0.01, phs = r()*6.28;
+      c.strokeStyle = r()<0.5 ? "rgba(60,25,8,"+(0.12+r()*0.25)+")" : "rgba(200,140,80,"+(0.08+r()*0.15)+")";
+      c.lineWidth = 0.5 + r()*1.6;
+      c.beginPath();
+      for(var x=0; x<=w; x+=8){
+        var yy = gy + Math.sin(x*f+phs)*amp + Math.sin(x*f*3.1+phs*2)*amp*0.3;
+        if(x===0) c.moveTo(x,yy); else c.lineTo(x,yy);
+      }
+      c.stroke();
+    }
+    /* nœud de temps en temps */
+    if(r()<0.55){
+      var kx = r()*w, ky = y0 + ph*(0.3+r()*0.4), kr = 5+r()*9;
+      for(var k=0;k<5;k++){
+        c.strokeStyle = "rgba(55,22,6,"+(0.35-k*0.05)+")"; c.lineWidth = 1.2;
+        c.beginPath(); c.ellipse(kx, ky, kr*(1+k*0.9)*1.8, kr*(1+k*0.6)*0.45, 0, 0, Math.PI*2); c.stroke();
+      }
+      c.fillStyle = "rgba(55,22,6,0.55)";
+      c.beginPath(); c.ellipse(kx, ky, kr*1.5, kr*0.35, 0, 0, Math.PI*2); c.fill();
+    }
+    c.restore();
+    /* joint entre planches */
+    if(p>0){ c.strokeStyle = "rgba(40,15,4,0.7)"; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(0,y0); c.lineTo(w,y0); c.stroke();
+      c.strokeStyle = "rgba(255,210,160,0.18)"; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(0,y0+1.5); c.lineTo(w,y0+1.5); c.stroke(); }
+  }
+  /* vernis : reflet doux */
+  var gr = c.createLinearGradient(0,0,w,h);
+  gr.addColorStop(0, "rgba(255,240,220,0.20)");
+  gr.addColorStop(0.35, "rgba(255,240,220,0.04)");
+  gr.addColorStop(0.6, "rgba(255,240,220,0.0)");
+  gr.addColorStop(1, "rgba(0,0,0,0.12)");
+  c.fillStyle = gr; c.fillRect(0,0,w,h);
+  var gl = c.createLinearGradient(0, h*0.15, 0, h*0.32);
+  gl.addColorStop(0,"rgba(255,255,255,0)"); gl.addColorStop(0.5,"rgba(255,255,255,0.07)"); gl.addColorStop(1,"rgba(255,255,255,0)");
+  c.fillStyle = gl; c.fillRect(0,0,w,h);
 }
 
 /* ---------- Tracés "crayonnés" (bruit figé, pas de tremblement à chaque frame) ---------- */
@@ -202,7 +262,7 @@ function drawMarble(m, px, py, lifted){
   var r = R*(lifted?1.12:1);
   ctx.save(); ctx.translate(px,py);
   /* ombre crayonnée */
-  ctx.fillStyle = "rgba(0,0,0,0.10)";
+  ctx.fillStyle = "rgba(25,8,0,0.35)";
   ctx.beginPath(); ctx.ellipse(r*0.18, r*0.92, r*0.8, r*0.22, 0, 0, Math.PI*2); ctx.fill();
   /* contour légèrement irrégulier */
   ctx.beginPath();
@@ -268,6 +328,12 @@ function drawHeader(){
 function draw(){
   ctx.clearRect(0,0,W,H);
   drawHeader();
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(trayPath[0][0], trayPath[0][1]);
+  for(var t=1;t<trayPath.length;t++) ctx.lineTo(trayPath[t][0], trayPath[t][1]);
+  ctx.closePath(); ctx.clip();
+  if(wood) ctx.drawImage(wood, tray.x, tray.y, tray.w, tray.h);
+  ctx.restore();
   ctx.strokeStyle = "#222"; ctx.lineWidth = 2.2; ctx.lineJoin = "round";
   strokePts(trayPath, true);
   for(var i=0;i<marbles.length;i++){
