@@ -67,6 +67,14 @@ table.recap th{background:var(--blue-l)!important}
 .tools .btn{padding:5px 13px;font-size:16px}
 .tools .sp{flex:1}
 #cv{display:block;width:100%;height:390px;border:2px dashed #999;border-radius:12px;background:transparent;touch-action:none;cursor:default}
+#modal{position:fixed;inset:0;background:rgba(29,29,31,.35);display:none;align-items:center;justify-content:center;z-index:50}
+#modal.on{display:flex;animation:fadein .2s ease-out}
+#modal .box{max-width:440px;margin:16px;background:#fffef9;border:3px solid var(--ink);border-radius:var(--wob);padding:18px 22px;
+  box-shadow:6px 6px 0 rgba(0,0,0,.18);text-align:center;font-size:18px;line-height:1.4;animation:popin .35s cubic-bezier(.34,1.56,.64,1)}
+#modal .box .ico{font-size:34px;display:block;margin-bottom:6px}
+#modal .box .btn{margin-top:14px;min-width:90px}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+@keyframes popin{from{transform:scale(.6) rotate(-4deg);opacity:0}to{transform:scale(1) rotate(0);opacity:1}}
 #codes{margin-top:10px;border:2.5px solid var(--ink);border-radius:var(--wob2);padding:10px 14px;background:rgba(240,246,255,.85);display:none}
 #codes.on{display:block}
 #codes .c{font-family:Consolas,"Courier New",monospace;font-size:20px;letter-spacing:1px;user-select:all;-webkit-user-select:all;background:#fff;border:1.5px solid #999;border-radius:6px;padding:2px 8px}
@@ -116,6 +124,8 @@ table.recap th{background:var(--blue-l)!important}
       <button class="btn main" id="done">Terminé</button>
     </div>
     <canvas id="cv"></canvas>
+    <div id="modal"><div class="box"><span class="ico">🤦</span><div id="modalMsg"></div>
+      <button class="btn main" id="modalOk">OK</button></div></div>
     <div id="codes">
       <div class="row">Code-A : <span class="c" id="cA"></span></div>
       <div class="row">Code-L : <span class="c" id="cL"></span></div>
@@ -690,6 +700,31 @@ document.getElementById("export").onclick = function(){
 
 // ---------- rearrangement (angles propres + recentrage anime) ----------
 var tween = null;
+// filet de securite : ecarte les atomes non lies trop proches, garde les longueurs de liaison
+function relax(pos, memb, adj){
+  var MIN = 0.85 * BOND_LEN;
+  function overlap(){
+    for (var p = 0; p < memb.length; p++) for (var q = p + 1; q < memb.length; q++){
+      var i = memb[p], j = memb[q];
+      if (adj[i].indexOf(j) < 0 && Math.hypot(pos[i][0] - pos[j][0], pos[i][1] - pos[j][1]) < MIN) return true;
+    }
+    return false;
+  }
+  if (!overlap()) return;
+  for (var it = 0; it < 400; it++){
+    memb.forEach(function(i){ memb.forEach(function(j){
+      if (j <= i) return;
+      var dx = pos[j][0] - pos[i][0], dy = pos[j][1] - pos[i][1], d = Math.hypot(dx, dy) || 0.01;
+      if (!d) { dx = 0.01; dy = 0.01; d = 0.014; }
+      var bonded = adj[i].indexOf(j) >= 0, f = 0;
+      if (bonded) f = (d - BOND_LEN) * 0.5;
+      else if (d < MIN * 1.15) f = -(MIN * 1.15 - d) * 0.25;
+      if (f){ var ux = dx / d * f, uy = dy / d * f;
+        pos[i][0] += ux; pos[i][1] += uy; pos[j][0] -= ux; pos[j][1] -= uy; }
+    }); });
+    if (it > 40 && !overlap()) break;
+  }
+}
 function computeArrangement(){
   var n = atoms.length, adj = atoms.map(function(){ return []; });
   bonds.forEach(function(b){ adj[b.a].push(b.b); adj[b.b].push(b.a); });
@@ -720,17 +755,43 @@ function computeArrangement(){
       if (par >= 0){
         // atome avec doublets non liants (O, N...) : geometrie coudee, sinon dans le prolongement
         var bent = atoms[u].dnl > 0;
+        // a egalite d'angle : le cote le plus degage (zigzag plutot que repli en U)
+        var room = function(ang){
+          var x = pos[u][0] + Math.cos(ang) * BOND_LEN, y = pos[u][1] + Math.sin(ang) * BOND_LEN, sm = 0;
+          for (var q in pos){ if (+q === u) continue; sm += Math.min(3 * BOND_LEN, Math.hypot(pos[q][0] - x, pos[q][1] - y)); }
+          return sm;
+        };
         cand.sort(function(p, q){
           var d = bent ? angDist(q, ahead) - angDist(p, ahead) : angDist(p, ahead) - angDist(q, ahead);
-          return Math.abs(d) > 1e-6 ? d : (Math.sin(q) - Math.sin(p));
+          if (Math.abs(d) > 1e-6) return d;
+          var r = room(q) - room(p);
+          return Math.abs(r) > 1e-6 ? r : (Math.sin(q) - Math.sin(p));
         });
       }
-      kids.forEach(function(v, idx){
-        var ang = cand[idx % cand.length] + (idx >= cand.length ? 0.35 : 0);
+      var free = cand.slice();
+      kids.forEach(function(v){
+        // 1) premiere direction "propre" qui ne tombe sur aucun atome deja place
+        // 2) sinon : la direction (propre ou decalee) la plus degagee
+        function clear(ang){
+          var x = pos[u][0] + Math.cos(ang) * BOND_LEN, y = pos[u][1] + Math.sin(ang) * BOND_LEN, md = 1e9;
+          for (var q in pos){ if (+q === u) continue; md = Math.min(md, Math.hypot(pos[q][0] - x, pos[q][1] - y)); }
+          return md;
+        }
+        var ang = null, k;
+        for (k = 0; k < free.length; k++) if (clear(free[k]) >= 0.9 * BOND_LEN){ ang = free[k]; free.splice(k, 1); break; }
+        if (ang === null){
+          var base = free.length ? free : cand, best = -1, bi = 0;
+          [0, 0.52, -0.52, 0.79, -0.79, 1.05, -1.05].forEach(function(off){
+            base.forEach(function(c, ci){ var cl = clear(c + off) - Math.abs(off) * 5;
+              if (cl > best){ best = cl; ang = c + off; bi = ci; } });
+          });
+          if (free.length) free.splice(bi, 1);
+        }
         pos[v] = [pos[u][0] + Math.cos(ang) * BOND_LEN, pos[u][1] + Math.sin(ang) * BOND_LEN];
         queue.push([v, u, ang + Math.PI]);
       });
     }
+    relax(pos, memb, adj);
     var xs = memb.map(function(i){ return pos[i][0]; }), ys = memb.map(function(i){ return pos[i][1]; });
     comps.push({ memb:memb, pos:pos, x0:Math.min.apply(null, xs), x1:Math.max.apply(null, xs),
                  y0:Math.min.apply(null, ys), y1:Math.max.apply(null, ys) });
@@ -780,7 +841,17 @@ document.getElementById("done").onclick = function(){
   document.getElementById("cA").textContent = A;
   document.getElementById("cL").textContent = L;
   var c = document.getElementById("codes"); c.classList.add("on"); c.classList.remove("stale");
+  // plusieurs morceaux separes au lieu d'une seule molecule
+  var seen = [], nb = 0;
+  atoms.forEach(function(a, i){ if (seen.indexOf(i) < 0){ nb++; fragment(i).forEach(function(k){ seen.push(k); }); } });
+  if (nb > 1){
+    document.getElementById("modalMsg").textContent =
+      "Bien entendu, c'est faux : on demande de construire une seule molécule et à la fin il y en a " + nb +
+      ". Bref, l'espoir fait vivre.";
+    document.getElementById("modal").classList.add("on");
+  }
 };
+document.getElementById("modalOk").onclick = function(){ document.getElementById("modal").classList.remove("on"); };
 
 show(0);
 </script>
