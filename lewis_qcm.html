@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lewis QCM</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#ffffff; --ink:#1f2933; --muted:#6b7785;
+    --line:#d5dbe3; --blue:#1f5fa8; --blue-soft:#e6eef8;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+  #wrap{max-width:900px;margin:0 auto;padding:12px 16px}
+  #q{font-size:16px;font-weight:600;margin:4px 0 12px;color:var(--blue)}
+  #grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .card{background:var(--card);border:2px solid var(--line);border-radius:10px;
+    position:relative;cursor:pointer;user-select:none;transition:border-color .15s,box-shadow .15s}
+  .card:hover{border-color:#a9bcd4}
+  .card.sel{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+  .lab{position:absolute;top:6px;left:8px;width:26px;height:26px;border-radius:50%;
+    background:var(--blue-soft);color:var(--blue);font-weight:700;font-size:14px;
+    display:flex;align-items:center;justify-content:center}
+  .card.sel .lab{background:var(--blue);color:#fff}
+  canvas{display:block;width:100%;height:220px}
+  #err{color:#b3261e;font-size:14px;display:none;margin-top:8px}
+  #codebar{margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:15px}
+  #code{font-family:ui-monospace,Consolas,monospace;font-size:18px;font-weight:700;letter-spacing:1px;
+    color:var(--blue);user-select:all;-webkit-user-select:all;min-width:110px}
+  #copy{border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:6px;
+    padding:5px 12px;font-size:14px;cursor:pointer}
+  #copy:disabled{background:#c9d3df;border-color:#c9d3df;cursor:default}
+  @media (max-width:560px){ #grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="q"></div>
+  <div id="grid"></div>
+  <div id="codebar"><span>Code à recopier :</span><span id="code">—</span><button id="copy" disabled>Copier</button></div>
+  <div id="err"></div>
+</div>
+<script>
+(function(){
+"use strict";
+
+/* ===================== Paramètres ===================== */
+const KEY = "Lewis4Choix-PB";           // clé XOR propre à cette animation
+const LETTERS = ["1","2","3","4"];
+
+// Éthanol par défaut
+const DEFAULT = {
+  a:[["C",0,0],["C",1,0],["O",2,0],["H",-1,0],["H",0,-1],["H",0,1],["H",1,-1],["H",1,1],["H",3,0]],
+  b:[[0,1,1],[1,2,1],[0,3,1],[0,4,1],[0,5,1],[1,6,1],[1,7,1],[2,8,1]],
+  d:[0,0,2,0,0,0,0,0,0],
+  s:12345, k:2, mx:1
+};
+
+function decodeP(s){
+  s = s.replace(/-/g,"+").replace(/_/g,"/");
+  while(s.length%4) s+="=";
+  const bin = atob(s), u = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i) ^ KEY.charCodeAt(i%KEY.length);
+  return JSON.parse(new TextDecoder().decode(u));
+}
+
+function readParams(){
+  const q = new URLSearchParams(location.search);
+  let P = JSON.parse(JSON.stringify(DEFAULT));
+  try{ if(q.get("p")) P = Object.assign({}, DEFAULT, decodeP(q.get("p"))); }
+  catch(e){ showErr("Paramètre p illisible."); }
+  // paramètres en clair prioritaires (tests locaux)
+  try{ if(q.get("f")) P = Object.assign({}, DEFAULT, {c:undefined}, JSON.parse(q.get("f"))); }
+  catch(e){ showErr("Paramètre f illisible (JSON)."); }
+  ["s","k","mx"].forEach(x=>{ if(q.get(x)!==null) P[x] = parseInt(q.get(x),10); });
+  if(!P.c) P.c = P.a.map(()=>0);
+  if(!P.d) P.d = P.a.map(()=>0);
+  P.k = ((P.k|0)%4+4)%4;
+  return P;
+}
+function showErr(m){ const e=document.getElementById("err"); e.textContent=m; e.style.display="block"; }
+
+/* ===================== Code de vérification ===================== */
+function hash6(str){
+  let h = 2166136261>>>0;
+  for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h,16777619)>>>0; }
+  return h.toString(36).toUpperCase().padStart(6,"0").slice(0,6);
+}
+const codeOf = (st,seed) => "L-" + hash6(String(seed|0) + "|" + keyOf(st));
+
+/* ===================== PRNG ===================== */
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function shuffle(arr,rng){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
+
+/* ===================== Structure ===================== */
+function clone(st){ return {a:st.a, b:st.b.map(x=>x.slice()), d:st.d.slice(), c:st.c.slice()}; }
+function keyOf(st){ return JSON.stringify([st.b.map(x=>x[2]), st.d, st.c]); }
+function bondSum(st,i){ let s=0; st.b.forEach(([x,y,o])=>{ if(x===i||y===i) s+=o; }); return s; }
+const isH = (st,i)=> st.a[i][0]==="H";
+
+// Nombre de côtés libres (haut, bas, gauche, droite) autour d'un atome : aucune liaison à moins de 40°
+function freeSides(st,i){
+  const [_,xi,yi]=st.a[i], occ=[];
+  st.b.forEach(([x,y])=>{ if(x===i||y===i){ const j=x===i?y:x;
+    occ.push(Math.atan2(st.a[j][2]-yi, st.a[j][1]-xi)*180/Math.PI); }});
+  return [-90,90,0,180].filter(c=>!occ.some(o=>angDist(c,o)<40)).length;
+}
+
+function makeValidator(orig){
+  const n = orig.a.length;
+  const maxB = [], maxD = [], maxN = [];
+  for(let i=0;i<n;i++){
+    maxB[i] = Math.max(5, bondSum(orig,i));               // 5 liaisons max (ex : C=C dans l'éthanol)
+    maxD[i] = Math.max(5, bondSum(orig,i)+orig.d[i]);     // au plus une 5e paire...
+    maxN[i] = Math.max(freeSides(orig,i), orig.d[i]);     // ...et seulement s'il reste un côté libre
+  }
+  return function(st){
+    for(let i=0;i<n;i++){
+      if(st.d[i]<0) return false;
+      if(isH(st,i) && (st.d[i]>orig.d[i]+1 || st.d[i]<orig.d[i] || bondSum(st,i)!==bondSum(orig,i))) return false;
+      if(bondSum(st,i)>maxB[i]) return false;
+      if(bondSum(st,i)+st.d[i]>maxD[i]) return false;
+      if(st.d[i]>maxN[i]) return false;
+      if(st.c[i]!==orig.c[i]) return false;
+    }
+    return true;
+  };
+}
+
+// Mutations élémentaires (aucune ne touche H)
+function candidates(st){
+  const n = st.a.length, heavy=[], L=[];
+  for(let i=0;i<n;i++) if(!isH(st,i)) heavy.push(i);
+  for(let i=0;i<n;i++) if(isH(st,i) && st.d[i]===0) L.push({k:"add",i});   // doublet sur un H
+  heavy.forEach(i=>{
+    if(st.d[i]>0) L.push({k:"rm",i});
+    if(st.d[i]<4) L.push({k:"add",i});
+    heavy.forEach(j=>{ if(j!==i && st.d[i]>0) L.push({k:"mv",i,j}); });
+  });
+  st.b.forEach((bd,bi)=>{
+    const [x,y,o]=bd;
+    if(isH(st,x)||isH(st,y)) return;
+    if(o>1){ L.push({k:"b-",bi,t:x}); L.push({k:"b-",bi,t:y}); }
+    if(o<3){ L.push({k:"b+",bi,t:-1}); heavy.forEach(t=>{ if(st.d[t]>0) L.push({k:"b+",bi,t}); }); }
+  });
+  // les charges ne sont jamais modifiées : molécule = aucune charge, ion = la bonne charge
+  return L;
+}
+function applyM(m,st){
+  const s = clone(st);
+  switch(m.k){
+    case "rm":  if(s.d[m.i]<=0) return null; s.d[m.i]--; break;
+    case "add": s.d[m.i]++; break;
+    case "mv":  if(s.d[m.i]<=0) return null; s.d[m.i]--; s.d[m.j]++; break;
+    case "b-":  if(s.b[m.bi][2]<=1) return null; s.b[m.bi][2]--; s.d[m.t]++; break;
+    case "b+":  if(s.b[m.bi][2]>=3||(m.t>=0&&s.d[m.t]<=0)) return null; s.b[m.bi][2]++; if(m.t>=0) s.d[m.t]--; break;
+  }
+  return s;
+}
+const family = k => ({"rm":"nb","add":"nb","mv":"mv","b-":"bo","b+":"bo"})[k];
+
+function makeDistractors(orig, seed, mix){
+  for(let tier=0;tier<=2;tier++){
+    const r = pickDistractors(orig, mulberry32((seed|0) ^ 0x5EED1234), mix, tier);
+    if(r.length>=3 || tier===2) return r;
+  }
+}
+function pickDistractors(orig, rng, mix, tier){
+  const valid = makeValidator(orig);
+  const ok0 = keyOf(orig);
+  // pool : mutations simples puis composées (2 erreurs), ordre pseudo-aléatoire
+  const singles = shuffle(candidates(orig), rng)
+    .map(m=>({fams:[family(m.k)], n:1, st:applyM(m,orig), m}))
+    .filter(x=>x.st && valid(x.st));
+  const pool=[], seen=new Set([ok0]);
+  const push = x => { const k=keyOf(x.st); if(seen.has(k)) return; seen.add(k); x.key=k; pool.push(x); };
+  singles.forEach(push);
+  if(mix){
+    const comp=[];
+    singles.forEach(x=>singles.forEach(y=>{
+      const st=applyM(y.m,x.st);
+      if(st && valid(st)) comp.push({fams:[...x.fams,...y.fams], n:2, st});
+    }));
+    shuffle(comp,rng).slice(0,60).forEach(push);
+  }
+  const P = pool.slice(0,48);
+  // caractéristiques comparées : doublets, charges, ordres de liaison
+  const feat = st => st.d.concat(st.c, st.b.map(x=>x[2]));
+  const F0 = feat(orig);
+  const F = P.map(x=>feat(x.st));
+  let best=null, bs=-1e9;
+  for(let i=0;i<P.length;i++) for(let j=i+1;j<P.length;j++) for(let k=j+1;k<P.length;k++){
+    // anti-consensus : aucun atome/liaison modifié dans les 3 fausses
+    let worst=0;
+    for(let f=0;f<F0.length;f++){
+      const c=(F[i][f]!==F0[f])+(F[j][f]!==F0[f])+(F[k][f]!==F0[f]);
+      if(c>worst) worst=c;
+    }
+    const fam=new Set([...P[i].fams,...P[j].fams,...P[k].fams]).size;
+    const nc=P[i].n+P[j].n+P[k].n-3;
+    const sc=(worst<3?1000:0) + fam*10 - nc*3;
+    if(sc>bs){ bs=sc; best=[P[i].st,P[j].st,P[k].st]; }
+  }
+  if(best) return best;
+  return P.slice(0,3).map(x=>x.st);
+}
+
+/* ===================== Dessin ===================== */
+const DIRS = [-90,90,0,180,-45,-135,45,135];  // ordre de préférence (cardinales d'abord)
+function angDist(a,b){ let d=Math.abs(a-b)%360; return d>180?360-d:d; }
+
+function layoutSlots(st,i,nSlots){
+  const [_,xi,yi] = st.a[i], occ=[];
+  st.b.forEach(([x,y])=>{
+    if(x===i||y===i){ const j=x===i?y:x; const [__,xj,yj]=st.a[j];
+      occ.push(Math.atan2(yj-yi,xj-xi)*180/Math.PI); }
+  });
+  const res=[];
+  for(let s=0;s<nSlots;s++){
+    let best=null,bd=-1;
+    DIRS.forEach(a=>{
+      if(res.includes(a)) return;
+      const all=occ.concat(res);
+      const md = all.length? Math.min(...all.map(o=>angDist(a,o))) : 360;
+      if(md>bd+1e-6){ bd=md; best=a; }
+    });
+    res.push(best);
+  }
+  return res;
+}
+
+function draw(cv, st){
+  const dpr = window.devicePixelRatio||1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+  const g = cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,W,H);
+  const xs=st.a.map(a=>a[1]), ys=st.a.map(a=>a[2]);
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  const u = Math.min(W/(x1-x0+1.4), (H-10)/(y1-y0+1.4), 70);
+  const fs = Math.max(13, Math.min(24, u*0.42));
+  const cx = W/2 - (x0+x1)/2*u, cy = H/2 + 4 - (y0+y1)/2*u;
+  const P = i => [cx+st.a[i][1]*u, cy+st.a[i][2]*u];
+  const ink = "#1f2933";
+  g.strokeStyle=ink; g.fillStyle=ink; g.lineCap="round"; g.lineWidth=Math.max(1.6,fs*0.09);
+
+  // liaisons
+  g.font = `600 ${fs}px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif`;
+  const HW = st.a.map(a=>g.measureText(a[0]).width/2), HH = fs*0.40;
+  const rad = (i,ux,uy,pad) => HW[i]*Math.abs(ux) + HH*Math.abs(uy) + pad;   // rayon « boîte » de l'étiquette
+  const gap = fs*0.22;
+  st.b.forEach(([i,j,o])=>{
+    const [xa,ya]=P(i), [xb,yb]=P(j);
+    const L=Math.hypot(xb-xa,yb-ya), ux=(xb-xa)/L, uy=(yb-ya)/L, nx=-uy, ny=ux;
+    for(let k=0;k<o;k++){
+      const off=(k-(o-1)/2)*gap;
+      g.beginPath();
+      const sa=rad(i,ux,uy,fs*0.16), sb=rad(j,ux,uy,fs*0.16);
+      g.moveTo(xa+ux*sa+nx*off, ya+uy*sa+ny*off);
+      g.lineTo(xb-ux*sb+nx*off, yb-uy*sb+ny*off);
+      g.stroke();
+    }
+  });
+  // atomes
+  g.font = `600 ${fs}px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif`;
+  g.textAlign="center"; g.textBaseline="middle";
+  st.a.forEach((a,i)=>{ const [x,y]=P(i); g.fillText(a[0], x, y+1); });
+  // doublets non liants + charges
+  st.a.forEach((a,i)=>{
+    const nd = st.d[i], q = st.c[i];
+    const slots = layoutSlots(st,i, nd);
+    const [x,y]=P(i), hl=fs*0.30;
+    for(let s=0;s<nd;s++){
+      const t=slots[s]*Math.PI/180, dx=Math.cos(t), dy=Math.sin(t);
+      const r = rad(i,dx,dy,fs*0.24);
+      const mx=x+dx*r, my=y+dy*r;
+      g.beginPath(); g.moveTo(mx-dy*hl, my+dx*hl); g.lineTo(mx+dy*hl, my-dx*hl); g.stroke();
+    }
+    if(q){
+      const occ=[]; st.b.forEach(([u1,v1])=>{ if(u1===i||v1===i){ const j=u1===i?v1:u1;
+        occ.push(Math.atan2(st.a[j][2]-a[2],st.a[j][1]-a[1])*180/Math.PI); }});
+      const ca = occ.some(o=>angDist(o,-45)<30) ? -135 : -45; // position fixe : en haut à droite
+      const t=ca*Math.PI/180, R=fs*1.42;
+      const mx=x+Math.cos(t)*R, my=y+Math.sin(t)*R, rc=fs*0.32;
+      g.save(); g.lineWidth=1.3;
+      g.beginPath(); g.arc(mx,my,rc,0,2*Math.PI); g.stroke();
+      g.beginPath(); g.moveTo(mx-rc*0.55,my); g.lineTo(mx+rc*0.55,my);
+      if(q>0){ g.moveTo(mx,my-rc*0.55); g.lineTo(mx,my+rc*0.55); }
+      g.stroke();
+      if(Math.abs(q)>1){ g.font=`600 ${fs*0.5}px system-ui,sans-serif`; g.fillText(String(Math.abs(q)), mx+rc*1.5, my-rc); }
+      g.restore();
+    }
+  });
+}
+
+/* ===================== Montage ===================== */
+const P = readParams();
+const orig = {a:P.a, b:P.b.map(x=>x.slice()), d:P.d.slice(), c:P.c.slice()};
+const rng = mulberry32((P.s|0) ^ 0x5EED1234);
+const D = makeDistractors(orig, P.s, P.mx!==0);
+if(D.length<3) showErr("Impossible de générer 3 représentations fausses pour cette entité.");
+
+const order = shuffle(D.slice(), rng);
+const panels = [];
+let di=0;
+for(let s=0;s<4;s++) panels.push(s===P.k ? orig : (order[di++]||null));
+
+const qt = "Quel schéma de Lewis est correct ?";
+document.getElementById("q").textContent = qt;
+
+const grid = document.getElementById("grid"), canv=[];
+panels.forEach((st,s)=>{
+  if(!st) return;
+  const c=document.createElement("div"); c.className="card";
+  c.innerHTML = `<div class="lab">${LETTERS[s]}</div>`;
+  const cv=document.createElement("canvas"); c.appendChild(cv); grid.appendChild(c);
+  canv.push([cv,st]);
+  const code = codeOf(st, P.s);
+  c.addEventListener("click",()=>{
+    document.querySelectorAll(".card").forEach(e=>e.classList.remove("sel"));
+    c.classList.add("sel");
+    document.getElementById("code").textContent = code;
+    const bt=document.getElementById("copy"); bt.disabled=false; bt.textContent="Copier";
+  });
+});
+document.getElementById("copy").addEventListener("click",()=>{
+  const t=document.getElementById("code").textContent, bt=document.getElementById("copy");
+  const done=()=>{ bt.textContent="Copié ✓"; };
+  const fallback=()=>{ const r=document.createRange(); r.selectNodeContents(document.getElementById("code"));
+    const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    try{ document.execCommand("copy"); done(); }catch(e){ bt.textContent="Ctrl+C"; } };
+  try{ navigator.clipboard.writeText(t).then(done, fallback); }catch(e){ fallback(); }
+});
+const redraw=()=>canv.forEach(([cv,st])=>draw(cv,st));
+window.addEventListener("resize",redraw);
+redraw();
+})();
+</script>
+</body>
+</html>
