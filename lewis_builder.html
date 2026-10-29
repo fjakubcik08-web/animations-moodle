@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lewis Builder</title>
+<style>
+:root{
+  --ink:#1d1d1f; --paper:#fffef9; --blue:#2a6fdb; --blue-l:#e6efff;
+  --grey:#8a8a8a; --ok:#2e8b57; --bad:#c0392b;
+  --wob:255px 15px 225px 15px/15px 225px 15px 255px;
+  --wob2:15px 255px 15px 225px/225px 15px 255px 15px;
+}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);min-height:100vh;
+  /* cahier Seyes : grands carreaux 32px, lignes fines tous les 8px, marge rouge */
+  --sq:32px; --marge:58px;
+  background-color:#fdfdf6;
+  background-image:
+    linear-gradient(90deg, transparent calc(var(--marge) - 1px), #e0525f calc(var(--marge) - 1px), #e0525f calc(var(--marge) + 1px), transparent calc(var(--marge) + 1px)),
+    linear-gradient(90deg, rgba(120,100,190,.42) 1px, transparent 1px),
+    linear-gradient(rgba(120,100,190,.42) 1px, transparent 1px),
+    linear-gradient(rgba(110,150,215,.28) 1px, transparent 1px);
+  background-size:100% 100%, var(--sq) var(--sq), var(--sq) var(--sq), 8px 8px;
+  background-position:0 0, var(--marge) 0, 0 0, 0 0;
+  background-repeat:no-repeat, repeat, repeat, repeat;
+  background-attachment:local;
+  font-family:"Humor Sans","xkcd Script","Comic Neue","Comic Sans MS","Chalkboard SE",cursive;
+  font-size:17px;}
+#app{max-width:900px;margin:0;padding:10px 14px 14px calc(var(--marge) + 14px)}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+h1{font-size:21px;margin:4px 0;font-weight:normal}
+.formula{border:2px solid var(--ink);border-radius:var(--wob);padding:4px 14px;font-size:22px;background:#fff}
+.steps{display:flex;gap:6px;margin:10px 0 12px;flex-wrap:wrap}
+.step{border:2px solid var(--ink);border-radius:var(--wob2);padding:2px 10px;font-size:14px;background:#fff;color:var(--grey);border-color:#bbb}
+.step.on{color:var(--ink);border-color:var(--ink);background:var(--blue-l)}
+.step.done{color:var(--ink);border-color:var(--ink)}
+.page{display:none;border:2.5px solid var(--ink);border-radius:var(--wob);background:transparent;padding:16px 18px;min-height:300px}
+.page.on{display:block}
+.page h2{font-size:20px;font-weight:normal;margin:0 0 14px}
+.row{display:flex;align-items:center;gap:14px;margin:12px 0;flex-wrap:wrap}
+.el{display:inline-block;width:46px;font-size:24px;text-align:center;font-weight:bold}
+.lab{min-width:42px;text-align:right}
+.stepper{display:inline-flex;align-items:center;gap:6px}
+.stepper button{width:34px;height:34px;font:inherit;font-size:20px;line-height:1;background:#fff;border:2px solid var(--ink);border-radius:var(--wob2);cursor:pointer}
+.stepper button:active{background:var(--blue-l)}
+.stepper .v{min-width:38px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:2px solid var(--ink);border-radius:var(--wob);font-size:20px;background:rgba(255,255,255,.8)}
+table.recap{border-collapse:collapse;margin:4px 0 10px}
+table.recap td,table.recap th{border:2px solid var(--ink);padding:6px 14px;text-align:center;font-weight:normal;background:rgba(255,255,255,.75)}
+table.recap th{background:var(--blue-l)!important}
+.note{color:#555;font-size:15px}
+.nav{display:flex;justify-content:space-between;margin-top:12px}
+.btn{font:inherit;font-size:17px;padding:6px 18px;background:#fff;border:2.5px solid var(--ink);border-radius:var(--wob);cursor:pointer}
+.btn:hover{background:var(--blue-l)}
+#arrange .ico{display:inline-block;transition:transform .2s}
+#arrange.busy .ico{animation:spin .8s cubic-bezier(.34,1.56,.64,1)}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+#cv.arranging{animation:glow .9s ease-out}
+@keyframes glow{0%{box-shadow:0 0 0 0 rgba(42,111,219,.0)}30%{box-shadow:0 0 0 6px rgba(42,111,219,.35)}100%{box-shadow:0 0 0 14px rgba(42,111,219,0)}}
+.btn.main{background:var(--blue);color:#fff;border-color:#123d80}
+.btn.main:hover{background:#1f5bbd}
+.btn[hidden]{display:none}
+.tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.tools .note{flex:0 0 100%;font-size:14px;line-height:1.3}
+.tools .btn{padding:5px 13px;font-size:16px}
+.tools .sp{flex:1}
+#cv{display:block;width:100%;height:390px;border:2px dashed #999;border-radius:12px;background:transparent;touch-action:none;cursor:default}
+#codes{margin-top:10px;border:2.5px solid var(--ink);border-radius:var(--wob2);padding:10px 14px;background:rgba(240,246,255,.85);display:none}
+#codes.on{display:block}
+#codes .c{font-family:Consolas,"Courier New",monospace;font-size:20px;letter-spacing:1px;user-select:all;-webkit-user-select:all;background:#fff;border:1.5px solid #999;border-radius:6px;padding:2px 8px}
+#codes .row{margin:6px 0}
+.stale{opacity:.35}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Construis la représentation de Lewis</h1>
+    <div class="formula" id="formula"></div>
+  </header>
+  <div class="steps" id="steps">
+    <span class="step">1 · Atomes</span>
+    <span class="step">2 · Doublets</span>
+    <span class="step">3 · Récapitulatif</span>
+    <span class="step">4 · Construction</span>
+  </div>
+
+  <section class="page" id="p0">
+    <h2>Combien d'atomes de chaque sorte faut-il pour construire la molécule ?</h2>
+    <div id="p0rows"></div>
+  </section>
+
+  <section class="page" id="p1">
+    <h2>Pour chaque atome : combien de doublets liants (DL) et non liants (DnL) ?</h2>
+    <div id="p1rows"></div>
+  </section>
+
+  <section class="page" id="p2">
+    <h2>Récapitulatif de ton paramétrage</h2>
+    <table class="recap" id="recap"></table>
+    <p class="note">Si quelque chose ne va pas, reviens en arrière avec « Précédent ».<br>
+    En cliquant sur « Suivant », tu passes à la construction (modifier ensuite les pages 1-2 effacera ta molécule).</p>
+  </section>
+
+  <section class="page" id="p3">
+    <div class="tools">
+      <span class="note">Rapproche deux atomes : leurs électrons célibataires (points bleus) s'attirent et forment une liaison.
+      Tu peux aussi glisser un électron vers un autre atome (recommence pour une double liaison). Clique sur une liaison pour la retirer.</span>
+      <button class="btn" id="prev2">◀ Précédent</button>
+      <button class="btn" id="arrange"><span class="ico">✦</span> Réarranger</button>
+      <button class="btn" id="reset">Réinitialiser</button>
+      <button class="btn" id="export">⤓ Exporter JPG</button>
+      <span class="sp"></span>
+      <button class="btn main" id="done">Terminé</button>
+    </div>
+    <canvas id="cv"></canvas>
+    <div id="codes">
+      <div class="row">Code-A : <span class="c" id="cA"></span></div>
+      <div class="row">Code-L : <span class="c" id="cL"></span></div>
+      <div class="note">Recopie ces codes dans le test. Si tu modifies la molécule, clique à nouveau sur « Terminé ».</div>
+    </div>
+  </section>
+
+  <div class="nav">
+    <button class="btn" id="prev">◀ Précédent</button>
+    <button class="btn main" id="next">Suivant ▶</button>
+  </div>
+</div>
+
+<script>
+/*CORE-START*/
+var XOR_KEY = "LwS2C06-lewis";
+var MAX_ATOMS = 5, MAX_DL = 4, MAX_DNL = 4;
+
+function hash6(s){
+  var h = 2166136261 >>> 0;
+  for (var i = 0; i < s.length; i++){
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(36).toUpperCase().padStart(6, "0").slice(0, 6);
+}
+
+function decodeParam(p){
+  var b = p.replace(/-/g, "+").replace(/_/g, "/");
+  while (b.length % 4) b += "=";
+  var raw = atob(b), out = "";
+  for (var i = 0; i < raw.length; i++)
+    out += String.fromCharCode(raw.charCodeAt(i) ^ XOR_KEY.charCodeAt(i % XOR_KEY.length));
+  return JSON.parse(out);
+}
+
+function parseFormula(f){
+  // ordre d'apparition conserve, ex. "CH4O" -> [["C",1],["H",4],["O",1]]
+  var re = /([A-Z][a-z]?)(\d*)/g, m, order = [], cnt = {};
+  while ((m = re.exec(f)) !== null){
+    if (!m[1]) continue;
+    var n = m[2] ? parseInt(m[2], 10) : 1;
+    if (!(m[1] in cnt)){ cnt[m[1]] = 0; order.push(m[1]); }
+    cnt[m[1]] += n;
+  }
+  return order.map(function(e){ return [e, cnt[e]]; });
+}
+
+// counts : {el:n}, els : ordre de la formule
+function codeA(els, counts){
+  return "A-" + hash6(els.map(function(e){ return e + ":" + counts[e]; }).join("|"));
+}
+// dl, dnl : {el:n}
+function codeD(els, dl, dnl){
+  return "D-" + hash6(els.map(function(e){ return e + ":" + dl[e] + "," + dnl[e]; }).join("|"));
+}
+// atoms : [{el, lp, up}] (lp = doublets non liants, up = electrons celibataires restants)
+// bonds : [{a, b, o}]
+function codeL(atoms, bonds){
+  var n = atoms.length, i, k;
+  var adj = atoms.map(function(){ return []; });
+  bonds.forEach(function(b){ if (b.o > 0){ adj[b.a].push([b.b, b.o]); adj[b.b].push([b.a, b.o]); } });
+  var lab = atoms.map(function(a){ return a.el + "/" + a.lp + "/" + a.up; });
+  for (k = 0; k < n; k++){
+    var nl = [];
+    for (i = 0; i < n; i++){
+      var nb = adj[i].map(function(x){ return x[1] + ":" + lab[x[0]]; }).sort();
+      nl.push(hash6(lab[i] + "(" + nb.join(",") + ")"));
+    }
+    lab = nl;
+  }
+  return "L-" + hash6(n + "#" + lab.slice().sort().join(";"));
+}
+/*CORE-END*/
+
+// ---------- parametres ----------
+var Q = new URLSearchParams(location.search);
+var cfg = { f: "CH4O" };
+try { if (Q.get("p")) Object.assign(cfg, decodeParam(Q.get("p"))); } catch (e) {}
+if (Q.get("f")) cfg.f = Q.get("f");   // parametre en clair prioritaire (tests locaux)
+
+var ELS = parseFormula(cfg.f).map(function(x){ return x[0]; });
+var st = { counts:{}, dl:{}, dnl:{} };
+ELS.forEach(function(e){ st.counts[e] = 0; st.dl[e] = 0; st.dnl[e] = 0; });
+
+document.getElementById("formula").innerHTML =
+  "Molécule : " + cfg.f.replace(/(\d+)/g, "<sub>$1</sub>");
+
+// ---------- pages de config ----------
+function stepper(get, set, max){
+  var w = document.createElement("span"); w.className = "stepper";
+  var m = document.createElement("button"); m.textContent = "−"; m.type = "button";
+  var v = document.createElement("span"); v.className = "v"; v.textContent = get();
+  var p = document.createElement("button"); p.textContent = "+"; p.type = "button";
+  m.onclick = function(){ set(Math.max(0, get() - 1)); v.textContent = get(); };
+  p.onclick = function(){ set(Math.min(max, get() + 1)); v.textContent = get(); };
+  w.append(m, v, p); return w;
+}
+function elSpan(e){ var s = document.createElement("span"); s.className = "el"; s.textContent = e; s.style.color = elColor(e); return s; }
+
+(function buildConfig(){
+  var r0 = document.getElementById("p0rows"), r1 = document.getElementById("p1rows");
+  ELS.forEach(function(e){
+    var d = document.createElement("div"); d.className = "row";
+    d.append(elSpan(e), document.createTextNode(":"),
+      stepper(function(){ return st.counts[e]; }, function(x){ st.counts[e] = x; }, MAX_ATOMS));
+    r0.appendChild(d);
+    var d2 = document.createElement("div"); d2.className = "row";
+    var l1 = document.createElement("span"); l1.className = "lab"; l1.textContent = "DL";
+    var l2 = document.createElement("span"); l2.className = "lab"; l2.textContent = "DnL";
+    d2.append(elSpan(e), document.createTextNode(":"), l1,
+      stepper(function(){ return st.dl[e]; }, function(x){ st.dl[e] = x; }, MAX_DL), l2,
+      stepper(function(){ return st.dnl[e]; }, function(x){ st.dnl[e] = x; }, MAX_DNL));
+    r1.appendChild(d2);
+  });
+})();
+
+function buildRecap(){
+  var h = "<tr><th>Atome</th><th>Nombre</th><th>DL</th><th>DnL</th></tr>";
+  ELS.forEach(function(e){
+    h += "<tr><td style='font-weight:bold;color:" + elColor(e) + "'>" + e + "</td><td>" + st.counts[e] +
+         "</td><td>" + st.dl[e] + "</td><td>" + st.dnl[e] + "</td></tr>";
+  });
+  document.getElementById("recap").innerHTML = h;
+}
+
+// ---------- navigation ----------
+var page = 0, builtSig = null;
+function sig(){ return JSON.stringify(st); }
+function show(n){
+  page = n;
+  for (var i = 0; i < 4; i++) document.getElementById("p" + i).classList.toggle("on", i === n);
+  var sp = document.querySelectorAll(".step");
+  sp.forEach(function(s, i){ s.classList.toggle("on", i === n); s.classList.toggle("done", i < n); });
+  document.getElementById("prev").style.visibility = n === 0 ? "hidden" : "visible";
+  document.getElementById("next").hidden = n === 3;
+  document.querySelector(".nav").style.display = n === 3 ? "none" : "flex";
+  if (n === 2) buildRecap();
+  if (n === 3){
+    if (builtSig !== sig()) initMolecule();
+    resize();
+  }
+}
+document.getElementById("prev").onclick = function(){ if (page > 0) show(page - 1); };
+document.getElementById("prev2").onclick = function(){ show(2); };
+document.getElementById("next").onclick = function(){ if (page < 3) show(page + 1); };
+
+// ---------- construction ----------
+var cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+var W = 800, H = 400, DPR = 1;
+var atoms = [], bonds = [];
+var R_E = 25, HIT_E = 12, HIT_A = 19;
+var drag = null;   // {mode:'move'|'bond', i, dx, dy, x, y, sx, sy}
+
+function elColor(e){
+  return ({H:"#555", C:"#1d1d1f", O:"#c0392b", N:"#2a6fdb", Cl:"#2e8b57", F:"#2e8b57",
+           Br:"#8b3a1a", I:"#6b2fa0", S:"#b8860b", P:"#d35400"})[e] || "#1d1d1f";
+}
+
+function initMolecule(){
+  builtSig = sig();
+  atoms = []; bonds = [];
+  var heavy = [], light = [];
+  ELS.forEach(function(e){
+    for (var k = 0; k < st.counts[e]; k++)
+      (e === "H" ? light : heavy).push({ el:e, dl:st.dl[e], dnl:st.dnl[e], x:0, y:0 });
+  });
+  atoms = heavy.concat(light);
+  placeAtoms();
+  staleCodes();
+  draw();
+}
+function placeAtoms(){
+  var n = atoms.length; if (!n) return;
+  var cols = Math.min(n, Math.max(3, Math.ceil(Math.sqrt(n * 2.2))));
+  var rows = Math.ceil(n / cols);
+  var cw = W / cols, ch = H / rows;
+  atoms.forEach(function(a, i){
+    var c = i % cols, r = Math.floor(i / cols);
+    var jx = (Math.sin(i * 12.9898) * 43758.5453) % 1, jy = (Math.sin(i * 78.233) * 12345.678) % 1;
+    a.x = cw * (c + 0.5) + jx * cw * 0.15;
+    a.y = ch * (r + 0.5) + jy * ch * 0.15;
+  });
+}
+
+function bondSum(i){ var s = 0; bonds.forEach(function(b){ if (b.a === i || b.b === i) s += b.o; }); return s; }
+function freeSingles(i){ return atoms[i].dl - bondSum(i); }
+function angDist(a, b){ var d = Math.abs(a - b) % (2 * Math.PI); return d > Math.PI ? 2 * Math.PI - d : d; }
+
+var CANDS = [-90, 0, 90, 180, -45, 45, 135, -135].map(function(d){ return d * Math.PI / 180; });
+function layout(i){
+  var a = atoms[i], used = [], out = [], k;
+  bonds.forEach(function(b){
+    if (b.a === i || b.b === i){ var j = b.a === i ? b.b : b.a; used.push(Math.atan2(atoms[j].y - a.y, atoms[j].x - a.x)); }
+  });
+  var items = [];
+  for (k = 0; k < a.dnl; k++) items.push("pair");
+  for (k = 0; k < Math.max(0, freeSingles(i)); k++) items.push("single");
+  var n = items.length, nS = items.filter(function(t){ return t === "single"; }).length;
+  // directions "attirantes" : atomes proches ayant aussi un celibataire libre
+  var attr = [];
+  if (nS > 0) atoms.forEach(function(b, j){
+    if (j === i) return;
+    var d = Math.hypot(b.x - a.x, b.y - a.y);
+    if (d > ATTR_RANGE || freeSingles(j) <= 0) return;
+    var bb = bondBetween(i, j); if (bb) return;
+    attr.push({ ang:Math.atan2(b.y - a.y, b.x - a.x), d:d });
+  });
+  attr.sort(function(p, q){ return p.d - q.d; });
+  attr = attr.slice(0, nS);
+  var cands = CANDS.concat(attr.map(function(x){ return x.ang; })), nC = CANDS.length;
+  var chosen = [];
+  if (n > 0 && n <= cands.length){
+    var best = null, bScore = -1e9;
+    (function comb(start, pick){
+      if (pick.length === n){
+        var angs = used.concat(pick.map(function(c){ return cands[c]; })), md = Math.PI;
+        for (var p = 0; p < angs.length; p++) for (var q = p + 1; q < angs.length; q++) md = Math.min(md, angDist(angs[p], angs[q]));
+        var card = pick.filter(function(c){ return c < 4; }).length;
+        var att = pick.filter(function(c){ return c >= nC; }).length;
+        // a ecart egal : doublets perpendiculaires a la 1re liaison (rendu symetrique)
+        var perp = used.length ? pick.reduce(function(acc, c){ return acc + Math.abs(Math.sin(cands[c] - used[0])); }, 0) : 0;
+        var sc = md * 100 + card + 35 * att + 2 * perp;
+        if (sc > bScore + 1e-6){ bScore = sc; best = pick.slice(); }
+        return;
+      }
+      for (var c = start; c < cands.length; c++){ pick.push(c); comb(c + 1, pick); pick.pop(); }
+    })(0, []);
+    // celibataires d'abord sur les directions attirantes, puis le reste
+    var att = best.filter(function(c){ return c >= nC; }), rest = best.filter(function(c){ return c < nC; });
+    var singlesAngles = att.map(function(c){ return cands[c]; });
+    var others = rest.map(function(c){ return cands[c]; });
+    var pairsLeft = a.dnl, singlesLeft = nS - singlesAngles.length;
+    others.forEach(function(ang){
+      if (pairsLeft > 0){ out.push(mk("pair", ang)); pairsLeft--; }
+      else if (singlesLeft > 0){ out.push(mk("single", ang)); singlesLeft--; }
+    });
+    singlesAngles.forEach(function(ang){ out.push(mk("single", ang)); });
+  } else {
+    items.forEach(function(t, idx){ out.push(mk(t, idx * 2 * Math.PI / Math.max(n, 1) - Math.PI / 2)); });
+  }
+  function mk(t, ang){ return { t:t, ang:ang, x:a.x + Math.cos(ang) * R_E, y:a.y + Math.sin(ang) * R_E }; }
+  return out;
+}
+
+// trait "fait main" deterministe
+function wline(x1, y1, x2, y2, w, col){
+  var dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1;
+  var nx = -dy / L, ny = dx / L;
+  var off = Math.sin(x1 * 0.071 + y2 * 0.053 + L * 0.11) * Math.min(2.2, L * 0.04);
+  ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo((x1 + x2) / 2 + nx * off, (y1 + y2) / 2 + ny * off, x2, y2);
+  ctx.stroke();
+}
+
+function bondEnds(b){
+  var A = atoms[b.a], B = atoms[b.b];
+  var dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, sh = 15;
+  return { x1:A.x + ux * sh, y1:A.y + uy * sh, x2:B.x - ux * sh, y2:B.y - uy * sh, nx:-uy, ny:ux, L:L };
+}
+
+// ---------- attraction entre celibataires ----------
+var ATTR = 85, SNAP = 17, BOND_LEN = 74, ATTR_RANGE = 140;
+var flashes = [], raf = null;
+function bondBetween(i, j){
+  return bonds.find(function(b){ return (b.a === i && b.b === j) || (b.a === j && b.b === i); });
+}
+// pour chaque couple d'atomes : le couple de celibataires le plus proche (si < ATTR)
+function attractions(L){
+  var res = [];
+  for (var i = 0; i < atoms.length; i++) for (var j = i + 1; j < atoms.length; j++){
+    var bb = bondBetween(i, j); if (bb && bb.o >= 3) continue;
+    var best = null;
+    L[i].forEach(function(e1, k1){ if (e1.t !== "single") return;
+      L[j].forEach(function(e2, k2){ if (e2.t !== "single") return;
+        var d = Math.hypot(e1.x - e2.x, e1.y - e2.y);
+        if (d < ATTR && (!best || d < best.d)) best = { i:i, j:j, k1:k1, k2:k2, e1:e1, e2:e2, d:d };
+      });
+    });
+    if (best) res.push(best);
+  }
+  return res;
+}
+function requestFrame(){ if (!raf) raf = requestAnimationFrame(function(){ raf = null; draw(); }); }
+
+function trySnap(){
+  if (!drag || drag.mode !== "move") return;
+  var L = atoms.map(function(a, i){ return layout(i); });
+  var at = attractions(L).filter(function(x){
+    return (x.i === drag.i || x.j === drag.i) && x.d < SNAP && !drag.snapped[x.i + "-" + x.j];
+  });
+  if (!at.length) return;
+  var x = at[0], m = drag.i, o = x.i === m ? x.j : x.i;
+  var ex = bondBetween(x.i, x.j);
+  if (ex) ex.o++; else bonds.push({ a:x.i, b:x.j, o:1 });
+  drag.snapped[x.i + "-" + x.j] = true;   // pas de double liaison automatique pendant le meme geste
+  // on cale l'atome deplace a une longueur de liaison propre
+  var A = atoms[m], B = atoms[o], dx = A.x - B.x, dy = A.y - B.y, d = Math.hypot(dx, dy) || 1;
+  A.x = Math.max(20, Math.min(W - 20, B.x + dx / d * BOND_LEN));
+  A.y = Math.max(20, Math.min(H - 20, B.y + dy / d * BOND_LEN));
+  drag.dx = A.x - drag.px; drag.dy = A.y - drag.py;
+  flashes.push({ x:(x.e1.x + x.e2.x) / 2, y:(x.e1.y + x.e2.y) / 2, t:performance.now() });
+  staleCodes();
+}
+
+function draw(){
+  var tw = stepTween();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  var now = performance.now(), anim = false;
+  var LAY = atoms.map(function(a, i){ return layout(i); });
+  var ATT = attractions(LAY), pull = {};
+  // halos d'attraction (flou)
+  ATT.forEach(function(x){
+    var s = 1 - x.d / ATTR, pulse = 0.75 + 0.25 * Math.sin(now / 140);
+    var dx = x.e2.x - x.e1.x, dy = x.e2.y - x.e1.y, d = x.d || 1, sh = Math.min(6, 7 * s);
+    pull[x.i + ":" + x.k1] = [dx / d * sh, dy / d * sh];
+    pull[x.j + ":" + x.k2] = [-dx / d * sh, -dy / d * sh];
+    ctx.save();
+    ctx.shadowColor = "rgba(42,111,219,0.9)";
+    ctx.shadowBlur = 6 + 18 * s * pulse;
+    ctx.strokeStyle = "rgba(42,111,219," + (0.12 + 0.45 * s * pulse) + ")";
+    ctx.lineWidth = 2 + 9 * s; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x.e1.x, x.e1.y); ctx.lineTo(x.e2.x, x.e2.y); ctx.stroke();
+    [x.e1, x.e2].forEach(function(e){
+      var g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 10 + 14 * s * pulse);
+      g.addColorStop(0, "rgba(42,111,219," + (0.35 * s + 0.1) + ")");
+      g.addColorStop(1, "rgba(42,111,219,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(e.x, e.y, 10 + 14 * s * pulse, 0, 2 * Math.PI); ctx.fill();
+    });
+    ctx.restore();
+    anim = true;
+  });
+  // flash de formation de liaison
+  flashes = flashes.filter(function(f){ return now - f.t < 450; });
+  flashes.forEach(function(f){
+    var k = (now - f.t) / 450;
+    ctx.strokeStyle = "rgba(42,111,219," + (1 - k) + ")"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(f.x, f.y, 6 + 30 * k, 0, 2 * Math.PI); ctx.stroke();
+    anim = true;
+  });
+  // liaisons
+  bonds.forEach(function(b){
+    var e = bondEnds(b);
+    if (e.L < 32) return;
+    var offs = b.o === 1 ? [0] : b.o === 2 ? [-3.5, 3.5] : [-6, 0, 6];
+    offs.forEach(function(o){
+      wline(e.x1 + e.nx * o, e.y1 + e.ny * o, e.x2 + e.nx * o, e.y2 + e.ny * o, 2.6, "#1d1d1f");
+    });
+  });
+  // cible potentielle
+  var target = drag && drag.mode === "bond" ? findTarget(drag.x, drag.y, drag.i) : -1;
+  // atomes + electrons
+  atoms.forEach(function(a, i){
+    if (i === target){
+      ctx.fillStyle = "rgba(42,111,219,.15)";
+      ctx.beginPath(); ctx.arc(a.x, a.y, 30, 0, 2 * Math.PI); ctx.fill();
+    }
+    ctx.fillStyle = elColor(a.el);
+    ctx.font = "bold 26px 'Humor Sans','Comic Neue','Comic Sans MS',cursive";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(a.el, a.x, a.y + 1);
+    LAY[i].forEach(function(it, k){
+      if (it.t === "pair"){
+        var px = -Math.sin(it.ang), py = Math.cos(it.ang), h = 7;
+        wline(it.x - px * h, it.y - py * h, it.x + px * h, it.y + py * h, 2.6, "#1d1d1f");
+      } else {
+        var off = pull[i + ":" + k] || [0, 0];
+        ctx.fillStyle = "#2a6fdb";
+        ctx.beginPath(); ctx.arc(it.x + off[0], it.y + off[1], 4.2, 0, 2 * Math.PI); ctx.fill();
+      }
+    });
+  });
+  if (drag && drag.mode === "bond"){
+    ctx.setLineDash([6, 5]);
+    wline(drag.sx, drag.sy, drag.x, drag.y, 2, "#2a6fdb");
+    ctx.setLineDash([]);
+  }
+  if (anim || tw) requestFrame();
+}
+
+function findTarget(x, y, from){
+  var best = -1, bd = 1e9;
+  atoms.forEach(function(a, j){
+    if (j === from) return;
+    var d = Math.hypot(a.x - x, a.y - y);
+    if (d < 34 && d < bd){ bd = d; best = j; }
+  });
+  return best;
+}
+function hitSingle(x, y){
+  for (var i = atoms.length - 1; i >= 0; i--){
+    var L = layout(i);
+    for (var k = 0; k < L.length; k++)
+      if (L[k].t === "single" && Math.hypot(L[k].x - x, L[k].y - y) < HIT_E) return { i:i, x:L[k].x, y:L[k].y };
+  }
+  return null;
+}
+function hitAtom(x, y){
+  for (var i = atoms.length - 1; i >= 0; i--)
+    if (Math.hypot(atoms[i].x - x, atoms[i].y - y) < HIT_A) return i;
+  return -1;
+}
+function hitBond(x, y){
+  for (var k = 0; k < bonds.length; k++){
+    var e = bondEnds(bonds[k]);
+    var dx = e.x2 - e.x1, dy = e.y2 - e.y1, L2 = dx * dx + dy * dy || 1;
+    var t = Math.max(0, Math.min(1, ((x - e.x1) * dx + (y - e.y1) * dy) / L2));
+    if (Math.hypot(e.x1 + t * dx - x, e.y1 + t * dy - y) < 8) return k;
+  }
+  return -1;
+}
+function pos(ev){ var r = cv.getBoundingClientRect(); return { x:ev.clientX - r.left, y:ev.clientY - r.top }; }
+
+cv.addEventListener("pointerdown", function(ev){
+  if (tween) return;
+  var p = pos(ev), s = hitSingle(p.x, p.y);
+  if (s){ drag = { mode:"bond", i:s.i, sx:s.x, sy:s.y, x:p.x, y:p.y }; }
+  else {
+    var a = hitAtom(p.x, p.y);
+    if (a >= 0){ drag = { mode:"move", i:a, dx:atoms[a].x - p.x, dy:atoms[a].y - p.y, px:p.x, py:p.y, snapped:{} }; }
+    else {
+      var b = hitBond(p.x, p.y);
+      if (b >= 0){ bonds[b].o--; if (bonds[b].o <= 0) bonds.splice(b, 1); staleCodes(); }
+    }
+  }
+  if (drag) cv.setPointerCapture(ev.pointerId);
+  draw();
+});
+cv.addEventListener("pointermove", function(ev){
+  var p = pos(ev);
+  if (!drag){
+    cv.style.cursor = hitSingle(p.x, p.y) ? "crosshair" : hitAtom(p.x, p.y) >= 0 ? "grab" : hitBond(p.x, p.y) >= 0 ? "pointer" : "default";
+    return;
+  }
+  if (drag.mode === "move"){
+    atoms[drag.i].x = Math.max(20, Math.min(W - 20, p.x + drag.dx));
+    atoms[drag.i].y = Math.max(20, Math.min(H - 20, p.y + drag.dy));
+    drag.px = p.x; drag.py = p.y;
+    trySnap();
+  } else { drag.x = p.x; drag.y = p.y; }
+  draw();
+});
+function endDrag(){
+  if (drag && drag.mode === "bond"){
+    var j = findTarget(drag.x, drag.y, drag.i), i = drag.i;
+    if (j >= 0 && freeSingles(i) > 0 && freeSingles(j) > 0){
+      var ex = bonds.find(function(b){ return (b.a === i && b.b === j) || (b.a === j && b.b === i); });
+      if (ex){ if (ex.o < 3) ex.o++; } else bonds.push({ a:i, b:j, o:1 });
+      staleCodes();
+    }
+  }
+  drag = null; draw();
+}
+cv.addEventListener("pointerup", endDrag);
+cv.addEventListener("pointercancel", endDrag);
+
+function resize(){
+  var r = cv.getBoundingClientRect();
+  if (!r.width) return;
+  var oldW = W, oldH = H;
+  W = r.width; H = r.height; DPR = window.devicePixelRatio || 1;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  if (oldW && (oldW !== W || oldH !== H)) atoms.forEach(function(a){
+    a.x = Math.max(20, Math.min(W - 20, a.x * W / oldW));
+    a.y = Math.max(20, Math.min(H - 20, a.y * H / oldH));
+  });
+  draw();
+}
+window.addEventListener("resize", function(){ if (page === 3) resize(); });
+
+document.getElementById("reset").onclick = function(){ tween = null; bonds = []; placeAtoms(); staleCodes(); draw(); };
+
+// ---------- export JPG (fond cahier Seyes + formule) ----------
+document.getElementById("export").onclick = function(){
+  draw();
+  var w = cv.width, h = cv.height, d = DPR, oc = document.createElement("canvas");
+  oc.width = w; oc.height = h;
+  var g = oc.getContext("2d");
+  g.fillStyle = "#fdfdf6"; g.fillRect(0, 0, w, h);
+  var y, x;
+  g.lineWidth = d;
+  g.strokeStyle = "rgba(110,150,215,.28)";
+  for (y = 0; y < h; y += 8 * d){ g.beginPath(); g.moveTo(0, y + .5); g.lineTo(w, y + .5); g.stroke(); }
+  g.strokeStyle = "rgba(120,100,190,.42)";
+  for (y = 0; y < h; y += 32 * d){ g.beginPath(); g.moveTo(0, y + .5); g.lineTo(w, y + .5); g.stroke(); }
+  for (x = 58 * d; x < w; x += 32 * d){ g.beginPath(); g.moveTo(x + .5, 0); g.lineTo(x + .5, h); g.stroke(); }
+  g.strokeStyle = "#e0525f"; g.lineWidth = 2 * d;
+  g.beginPath(); g.moveTo(40 * d, 0); g.lineTo(40 * d, h); g.stroke();
+  g.drawImage(cv, 0, 0);
+  g.fillStyle = "#1d1d1f"; g.font = (20 * d) + "px 'Humor Sans','Comic Neue','Comic Sans MS',cursive";
+  g.textAlign = "left"; g.textBaseline = "top";
+  var fx = 52 * d, big = (20 * d) + "px 'Humor Sans','Comic Neue','Comic Sans MS',cursive",
+      sml = (14 * d) + "px 'Humor Sans','Comic Neue','Comic Sans MS',cursive";
+  cfg.f.split("").forEach(function(ch){
+    var isD = /\d/.test(ch); g.font = isD ? sml : big;
+    g.fillText(ch, fx, (isD ? 19 : 10) * d); fx += g.measureText(ch).width;
+  });
+  var a = document.createElement("a");
+  a.href = oc.toDataURL("image/jpeg", 0.92);
+  a.download = "molecule_" + cfg.f + ".jpg";
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+// ---------- rearrangement (angles propres + recentrage anime) ----------
+var tween = null;
+function computeArrangement(){
+  var n = atoms.length, adj = atoms.map(function(){ return []; });
+  bonds.forEach(function(b){ adj[b.a].push(b.b); adj[b.b].push(b.a); });
+  var seen = new Array(n).fill(false), comps = [];
+  // composantes : les plus grosses d'abord
+  var order = atoms.map(function(a, i){ return i; }).sort(function(p, q){ return adj[q].length - adj[p].length; });
+  order.forEach(function(r0){
+    if (seen[r0]) return;
+    // racine = atome du fragment qui a le plus de liaisons (non H de preference)
+    var stack = [r0], memb = []; seen[r0] = true;
+    while (stack.length){ var u = stack.pop(); memb.push(u); adj[u].forEach(function(v){ if (!seen[v]){ seen[v] = true; stack.push(v); } }); }
+    var root = memb.slice().sort(function(p, q){
+      return (adj[q].length - adj[p].length) || ((atoms[p].el === "H") - (atoms[q].el === "H")) || (p - q);
+    })[0];
+    var pos = {}; pos[root] = [0, 0];
+    var queue = [[root, -1, Math.PI]];   // [atome, parent, direction vers le parent]
+    while (queue.length){
+      var it = queue.shift(), u = it[0], par = it[1], back = it[2];
+      var kids = adj[u].filter(function(v){ return v !== par && !(v in pos); });
+      // atomes lourds d'abord : ils prennent les directions les plus "droites"
+      kids.sort(function(p, q){ return ((atoms[p].el === "H") - (atoms[q].el === "H")) || (adj[q].length - adj[p].length) || (p - q); });
+      var dom = adj[u].length + atoms[u].dnl + Math.max(0, freeSingles(u));
+      var slots = Math.max(adj[u].length, Math.min(4, dom)) || 1;
+      var step = 2 * Math.PI / slots, cand = [];
+      for (var k = 1; k <= slots - (par >= 0 ? 1 : 0); k++) cand.push(par >= 0 ? back + k * step : k * step - step);
+      if (par < 0){ cand = []; for (k = 0; k < slots; k++) cand.push(k * step); }   // racine : 1er voisin a droite
+      var ahead = back + Math.PI;
+      if (par >= 0){
+        // atome avec doublets non liants (O, N...) : geometrie coudee, sinon dans le prolongement
+        var bent = atoms[u].dnl > 0;
+        cand.sort(function(p, q){
+          var d = bent ? angDist(q, ahead) - angDist(p, ahead) : angDist(p, ahead) - angDist(q, ahead);
+          return Math.abs(d) > 1e-6 ? d : (Math.sin(q) - Math.sin(p));
+        });
+      }
+      kids.forEach(function(v, idx){
+        var ang = cand[idx % cand.length] + (idx >= cand.length ? 0.35 : 0);
+        pos[v] = [pos[u][0] + Math.cos(ang) * BOND_LEN, pos[u][1] + Math.sin(ang) * BOND_LEN];
+        queue.push([v, u, ang + Math.PI]);
+      });
+    }
+    var xs = memb.map(function(i){ return pos[i][0]; }), ys = memb.map(function(i){ return pos[i][1]; });
+    comps.push({ memb:memb, pos:pos, x0:Math.min.apply(null, xs), x1:Math.max.apply(null, xs),
+                 y0:Math.min.apply(null, ys), y1:Math.max.apply(null, ys) });
+  });
+  // fragments cote a cote, puis le tout recentre (et reduit si besoin)
+  var GAP = 70, totW = 0, maxH = 0;
+  comps.forEach(function(c, k){ totW += (c.x1 - c.x0) + (k ? GAP : 0); maxH = Math.max(maxH, c.y1 - c.y0); });
+  var sc = Math.min(1, (W - 90) / (totW || 1), (H - 90) / (maxH || 1));
+  var x = W / 2 - totW * sc / 2, target = [];
+  comps.forEach(function(c){
+    var cy = (c.y0 + c.y1) / 2;
+    c.memb.forEach(function(i){ target[i] = [x + (c.pos[i][0] - c.x0) * sc, H / 2 + (c.pos[i][1] - cy) * sc]; });
+    x += ((c.x1 - c.x0) + GAP) * sc;
+  });
+  return target;
+}
+function easeOutBack(t){ var c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
+function stepTween(){
+  if (!tween) return false;
+  var now = performance.now(), running = false;
+  tween.items.forEach(function(it){
+    var t = Math.max(0, Math.min(1, (now - tween.t0 - it.delay) / tween.dur));
+    if (t < 1) running = true;
+    var e = easeOutBack(t);
+    atoms[it.i].x = it.fx + (it.tx - it.fx) * e;
+    atoms[it.i].y = it.fy + (it.ty - it.fy) * e;
+  });
+  if (!running) tween = null;
+  return true;
+}
+document.getElementById("arrange").onclick = function(){
+  if (!atoms.length) return;
+  var tg = computeArrangement();
+  tween = { t0:performance.now(), dur:750, items:atoms.map(function(a, i){
+    return { i:i, fx:a.x, fy:a.y, tx:tg[i][0], ty:tg[i][1], delay:i * 35 }; }) };
+  var btn = this; btn.classList.remove("busy"); void btn.offsetWidth; btn.classList.add("busy");
+  cv.classList.remove("arranging"); void cv.offsetWidth; cv.classList.add("arranging");
+  setTimeout(function(){ btn.classList.remove("busy"); cv.classList.remove("arranging"); }, 950);
+  requestFrame();
+};
+
+// ---------- codes ----------
+function staleCodes(){ document.getElementById("codes").classList.add("stale"); }
+document.getElementById("done").onclick = function(){
+  var A = codeA(ELS, st.counts);
+  var L = codeL(atoms.map(function(a, i){ return { el:a.el, lp:a.dnl, up:freeSingles(i) }; }), bonds);
+  document.getElementById("cA").textContent = A;
+  document.getElementById("cL").textContent = L;
+  var c = document.getElementById("codes"); c.classList.add("on"); c.classList.remove("stale");
+};
+
+show(0);
+</script>
+</body>
+</html>
