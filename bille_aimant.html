@@ -307,7 +307,7 @@ function draw(){
   drawMagnetFx();
   drawMagnet();
   hist.forEach(drawTraj);
-  if(st.phase!=="done"){ st.np=st.path.length; drawTraj({path:st.path, col:st.col, marks:marksOf({path:st.path,np:st.path.length})}); }
+  if(st.phase!=="done"){ drawTraj({path:st.path, col:st.col, marks:marksOf({path:st.path,np:st.path.length})}); }
   drawBall(st.x, st.y);
   if(st.end==="clac" && performance.now()-st.clacT<1000){ ctx.save(); ctx.translate(sx(st.x)+58, sy(st.y)-30); ctx.rotate(-0.12);
     ctx.beginPath(); for(let i=0;i<=24;i++){ const a=i/24*2*Math.PI, r=(i%2?30:46); ctx.lineTo(r*1.35*Math.cos(a), r*0.8*Math.sin(a)); }
