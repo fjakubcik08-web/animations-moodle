@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bille et aimant</title>
+<style>
+  :root { --ink:#1d1d2b; --paper:#fff7e3; }
+  html,body { margin:0; padding:0; background:var(--paper); color:var(--ink);
+    font-family:"Humor Sans","xkcd Script","Comic Neue","Comic Sans MS","Chalkboard SE",cursive; }
+  #wrap { max-width:920px; margin:0 auto; padding:6px; box-sizing:border-box; }
+  canvas { display:block; width:100%; height:auto; touch-action:none; }
+  .ctrls { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; justify-content:center;
+    margin-top:6px; padding:8px 12px; border:3px solid var(--ink); background:#ffe27a; box-shadow:4px 4px 0 var(--ink);
+    border-radius:255px 15px 225px 15px/15px 225px 15px 255px; }
+  .ctrl { display:flex; align-items:center; gap:6px; font-size:16px; white-space:nowrap; }
+  .ctrl b { min-width:58px; display:inline-block; text-align:right; font-weight:normal; }
+  input[type=range] { width:120px; accent-color:#7b4fd6; }
+  select { font:inherit; font-size:15px; border:2px solid #111; background:#fff; padding:1px 4px;
+    border-radius:15px 225px 15px 255px/255px 15px 225px 15px; }
+  button { font:inherit; font-size:17px; background:#4cc38a; color:#1d1d2b; border:3px solid #1d1d2b; padding:3px 14px; box-shadow:3px 3px 0 #1d1d2b;
+    border-radius:255px 15px 225px 15px/15px 225px 15px 255px; cursor:pointer; }
+  button:hover { filter:brightness(1.08); }
+  button:active { transform:translate(2px,2px); box-shadow:1px 1px 0 #1d1d2b; }
+  #b_reset { background:#ff9a5a; }
+  button:disabled, input:disabled, select:disabled { opacity:.4; cursor:default; }
+  .hidden { display:none !important; }
+  .tabs { display:flex; gap:6px; margin:0 0 -3px 10px; position:relative; z-index:2; }
+  .tab { font:inherit; font-size:17px; padding:4px 18px 6px; border:3px solid var(--ink); border-bottom:none; cursor:pointer;
+    background:#e9e3ff; color:var(--ink); border-radius:14px 14px 0 0; box-shadow:none; }
+  .tab.on { background:#bfe9ff; }
+  .tab:active { transform:none; box-shadow:none; }
+  .stage { position:relative; border:3px solid var(--ink); box-shadow:4px 4px 0 var(--ink); background:#bfe9ff; }
+  #gv { background:#fffdf7; cursor:crosshair; }
+  #gtools { position:absolute; top:8px; right:10px; display:flex; gap:6px; }
+  #gtools button { font-size:15px; padding:1px 10px; background:#fff; box-shadow:2px 2px 0 #1d1d2b; border-width:2px; }
+  #ghelp { position:absolute; left:12px; bottom:8px; font-size:13px; color:#555; pointer-events:none; }
+  #info { padding:6px 14px 8px; border:3px solid var(--ink); background:#fff; box-shadow:4px 4px 0 var(--ink);
+    border-radius:15px 225px 15px 255px/255px 15px 225px 15px; height:158px; overflow:hidden; box-sizing:border-box; display:flex; flex-direction:column; }
+  #info h3 { margin:0 0 4px; font-size:17px; font-weight:normal; text-decoration:underline; }
+  #info_l { flex:1; min-height:0; overflow-y:scroll; padding-right:8px; }
+  #info_l::-webkit-scrollbar { width:12px; }
+  #info_l::-webkit-scrollbar-track { background:#f3eefc; border-left:2px solid #1d1d2b; }
+  #info_l::-webkit-scrollbar-thumb { background:#7b4fd6; border:2px solid #1d1d2b; border-radius:6px; }
+  #info .l { font-size:15.5px; line-height:1.35; padding:4px 0; border-bottom:1px dashed #ccc; }
+  #info .t { font-weight:bold; }
+  #info .s { padding-left:26px; }
+  #info .l:last-child { border-bottom:none; }
+  #info .x { font-weight:bold; font-size:19px; margin-right:6px; }
+  #info .vide { font-size:15px; color:#777; font-style:italic; }
+  #b_clear { background:#ff6b8f; }
+  #b_jpg { background:#5aa9ff; }
+  input[type=checkbox] { width:18px; height:18px; accent-color:#e04a3a; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="tabs"><button class="tab on" id="t_exp">Expérience</button><button class="tab" id="t_traj">Trajectoire</button></div>
+  <div class="stage">
+    <canvas id="cv" width="900" height="410"></canvas>
+    <canvas id="gv" width="900" height="410" class="hidden"></canvas>
+    <div id="gtools" class="hidden"><button id="g_in">+</button><button id="g_out">−</button><button id="g_fit">Ajuster</button><button id="g_mes">Mesure</button><button id="g_arr">Flèche</button><button id="g_clr">Effacer tracés</button></div>
+    <div id="ghelp" class="hidden">molette : zoom · glisser dans le vide : déplacer · glisser d'une croix à une autre (ou 2 clics) : distance</div>
+  </div>
+  <div class="ctrls">
+    <span class="ctrl" id="c_v">v<sub>0</sub> <input type="range" id="s_v" min="0.10" max="1.50" step="0.01"> <b id="o_v"></b></span>
+    <span class="ctrl" id="c_d">d <input type="range" id="s_d" min="0.02" max="0.15" step="0.005"> <b id="o_d"></b></span>
+    <span class="ctrl" id="c_a">aimant <input type="checkbox" id="s_a"></span>
+    <span class="ctrl" id="c_k">intensité de l'aimant <input type="range" id="s_k" min="0" max="10" step="0.5"> <b id="o_k"></b></span>
+    <span class="ctrl" id="c_m">bille <select id="s_m"></select></span>
+    <span class="ctrl" id="c_slow">ralenti <select id="s_slow">
+      <option value="1">×1</option><option value="0.25">×1/4</option><option value="0.1">×1/10</option></select></span>
+    <span class="ctrl" id="c_t">Δt <select id="s_tau"></select></span>
+    <span class="ctrl" id="c_trace">tracé <select id="s_trace"><option value="0">croix</option><option value="1">courbe</option></select></span>
+    <button id="b_go">Lancer !</button>
+    <button id="b_reset">Recommencer</button>
+    <button id="b_clear">Effacer</button>
+    <button id="b_jpg">Export JPG</button>
+  </div>
+  <div id="info"><h3>Informations</h3><div id="info_l"></div></div>
+</div>
+<script>
+"use strict";
+/* ================= Paramètres (URL) =================
+   p = base64url( XOR( JSON, KEY ) )   — clé propre à cette animation
+   Champs : v (m/s), d (m), tau (s, 0 = auto ≈ 25 points), (ctrl : lettre t = réglage Δt visible), a (0/1 aimant présent), k (0..10 intensité),
+            m (matériau 0..5), ctrl (lettres des réglages visibles : v d a k m),
+            tr (1 = chronophoto), tau (s, intervalle chrono), trace (0 croix / 1 courbe), arr / mes (0 = outil Flèche / Mesure grisé),
+            grid (0/1), slow, move (0/1)
+   Les paramètres en clair (?v=0.8&m=2...) écrasent ceux de p.                         */
+const KEY = "P0-bille*aimant#xkcd";
+const MATS = [ // chi : réponse magnétique relative
+  {nom:"acier",     chi:1.00, fill:"#b9c0c8", hi:"#ffffff", alpha:1},
+  {nom:"nickel",    chi:0.55, fill:"#c9c3a8", hi:"#ffffff", alpha:1},
+  {nom:"verre",     chi:0.00, fill:"#bfe3f0", hi:"#ffffff", alpha:0.55},
+  {nom:"aluminium", chi:0.00, fill:"#d6d9dc", hi:"#ffffff", alpha:1},
+  {nom:"cuivre",    chi:0.00, fill:"#d58a4f", hi:"#ffe0c4", alpha:1},
+  {nom:"bois",      chi:0.00, fill:"#b98a52", hi:"#e6c79c", alpha:1},
+];
+const DEF = {v:0.6, d:0.08, a:1, k:7, m:0, ctrl:"vdakmt", tr:1, tau:0, trace:1, arr:1, mes:1, grid:0, slow:1, move:1};
+
+function decodeP(s){
+  s = s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="=";
+  const bin = atob(s); let out = "";
+  for(let i=0;i<bin.length;i++) out += String.fromCharCode(bin.charCodeAt(i) ^ KEY.charCodeAt(i%KEY.length));
+  return JSON.parse(decodeURIComponent(escape(out)));
+}
+const P = Object.assign({}, DEF);
+(function(){
+  const q = new URLSearchParams(location.search);
+  if(q.get("p")){ try{ Object.assign(P, decodeP(q.get("p"))); }catch(e){ console.warn("p invalide", e); } }
+  for(const k of Object.keys(DEF)){ if(q.has(k)){ const v=q.get(k); P[k] = (k==="ctrl") ? v : parseFloat(v); } }
+  P.m = Math.max(0, Math.min(MATS.length-1, Math.round(P.m)));
+  P.d = Math.max(0.02, Math.min(0.15, P.d));
+})();
+
+/* ================= Monde ================= */
+const TABLE = {w:1.20, h:0.50};          // m, vue de dessus
+const Y0 = 0.12;                          // ligne de lancement (m, depuis le haut)
+const X0 = 0.10;                          // départ bille
+const XM = 0.52;                          // abscisse du pôle de l'aimant
+const RB = 0.012;                         // rayon bille (m)
+// Taille de l'aimant : suit l'intensité k uniquement si ce réglage est visible (sinon taille fixe)
+function magSize(k){ const u = String(P.ctrl||"").includes("k") ? k/10 : 0.6;
+  return {L:0.11+0.11*u, W:0.022+0.028*u}; }
+const C = 7.5e-5;                         // m^3/s^2 par unité d intensité (a = C k chi / r^3)
+
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const W = 900, H = 410;
+const OX = 130, OY = 46, SC = 615;         // px/m
+const sx = x => OX + x*SC, sy = y => OY + y*SC;
+
+/* ================= Tracé "xkcd" ================= */
+function wob(t, s){ return Math.sin(t*5.3+s)*0.6 + Math.sin(t*12.1+s*2.3)*0.4; }
+function sline(x1,y1,x2,y2,seed=1,amp){
+  const L = Math.hypot(x2-x1,y2-y1); if(L<0.5) return;
+  if(amp===undefined) amp = Math.min(2.2, 0.5+L/120);
+  const n = Math.max(3, Math.ceil(L/10)), nx=-(y2-y1)/L, ny=(x2-x1)/L;
+  ctx.beginPath();
+  for(let i=0;i<=n;i++){ const t=i/n, o=amp*wob(t,seed)*Math.sin(Math.PI*t*0.9+0.15);
+    const x=x1+(x2-x1)*t+nx*o, y=y1+(y2-y1)*t+ny*o; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  ctx.stroke();
+}
+function spoly(pts, seed=1, close=true){
+  const n = pts.length;
+  for(let i=0;i<(close?n:n-1);i++){ const a=pts[i], b=pts[(i+1)%n]; sline(a[0],a[1],b[0],b[1],seed+i*1.7); }
+}
+function scircle(cx,cy,r,seed=1,fill=null,alpha=1){
+  if(fill){ ctx.save(); ctx.globalAlpha=alpha; ctx.fillStyle=fill; ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.fill(); ctx.restore(); }
+  const a0 = seed*0.9, n = Math.max(14, Math.ceil(r*1.2));
+  ctx.beginPath();
+  for(let i=0;i<=n;i++){ const t=i/n, a=a0+t*(2*Math.PI+0.35);
+    const rr = r*(1+0.045*Math.sin(3*a+seed)) + (t>0.9 ? (t-0.9)*r*0.25 : 0);
+    const x=cx+rr*Math.cos(a), y=cy+rr*Math.sin(a); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  ctx.stroke();
+}
+function txt(s,x,y,size=18,align="center",col="#1d1d2b"){ ctx.font=`${size}px "Humor Sans","xkcd Script","Comic Neue","Comic Sans MS","Chalkboard SE",cursive`;
+  ctx.textAlign=align; ctx.textBaseline="middle"; ctx.fillStyle=col; ctx.fillText(s,x,y); }
+
+/* ================= Simulation ================= */
+let st;
+const COLS = ["#7b4fd6","#e0242f","#0f9d58","#ff7a00"];   // 4 trajectoires max
+const NMAX = 4;
+let hist = [], nLaunch = 0;
+function reset(){
+  st = {phase:"ready", t:0, x:X0, y:Y0, vx:P.v, vy:0,
+        path:[[X0,Y0]], nextPath:0.002, end:"", col:COLS[nLaunch%NMAX], num:nLaunch+1};
+  draw();
+}
+function poleOK(){ return P.a>=0.5; }
+function step(dt){
+  const kk = poleOK() ? C*P.k*MATS[P.m].chi : 0;
+  const px = XM, py = Y0 + P.d;   // pôle (face proche de la trajectoire, sous la bille)
+  let dx = px-st.x, dy = py-st.y, r = Math.hypot(dx,dy);
+  if(poleOK()){
+    // collé ? (bille touche l'aimant)
+    const {L:MAG_L, W:MAG_W} = magSize(P.k);
+    const inX = Math.abs(st.x-XM) < MAG_W/2+RB, inY = st.y > py-RB && st.y < py+MAG_L+RB;
+    if(inX && inY){
+      // contact : on colle la bille sur la face réellement touchée (dessus, flanc gauche ou flanc droit)
+      const penTop  = st.y - (py-RB);
+      const penSide = (MAG_W/2+RB) - Math.abs(st.x-XM);
+      if(penTop <= penSide) st.y = py-RB;
+      else st.x = XM + Math.sign(st.x-XM||1)*(MAG_W/2+RB);
+      st.vx=0; st.vy=0; st.np=st.path.length; st.path.push([st.x,st.y]); st.phase="done"; st.end="clac"; st.clacT=performance.now(); return; }
+  }
+  let ax=0, ay=0;
+  if(kk>0){ const rs=Math.max(r,0.008); const f=kk/(rs*rs*rs*rs); ax=f*dx; ay=f*dy; }
+  st.vx += ax*dt; st.vy += ay*dt; st.x += st.vx*dt; st.y += st.vy*dt; st.t += dt;
+  if(st.t >= st.nextPath-1e-9){ st.path.push([st.x,st.y]); st.nextPath += 0.002; }
+  if(st.x<-RB || st.x>TABLE.w+RB || st.y<-RB || st.y>TABLE.h+RB){ st.phase="done"; st.end="out"; }
+  if(st.t>12){ st.phase="done"; }
+}
+
+/* ================= Dessin ================= */
+function drawTable(){
+  const x1=sx(0),y1=sy(0),x2=sx(TABLE.w),y2=sy(TABLE.h);
+  ctx.fillStyle="#1d1d2b"; ctx.fillRect(x1+7,y1+7,x2-x1,y2-y1);          // ombre cartoon
+  ctx.fillStyle="#f7c873"; ctx.fillRect(x1,y1,x2-x1,y2-y1);              // bois
+  ctx.save(); ctx.strokeStyle="rgba(170,105,40,0.35)"; ctx.lineWidth=2;
+  for(let i=1;i<7;i++){ const Y=y1+(y2-y1)*i/7; sline(x1+4,Y,x2-4,Y,i*3.3,1.2); }
+  for(let i=0;i<9;i++){ const X=x1+50+i*80, Y=y1+(y2-y1)*((i*37%7)+0.5)/7; ctx.beginPath(); ctx.ellipse(X,Y,9,3,0,0,2*Math.PI); ctx.stroke(); }
+  ctx.restore();
+  ctx.lineWidth=3.2; ctx.strokeStyle="#1d1d2b";
+  spoly([[x1,y1],[x2,y1],[x2,y2],[x1,y2]], 3);
+  ctx.strokeStyle="#5a3a14";
+  // graduations (bord bas et bord gauche) : 1 cm, chiffres tous les 10 cm
+  ctx.lineWidth=1.2;
+  for(let c=0;c<=TABLE.w*100+0.01;c++){
+    const X=sx(c/100), l = c%10===0?11:(c%5===0?7:4);
+    sline(X,y2,X,y2-l,c,0.4);
+    if(c%10===0) txt(String(c), X, y2+14, 13, "center", "#5a3a14");
+  }
+  for(let c=0;c<=TABLE.h*100+0.01;c++){
+    const Y=sy(c/100), l = c%10===0?11:(c%5===0?7:4);
+    sline(x1,Y,x1+l,Y,c+50,0.4);
+    if(c%10===0) txt(String(c), x1-15, Y, 13, "center", "#5a3a14");
+  }
+  txt("cm", x2+18, y2+14, 13, "center", "#5a3a14");
+  if(P.grid>=0.5){
+    ctx.save(); ctx.strokeStyle="rgba(90,58,20,0.25)"; ctx.lineWidth=1;
+    for(let c=5;c<TABLE.w*100;c+=5){ sline(sx(c/100),y1,sx(c/100),y2,c+7,0.6); }
+    for(let c=5;c<TABLE.h*100;c+=5){ sline(x1,sy(c/100),x2,sy(c/100),c+90,0.6); }
+    ctx.restore();
+  }
+}
+function drawLauncher(){
+  // petite gouttière/rampe vue de dessus
+  ctx.lineWidth=2.6; ctx.strokeStyle="#1d1d2b";
+  const xa=sx(0.005), xb=sx(X0-RB*1.3), ya=sy(Y0-0.022), yb=sy(Y0+0.022);
+  ctx.fillStyle="#1d1d2b"; ctx.fillRect(xa+4,ya+4,xb-xa,yb-ya);
+  ctx.fillStyle="#5aa9ff"; ctx.fillRect(xa,ya,xb-xa,yb-ya);
+  spoly([[xa,ya],[xb,ya],[xb,yb],[xa,yb]], 11);
+  for(let i=1;i<5;i++){ const X=xa+(xb-xa)*i/5; sline(X,ya+3,X,yb-3,i+20,0.5); }
+}
+function drawMagnet(){
+  if(!poleOK()) return;
+  const py = Y0 + P.d, TIP = 0.035;
+  const {L:MAG_L, W:MAG_W} = magSize(P.k);
+  const xl=sx(XM-MAG_W/2), xr=sx(XM+MAG_W/2), yt=sy(py), ym=sy(py+TIP), yb=sy(py+MAG_L);
+  ctx.fillStyle="#1d1d2b"; ctx.fillRect(xl+6,yt+6,xr-xl,yb-yt);          // ombre
+  ctx.fillStyle="#ff4d4d"; ctx.fillRect(xl,yt,xr-xl,ym-yt);
+  ctx.fillStyle="#4a4f63"; ctx.fillRect(xl,ym,xr-xl,yb-ym);
+  ctx.fillStyle="rgba(255,255,255,0.35)"; ctx.fillRect(xl+4,yt+3,5,yb-yt-6);  // reflet
+  ctx.lineWidth=3; ctx.strokeStyle="#1d1d2b";
+  spoly([[xl,yt],[xr,yt],[xr,yb],[xl,yb]], 31); sline(xl,ym,xr,ym,37);
+}
+function drawMagnetFx(){
+  // ondes magnétiques animées autour du pôle rouge.
+  // Leur portée ne suit l'intensité que si le réglage "k" est visible par l'élève (sinon constante).
+  if(!poleOK()) return;
+  const T = performance.now()/1000;
+  const py = Y0 + P.d, cx = sx(XM), cy = sy(py);
+  const kv = String(P.ctrl||"").includes("k") ? P.k/10 : 0.6;
+  if(kv<=0) return;
+  const Rmax = 25 + 85*kv;
+  ctx.save(); ctx.lineCap="round";
+  for(let i=0;i<4;i++){
+    const ph = (T*0.55 + i/4) % 1, r = 14 + ph*Rmax, a = (1-ph)*0.75;
+    ctx.strokeStyle = `rgba(255,77,77,${a})`; ctx.lineWidth = 3.5 - 2*ph;
+    ctx.setLineDash([10,7]); ctx.lineDashOffset = -T*30;
+    ctx.beginPath(); ctx.arc(cx, cy+6, r, Math.PI*0.92, Math.PI*2.08); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.strokeStyle="#ffcc00"; ctx.lineWidth=2.6;
+  for(let i=0;i<3;i++){
+    if(Math.sin(T*9+i*1.7)<-0.3) continue;   // scintillement
+    const ang = Math.PI*1.5 + Math.sin(T*2.2+i*2.1)*0.9, rr = 20 + 6*Math.sin(T*5+i);
+    const bx = cx + rr*Math.cos(ang)*1.3, by = cy - 4 + rr*Math.sin(ang);
+    ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(bx+4,by-6); ctx.lineTo(bx-1,by-8); ctx.lineTo(bx+3,by-15); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawBall(x,y,seed=5){
+  const M = MATS[P.m], X=sx(x), Y=sy(y), R=RB*SC;
+  ctx.save(); ctx.fillStyle="rgba(29,29,43,0.35)"; ctx.beginPath(); ctx.arc(X+3,Y+3,R,0,2*Math.PI); ctx.fill(); ctx.restore();
+  ctx.lineWidth=2.6; ctx.strokeStyle="#1d1d2b";
+  scircle(X,Y,R,seed,M.fill,M.alpha);
+  ctx.save(); ctx.globalAlpha=0.85; ctx.fillStyle=M.hi; ctx.beginPath(); ctx.arc(X-R*0.35,Y-R*0.35,R*0.28,0,2*Math.PI); ctx.fill(); ctx.restore();
+}
+function drawTraj(T){
+  if(P.tr<0.5) return;
+  ctx.save(); ctx.strokeStyle=T.col; ctx.lineCap="round"; ctx.lineJoin="round";
+  if(P.trace>=0.5){
+    ctx.lineWidth=3; ctx.beginPath();
+    T.path.forEach((p,i)=>{ const X=sx(p[0]),Y=sy(p[1]); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+    ctx.stroke();
+  } else {
+    ctx.lineWidth=2.2; const c=5;
+    T.marks.forEach(m=>{ const X=sx(m[0]),Y=sy(m[1]);
+      ctx.beginPath(); ctx.moveTo(X-c,Y-c); ctx.lineTo(X+c,Y+c); ctx.moveTo(X-c,Y+c); ctx.lineTo(X+c,Y-c); ctx.stroke(); });
+  }
+  ctx.restore();
+}
+function drawGhostMagnet(T){
+  // contour pointillé d'un aimant d'une trajectoire conservée, s'il n'est plus au même endroit
+  if(!T.p.a) return;
+  if(poleOK() && Math.abs(T.p.d-P.d)<1e-9 && Math.abs(T.p.k-P.k)<1e-9) return;
+  const {L:MAG_L, W:MAG_W} = magSize(T.p.k);
+  const py=Y0+T.p.d, xl=sx(XM-MAG_W/2), xr=sx(XM+MAG_W/2), yt=sy(py), yb=sy(py+MAG_L);
+  ctx.save(); ctx.setLineDash([6,5]); ctx.lineWidth=2; ctx.strokeStyle=T.col; ctx.strokeRect(xl,yt,xr-xl,yb-yt); ctx.restore();
+}
+function draw(){
+  ctx.fillStyle="#bfe9ff"; ctx.fillRect(0,0,W,H);
+  drawTable(); drawLauncher();
+  hist.forEach(drawGhostMagnet);
+  drawMagnetFx();
+  drawMagnet();
+  hist.forEach(drawTraj);
+  if(st.phase!=="done"){ st.np=st.path.length; drawTraj({path:st.path, col:st.col, marks:marksOf({path:st.path,np:st.path.length})}); }
+  drawBall(st.x, st.y);
+  if(st.end==="clac" && performance.now()-st.clacT<1000){ ctx.save(); ctx.translate(sx(st.x)+58, sy(st.y)-30); ctx.rotate(-0.12);
+    ctx.beginPath(); for(let i=0;i<=24;i++){ const a=i/24*2*Math.PI, r=(i%2?30:46); ctx.lineTo(r*1.35*Math.cos(a), r*0.8*Math.sin(a)); }
+    ctx.closePath(); ctx.fillStyle="#ffcc00"; ctx.fill(); ctx.lineWidth=3; ctx.strokeStyle="#1d1d2b"; ctx.stroke();
+    txt("CLAC !",0,1,24,"center","#e0242f"); ctx.restore(); }
+}
+
+/* ================= Boucle ================= */
+let last=null, raf=null;
+function loop(ts){
+  if(last===null) last=ts;
+  let real = Math.min(0.05,(ts-last)/1000); last=ts;
+  if(st.phase==="fly"){
+    let simdt = real*P.slow; const h=0.0002;
+    while(simdt>1e-9 && st.phase==="fly"){ const d=Math.min(h,simdt); step(d); simdt-=d; }
+    if(st.phase==="done"){ archive(); updUI(); }
+  }
+  draw();
+  if(tab==="traj") gdraw();
+  if(!(P.tau>0)) updTau();
+  requestAnimationFrame(loop);   // boucle permanente (ondes de l'aimant)
+}
+// positions chronophoto = rééchantillonnage de la trajectoire fine (pas 2 ms) au pas Δt courant
+const PATH_DT = 0.002;
+// Δt : P.tau > 0 = valeur imposée ; P.tau = 0 = automatique (≈ 25 points sur la trajectoire la plus longue)
+const TAUS = [0.02,0.03,0.04,0.05,0.06,0.08,0.10,0.12,0.15,0.20];
+function tauEff(){
+  if(P.tau>0) return P.tau;
+  let dur = 0;
+  hist.forEach(T=>{ dur=Math.max(dur,(T.np-1)*PATH_DT); });
+  if(st && st.phase!=="ready") dur=Math.max(dur, st.phase==="fly" ? Math.max((TABLE.w-X0)/Math.max(P.v,0.05), st.t) : st.t);
+  if(!dur) dur=(TABLE.w-X0)/Math.max(P.v,0.05);
+  return TAUS.reduce((b,t)=>Math.abs(dur/t-25)<Math.abs(dur/b-25)?t:b, TAUS[0]);
+}
+function marksOf(T){ const k=Math.max(1,Math.round(tauEff()/PATH_DT)), out=[];
+  for(let i=0;i<T.np;i+=k) out.push(T.path[i]); return out; }
+function archive(){
+  if(st.np===undefined) st.np = st.path.length;
+  hist.push({path:st.path, np:st.np, col:st.col, num:st.num, get marks(){ return marksOf(this); },
+             p:{v:P.v, d:P.d, a:poleOK()?1:0, k:P.k, m:P.m}});
+  while(hist.length>NMAX) hist.shift();
+  gsel=[]; gfit();
+  nLaunch++;
+  renderInfo();
+}
+const fr = (x,n)=>(+x).toFixed(n).replace(".",",");
+function phrase(T){
+  // n'affiche QUE les paramètres dont le réglage est visible par l'élève
+  const p=T.p, sh=String(P.ctrl||"");
+  let s = "Bille" + (sh.includes("m") ? " en "+MATS[p.m].nom : "");
+  if(sh.includes("v")) s += " lancée à v₀ = "+fr(p.v,2)+" m/s";
+  const parts=[];
+  if(sh.includes("a")) parts.push(p.a ? "aimant présent" : "sans aimant");
+  if(p.a){
+    if(sh.includes("k")) parts.push("intensité de l'aimant "+fr(p.k,1));
+    if(sh.includes("d")) parts.push("aimant à d = "+fr(p.d*100,1)+" cm de la trajectoire");
+  }
+  if(parts.length) s += " ; " + parts.join(", ");
+  return s + ".";
+}
+function renderInfo(){
+  const el=$("info_l");
+  if(!hist.length){ el.innerHTML='<div class="vide">Aucune trajectoire pour l\'instant.</div>'; return; }
+  el.innerHTML = hist.map(T=>`<div class="l"><div class="t" style="color:${T.col}"><span class="x">✕</span>Trajectoire ${T.num}</div><div class="s">${phrase(T)}</div></div>`).join("");
+  el.scrollTop = el.scrollHeight;   // dernière trajectoire visible
+}
+function go(){ if(st.phase!=="ready") reset(); st.phase="fly"; updUI(); }
+
+/* ================= UI ================= */
+const $=id=>document.getElementById(id);
+MATS.forEach((m,i)=>{ const o=document.createElement("option"); o.value=i; o.textContent=m.nom; $("s_m").appendChild(o); });
+const show = String(P.ctrl||"");
+[["v","c_v"],["d","c_d"],["a","c_a"],["k","c_k"],["m","c_m"],["t","c_t"]].forEach(([l,id])=>{ if(!show.includes(l)) $(id).classList.add("hidden"); });
+$("s_v").value=P.v; $("s_d").value=P.d; $("s_a").checked=P.a>=0.5; $("s_k").value=P.k; $("s_m").value=P.m;
+$("s_slow").value = String([1,0.25,0.1].reduce((b,v)=>Math.abs(v-P.slow)<Math.abs(b-P.slow)?v:b,1));
+P.slow = parseFloat($("s_slow").value);
+function updUI(){
+  $("o_v").textContent = (+P.v).toFixed(2)+" m/s";
+  $("o_d").textContent = (P.d*100).toFixed(1)+" cm";
+  $("o_k").textContent = (+P.k).toFixed(1);
+  $("c_k").style.opacity = poleOK()?1:0.4; $("s_k").disabled = !poleOK() || P.move<0.5;
+  const lock = P.move<0.5, flying = st && st.phase==="fly";
+  ["s_v","s_d","s_a","s_m"].forEach(id=>$(id).disabled = lock||flying);
+  if(flying) $("s_k").disabled=true;
+  $("b_go").disabled = lock||flying; $("b_reset").disabled = lock; $("b_clear").disabled = lock;
+}
+$("s_v").oninput=e=>{P.v=+e.target.value; reset(); updUI();};
+$("s_d").oninput=e=>{P.d=+e.target.value; reset(); updUI();};
+$("s_a").onchange=e=>{P.a=e.target.checked?1:0; reset(); updUI();};
+$("s_k").oninput=e=>{P.k=+e.target.value; reset(); updUI();};
+$("s_m").onchange=e=>{P.m=+e.target.value; reset(); updUI();};
+$("s_slow").onchange=e=>{P.slow=+e.target.value;};
+$("s_trace").value = P.trace>=0.5 ? "1" : "0";
+(function(){ const sel=$("s_tau");
+  const oa=document.createElement("option"); oa.value="0"; oa.id="o_tauauto"; sel.appendChild(oa);
+  TAUS.forEach(t=>{ const o=document.createElement("option"); o.value=String(t); o.textContent=t.toFixed(2).replace(".",",")+" s"; sel.appendChild(o); });
+  if(P.tau>0) P.tau = TAUS.reduce((b,t)=>Math.abs(t-P.tau)<Math.abs(b-P.tau)?t:b, TAUS[0]);
+  sel.value = String(P.tau>0 ? P.tau : 0);
+  sel.onchange=e=>{ P.tau=+e.target.value; gsel=[]; updTau(); draw(); };
+})();
+let lastTauTxt="";
+function updTau(){ const t="auto ("+tauEff().toFixed(2).replace(".",",")+" s)"; if(t!==lastTauTxt){ $("o_tauauto").textContent=t; lastTauTxt=t; } }
+$("s_trace").onchange=e=>{P.trace=+e.target.value; draw();};
+$("b_jpg").onclick=()=>{
+  // image = table + légende des trajectoires (mêmes phrases que le panneau Informations), avec retour à la ligne
+  const dpr = cv.width / W, lh = 24, pad = 14, gap = 8, xT = 42, maxW = W - xT - 20;
+  const FONT = '16px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  const m = document.createElement("canvas").getContext("2d"); m.font = FONT;
+  const wrap = t => { const out=[]; let cur="";
+    t.split(" ").forEach(w=>{ const test = cur ? cur+" "+w : w;
+      if(m.measureText(test).width > maxW && cur){ out.push(cur); cur=w; } else cur=test; });
+    if(cur) out.push(cur); return out; };
+  const blocks = hist.map(T=>({col:T.col, lines:wrap("Trajectoire "+T.num+" : "+phrase(T))}));
+  const nL = blocks.reduce((n,B)=>n+B.lines.length,0);
+  const legH = pad*2 + Math.max(1,nL)*lh + Math.max(0,blocks.length-1)*gap;
+  const out = document.createElement("canvas");
+  out.width = cv.width; out.height = cv.height + Math.round(legH*dpr);
+  const o = out.getContext("2d");
+  o.fillStyle="#fff7e3"; o.fillRect(0,0,out.width,out.height);
+  draw(); if(tab==="traj"){ gdraw(); o.drawImage(gv,0,0); } else o.drawImage(cv,0,0);
+  o.scale(dpr,dpr); o.textBaseline="middle";
+  let y = H + pad + lh/2;
+  if(!blocks.length){ o.font=FONT; o.fillStyle="#777"; o.fillText("Aucune trajectoire.", 20, y); }
+  blocks.forEach(B=>{
+    o.fillStyle=B.col; o.font='bold 18px "Comic Neue","Comic Sans MS",cursive'; o.fillText("✕", 20, y);
+    o.fillStyle="#1d1d2b"; o.font=FONT;
+    B.lines.forEach(L=>{ o.fillText(L, xT, y); y += lh; });
+    y += gap;
+  });
+  out.toBlob(bl=>{ const a=document.createElement("a"); a.href=URL.createObjectURL(bl);
+    a.download = tab==="traj" ? "graphique_trajectoires.jpg" : "trajectoires_bille_aimant.jpg"; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000); }, "image/jpeg", 0.92);
+};
+$("b_clear").onclick=()=>{ hist=[]; nLaunch=0; gsel=[]; garr=[]; gfit(); reset(); renderInfo(); updUI(); };
+$("b_go").onclick=go;
+$("b_reset").onclick=()=>{ reset(); updUI(); };
+
+/* ================= Onglet Trajectoire : repère orthonormé ================= */
+// Repère : origine au point de départ de la bille, x vers la droite, y vers le haut, en cm.
+const gv = document.getElementById("gv"), gx = gv.getContext("2d");
+let tab = "exp";
+let gV = {cx:40, cy:-5, s:10};          // centre de la vue (cm) et échelle (px/cm)
+let gsel = [], ghov = null, gmouse = null, gdrag = null;
+let gtool = "mes", garr = [], gdraft = null;      // outil : "mes" (mesure) ou "arr" (flèche)
+const G_ML = 58, G_MB = 40, G_MT = 14, G_MR = 14;     // marges (px) pour graduations
+const toG = (X,Y) => [(X-X0)*100, -(Y-Y0)*100];      // table (m) -> repère (cm)
+const gpx = x => G_ML + (W-G_ML-G_MR)/2 + (x-gV.cx)*gV.s;
+const gpy = y => G_MT + (H-G_MT-G_MB)/2 - (y-gV.cy)*gV.s;
+const gfromPx = (px,py) => [gV.cx + (px - G_ML - (W-G_ML-G_MR)/2)/gV.s, gV.cy - (py - G_MT - (H-G_MT-G_MB)/2)/gV.s];
+function gfit(){
+  let xs=[], ys=[];
+  hist.forEach(T=>T.marks.forEach(m=>{ const [x,y]=toG(m[0],m[1]); xs.push(x); ys.push(y); }));
+  if(!xs.length){ xs=[0,(TABLE.w-X0)*100]; ys=[5,-(TABLE.h-Y0)*100]; }
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  const w=Math.max(x1-x0,4), h=Math.max(y1-y0,4);
+  gV.cx=(x0+x1)/2; gV.cy=(y0+y1)/2;
+  gV.s=Math.min((W-G_ML-G_MR)/(w*1.12), (H-G_MT-G_MB)/(h*1.18));
+  gV.s=Math.max(2, Math.min(gV.s, 400));
+}
+function niceStep(pxPerUnit){ const target=60/pxPerUnit; const p=Math.pow(10,Math.floor(Math.log10(target)));
+  for(const m of [1,2,5,10]) if(m*p>=target) return m*p; return 10*p; }
+const gfmt = v => { const r=Math.round(v*100)/100; return String(r).replace(".",","); };
+function gdraw(){
+  const c=gx; c.save(); c.fillStyle="#fffdf7"; c.fillRect(0,0,W,H);
+  const L=G_ML, Rr=W-G_MR, T=G_MT, B=H-G_MB;
+  const st_=niceStep(gV.s), mi=st_/5;
+  const [xa,ya]=gfromPx(L,B), [xb,yb]=gfromPx(Rr,T);
+  c.save(); c.beginPath(); c.rect(L,T,Rr-L,B-T); c.clip();
+  // grille mineure / majeure
+  c.lineWidth=1;
+  c.strokeStyle="rgba(123,79,214,0.10)";
+  for(let x=Math.ceil(xa/mi)*mi; x<=xb; x+=mi){ c.beginPath(); c.moveTo(gpx(x),T); c.lineTo(gpx(x),B); c.stroke(); }
+  for(let y=Math.ceil(ya/mi)*mi; y<=yb; y+=mi){ c.beginPath(); c.moveTo(L,gpy(y)); c.lineTo(Rr,gpy(y)); c.stroke(); }
+  c.strokeStyle="rgba(123,79,214,0.28)";
+  for(let x=Math.ceil(xa/st_)*st_; x<=xb; x+=st_){ c.beginPath(); c.moveTo(gpx(x),T); c.lineTo(gpx(x),B); c.stroke(); }
+  for(let y=Math.ceil(ya/st_)*st_; y<=yb; y+=st_){ c.beginPath(); c.moveTo(L,gpy(y)); c.lineTo(Rr,gpy(y)); c.stroke(); }
+  // axes passant par l'origine
+  c.strokeStyle="#1d1d2b"; c.lineWidth=2;
+  c.beginPath(); c.moveTo(L,gpy(0)); c.lineTo(Rr,gpy(0)); c.stroke();
+  c.beginPath(); c.moveTo(gpx(0),T); c.lineTo(gpx(0),B); c.stroke();
+  // aimants (contour) des trajectoires conservées
+  const seen=new Set();
+  hist.forEach(Tj=>{ if(!Tj.p.a) return; const key=Tj.p.d+"|"+Tj.p.k; if(seen.has(key)) return; seen.add(key);
+    const {L:ML,W:MW}=magSize(Tj.p.k); const [x1,y1]=toG(XM-MW/2, Y0+Tj.p.d), [x2,y2]=toG(XM+MW/2, Y0+Tj.p.d+ML);
+    c.fillStyle="rgba(74,79,99,0.15)"; c.strokeStyle="rgba(29,29,43,0.55)"; c.lineWidth=1.5; c.setLineDash([5,4]);
+    c.fillRect(gpx(x1),gpy(y1),gpx(x2)-gpx(x1),gpy(y2)-gpy(y1)); c.strokeRect(gpx(x1),gpy(y1),gpx(x2)-gpx(x1),gpy(y2)-gpy(y1));
+    c.setLineDash([]); c.fillStyle="rgba(255,77,77,0.6)"; c.fillRect(gpx(x1),gpy(y1),gpx(x2)-gpx(x1),Math.min(gV.s*3.5,gpy(y2)-gpy(y1)));
+  });
+  // trajectoires
+  hist.forEach(Tj=>{
+    c.strokeStyle=Tj.col; c.lineCap="round"; c.lineJoin="round";
+    if(P.trace>=0.5){ c.lineWidth=2.5; c.beginPath();
+      Tj.path.forEach((p,i)=>{ const [x,y]=toG(p[0],p[1]); i?c.lineTo(gpx(x),gpy(y)):c.moveTo(gpx(x),gpy(y)); }); c.stroke(); }
+    const cs = P.trace>=0.5 ? 3 : 5; c.lineWidth = P.trace>=0.5 ? 1.6 : 2.2;
+    Tj.marks.forEach(m=>{ const [x,y]=toG(m[0],m[1]), X=gpx(x), Y=gpy(y);
+      c.beginPath(); c.moveTo(X-cs,Y-cs); c.lineTo(X+cs,Y+cs); c.moveTo(X-cs,Y+cs); c.lineTo(X+cs,Y-cs); c.stroke(); });
+  });
+  // flèches tracées à la main (départ accroché sur une croix)
+  const drawArrow=(A,col,dash)=>{ const X1=gpx(A.x0),Y1=gpy(A.y0),X2=gpx(A.x1),Y2=gpy(A.y1), Lp=Math.hypot(X2-X1,Y2-Y1); if(Lp<3) return;
+    const ux=(X2-X1)/Lp, uy=(Y2-Y1)/Lp, nx=-uy, ny=ux, h=Math.min(14,Lp*0.35);
+    c.save(); c.strokeStyle=col; c.lineWidth=3; c.lineCap="round"; if(dash) c.setLineDash([8,6]);
+    c.beginPath(); c.moveTo(X1,Y1); c.quadraticCurveTo((X1+X2)/2+nx*1.5,(Y1+Y2)/2+ny*1.5,X2,Y2); c.stroke(); c.setLineDash([]);
+    c.beginPath(); c.moveTo(X2,Y2); c.lineTo(X2-ux*h+nx*h*0.55,Y2-uy*h+ny*h*0.55); c.moveTo(X2,Y2); c.lineTo(X2-ux*h-nx*h*0.5,Y2-uy*h-ny*h*0.5); c.stroke();
+    c.restore(); };
+  garr = garr.filter(A=>hist.some(T=>T.num===A.num));
+  garr.forEach(A=>drawArrow(A, A.col, false));
+  if(gdraft){ drawArrow(gdraft, gdraft.col, true);
+    const Lc=Math.hypot(gdraft.x1-gdraft.x0, gdraft.y1-gdraft.y0), lab="longueur = "+gfmt(Lc)+" cm";
+    c.font='15px "Humor Sans","Comic Neue","Comic Sans MS",cursive'; const w=c.measureText(lab).width+14;
+    const bx=gpx(gdraft.x1)+12, by=gpy(gdraft.y1)-30;
+    c.fillStyle="#ffe27a"; c.fillRect(bx,by,w,24); c.strokeStyle="#1d1d2b"; c.lineWidth=1.5; c.strokeRect(bx,by,w,24);
+    c.fillStyle="#1d1d2b"; c.textAlign="left"; c.textBaseline="middle"; c.fillText(lab,bx+7,by+12); }
+  // mesure de distance
+  let distLab = null;
+  const DL_F1='13px "Humor Sans","Comic Neue","Comic Sans MS",cursive', DL_F2='17px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  const distSize=d=>{ c.font=DL_F2; let w=Math.max(c.measureText(d.num).width, d.den?c.measureText(d.den).width:0);
+    c.font=DL_F1; w=Math.max(w,c.measureText(d.head).width); return {w:w+24, h: d.den ? 74 : 48}; };
+  const drawDist=(d,mx,my)=>{   // étiquette jaune centrée en (mx,my) : en-tête, distance, barre de fraction, durée
+    const {w,h}=distSize(d); mx=Math.max(L+w/2+4, Math.min(Rr-w/2-4, mx)); my=Math.max(T+30+h/2, Math.min(B-h/2-2, my));   // T+30 : sous la barre d'outils
+    const x0=mx-w/2, y0=my-h/2;
+    c.fillStyle="#1d1d2b"; c.fillRect(x0+3,y0+3,w,h); c.fillStyle="#ffe27a"; c.fillRect(x0,y0,w,h);
+    c.strokeStyle="#1d1d2b"; c.lineWidth=2; c.strokeRect(x0,y0,w,h);
+    c.fillStyle="#555"; c.font=DL_F1; c.textAlign="center"; c.textBaseline="middle"; c.fillText(d.head,mx,y0+11);
+    c.fillStyle="#1d1d2b"; c.font=DL_F2; c.fillText(d.num,mx,y0+31);
+    if(d.den){ c.lineWidth=2; c.beginPath(); c.moveTo(x0+10,y0+45); c.lineTo(x0+w-10,y0+45); c.stroke(); c.fillText(d.den,mx,y0+60); }
+    return h; };
+  const ptOf = q => { const m=hist[q.h].marks[q.i]; return toG(m[0],m[1]); };
+  gsel = gsel.filter(q=>hist[q.h] && hist[q.h].marks[q.i]);
+  gsel.forEach((q,k)=>{ const [x,y]=ptOf(q), X=gpx(x), Y=gpy(y);
+    c.strokeStyle="#1d1d2b"; c.lineWidth=2; c.beginPath(); c.arc(X,Y,8,0,2*Math.PI); c.stroke();
+    // nom du point mesuré (décalé de part et d'autre du segment pour ne pas se chevaucher)
+    const nm="M"+q.i; c.font='bold 15px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+    const w=c.measureText(nm).width+10; let lx, ly;
+    if(gsel.length===2){ const o=ptOf(gsel[1-k]); const dx=X-gpx(o[0]), dy=Y-gpy(o[1]), n=Math.hypot(dx,dy)||1;
+      lx=X+dx/n*20 - w/2; ly=Y+dy/n*20 - 10; }
+    else { lx=X-w/2; ly=Y+12; }
+    c.fillStyle="#fff"; c.fillRect(lx,ly,w,20); c.strokeStyle=hist[q.h].col; c.lineWidth=1.8; c.strokeRect(lx,ly,w,20);
+    c.fillStyle=hist[q.h].col; c.textAlign="center"; c.textBaseline="middle"; c.fillText(nm,lx+w/2,ly+10); });
+  if(gsel.length===2){
+    const [x1,y1]=ptOf(gsel[0]), [x2,y2]=ptOf(gsel[1]);
+    c.strokeStyle="#1d1d2b"; c.lineWidth=2; c.setLineDash([7,5]);
+    c.beginPath(); c.moveTo(gpx(x1),gpy(y1)); c.lineTo(gpx(x2),gpy(y2)); c.stroke(); c.setLineDash([]);
+    const D=Math.hypot(x2-x1,y2-y1);
+    const dT = Math.abs(gsel[1].i-gsel[0].i)*tauEff();
+    const same = gsel[0].h===gsel[1].h;   // Δt n'a de sens que sur une même trajectoire
+    distLab = { head:"M"+gsel[0].i+" → M"+gsel[1].i, num:"distance = "+gfmt(D)+" cm",
+                den: same ? "durée Δt = "+dT.toFixed(2).replace(".",",")+" s" : null,
+                x:(gpx(x1)+gpx(x2))/2, y:(gpy(y1)+gpy(y2))/2 };
+  }
+  // curseur : réticule + point accroché
+  if(gmouse && !gdraft && (!gdrag || gdrag.from)){
+    c.strokeStyle="rgba(29,29,43,0.35)"; c.lineWidth=1; c.setLineDash([4,4]);
+    const [hx,hy] = ghov ? ptOf(ghov).map((v,i)=>i?gpy(v):gpx(v)) : gmouse;
+    c.beginPath(); c.moveTo(hx,T); c.lineTo(hx,B); c.moveTo(L,hy); c.lineTo(Rr,hy); c.stroke(); c.setLineDash([]);
+    let lab;
+    if(ghov){ const [x,y]=ptOf(ghov); const Tj=hist[ghov.h];
+      c.strokeStyle=Tj.col; c.lineWidth=3; c.beginPath(); c.arc(hx,hy,7,0,2*Math.PI); c.stroke();
+      const tt=(ghov.i*tauEff()).toFixed(2).replace(".",",");
+      lab = "M"+ghov.i+" (traj. "+Tj.num+")   t = "+tt+" s   x = "+gfmt(x)+" cm   y = "+gfmt(y)+" cm"; }
+    else { const [x,y]=gfromPx(gmouse[0],gmouse[1]); lab = "x = "+gfmt(x)+" cm   y = "+gfmt(y)+" cm"; }
+    c.font='14px "Humor Sans","Comic Neue","Comic Sans MS",cursive'; const w=c.measureText(lab).width+14;
+    let bx=hx+14, by=hy-30; if(bx+w>Rr) bx=hx-14-w; if(by<T+2) by=hy+12;
+    c.fillStyle="rgba(255,255,255,0.95)"; c.fillRect(bx,by,w,22); c.strokeStyle="#1d1d2b"; c.lineWidth=1.5; c.strokeRect(bx,by,w,22);
+    c.fillStyle="#1d1d2b"; c.textAlign="left"; c.textBaseline="middle"; c.fillText(lab,bx+7,by+11);
+    if(distLab){ const {w:wd,h:hd}=distSize(distLab);
+      let dy=by-8-hd/2; if(dy-hd/2<T+30) dy=by+22+8+hd/2;   // au-dessus de l'info-bulle (ou dessous si pas de place)
+      drawDist(distLab, bx+wd/2, dy); distLab=null; }
+  }
+  if(distLab){ const {h:hd}=distSize(distLab); let my=distLab.y-20-hd/2; if(my-hd/2<T+30) my=distLab.y+20+hd/2; drawDist(distLab, distLab.x, my); }
+  c.restore();
+  // cadre + graduations + noms d'axes
+  c.strokeStyle="#1d1d2b"; c.lineWidth=2.5; c.strokeRect(L,T,Rr-L,B-T);
+  c.fillStyle="#1d1d2b"; c.font='13px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  c.textAlign="center"; c.textBaseline="top";
+  for(let x=Math.ceil(xa/st_)*st_; x<=xb+1e-9; x+=st_){ const X=gpx(x); c.beginPath(); c.moveTo(X,B); c.lineTo(X,B+6); c.stroke(); c.fillText(gfmt(x),X,B+8); }
+  c.textAlign="right"; c.textBaseline="middle";
+  for(let y=Math.ceil(ya/st_)*st_; y<=yb+1e-9; y+=st_){ const Y=gpy(y); c.beginPath(); c.moveTo(L-6,Y); c.lineTo(L,Y); c.stroke(); c.fillText(gfmt(y),L-9,Y); }
+  c.font='15px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  c.textAlign="right"; c.textBaseline="bottom"; c.fillText("x (cm)", Rr-4, B-4);
+  c.save(); c.translate(L+16,T+6); c.textAlign="left"; c.textBaseline="top"; c.fillText("y (cm)",0,0); c.restore();
+  // légende
+  if(hist.length){ c.textAlign="left"; c.textBaseline="middle"; const lx=Rr-140; let ly=T+44;
+    c.fillStyle="rgba(255,255,255,0.9)"; c.fillRect(lx-10,ly-14,140,hist.length*20+8);
+    c.strokeStyle="#1d1d2b"; c.lineWidth=1.5; c.strokeRect(lx-10,ly-14,140,hist.length*20+8);
+    hist.forEach(Tj=>{ c.fillStyle=Tj.col; c.font='bold 16px "Comic Neue","Comic Sans MS",cursive'; c.fillText("✕",lx,ly);
+      c.fillStyle="#1d1d2b"; c.font='14px "Humor Sans","Comic Neue","Comic Sans MS",cursive'; c.fillText("Trajectoire "+Tj.num,lx+18,ly); ly+=20; }); }
+  else { c.fillStyle="#888"; c.textAlign="center"; c.textBaseline="middle"; c.font='17px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+    c.fillText("Lancez la bille dans l'onglet Expérience : les trajectoires apparaîtront ici.", W/2, H/2); }
+  c.restore();
+}
+function gpos(e){ const r=gv.getBoundingClientRect(); return [(e.clientX-r.left)*W/r.width, (e.clientY-r.top)*H/r.height]; }
+function gnear(px,py){ let best=null, bd=40*40;   // curseur magnétique
+  hist.forEach((Tj,h)=>Tj.marks.forEach((m,i)=>{ const [x,y]=toG(m[0],m[1]); const d=(gpx(x)-px)**2+(gpy(y)-py)**2; if(d<bd){bd=d; best={h,i};} }));
+  return best; }
+gv.addEventListener("pointerdown",e=>{ const p=gpos(e), q = gtool==="none" ? null : gnear(p[0],p[1]);
+  gdrag={p, c:[gV.cx,gV.cy], moved:false, from:q}; gv.setPointerCapture(e.pointerId); });
+gv.addEventListener("pointermove",e=>{ const p=gpos(e); gmouse=p;
+  if(gdrag){ const dx=p[0]-gdrag.p[0], dy=p[1]-gdrag.p[1]; if(Math.abs(dx)+Math.abs(dy)>4) gdrag.moved=true;
+    if(gdrag.moved){
+      if(gdrag.from && gtool==="arr"){ const [x,y]=gfromPx(p[0],p[1]); const [x0,y0]=(m=>toG(m[0],m[1]))(hist[gdrag.from.h].marks[gdrag.from.i]);
+        gdraft={x0,y0,x1:x,y1:y,col:"#1d1d2b",num:hist[gdrag.from.h].num}; ghov=null; }
+      else if(gdrag.from){ ghov=gnear(p[0],p[1]); gsel=[gdrag.from]; if(ghov && (ghov.h!==gdrag.from.h || ghov.i!==gdrag.from.i)) gsel.push(ghov); }  // règle élastique
+      else { gV.cx=gdrag.c[0]-dx/gV.s; gV.cy=gdrag.c[1]+dy/gV.s; gv.style.cursor="grabbing"; } } }
+  else ghov=gnear(p[0],p[1]); });
+gv.addEventListener("pointerup",e=>{ const p=gpos(e); gv.style.cursor="crosshair";
+  if(gdrag && gdrag.moved && gdrag.from && gtool==="arr"){ if(gdraft && Math.hypot(gdraft.x1-gdraft.x0,gdraft.y1-gdraft.y0)>0.2) garr.push(gdraft); gdraft=null; }
+  else if(gdrag && gdrag.moved && gdrag.from){ if(gsel.length<2) gsel=[]; }
+  else if(gdrag && !gdrag.moved && gtool==="arr"){ /* clic simple en mode flèche : rien */ }
+  else if(gdrag && !gdrag.moved && gtool==="mes"){ const q=gnear(p[0],p[1]);
+    if(!q) gsel=[]; else if(gsel.length>=2) gsel=[q]; else gsel.push(q); }
+  gdrag=null; ghov=gnear(p[0],p[1]); });
+gv.addEventListener("pointerleave",()=>{ if(!gdrag){ gmouse=null; ghov=null; } });
+function gzoom(f, px, py){ const [x,y]=gfromPx(px,py); gV.s=Math.max(1.5,Math.min(600,gV.s*f));
+  const [x2,y2]=gfromPx(px,py); gV.cx+=x-x2; gV.cy+=y-y2; }
+gv.addEventListener("wheel",e=>{ e.preventDefault(); const p=gpos(e); gzoom(e.deltaY<0?1.15:1/1.15, p[0], p[1]); }, {passive:false});
+$("g_in").onclick=()=>gzoom(1.3, W/2, H/2);
+$("g_out").onclick=()=>gzoom(1/1.3, W/2, H/2);
+$("g_fit").onclick=()=>gfit();
+$("g_clr").onclick=()=>{ gsel=[]; garr=[]; gdraft=null; };
+// outils autorisés (arr=0 / mes=0 : bouton grisé et outil inactif)
+const TOOL_OK = { mes: P.mes>=0.5, arr: P.arr>=0.5 };
+$("g_mes").disabled = !TOOL_OK.mes; $("g_arr").disabled = !TOOL_OK.arr;
+if(!TOOL_OK[gtool]) gtool = TOOL_OK.mes ? "mes" : (TOOL_OK.arr ? "arr" : "none");
+const updTool=()=>{ $("g_mes").style.background = gtool==="mes" ? "#ffe27a" : "#fff"; $("g_arr").style.background = gtool==="arr" ? "#ffe27a" : "#fff";
+  $("ghelp").textContent = gtool==="mes"
+    ? "molette : zoom · glisser dans le vide : déplacer · glisser d'une croix à une autre (ou 2 clics) : distance"
+    : gtool==="arr" ? "molette : zoom · glisser dans le vide : déplacer · glisser depuis une croix : tracer une flèche"
+    : "molette : zoom · glisser : déplacer"; };
+$("g_mes").onclick=()=>{ if(TOOL_OK.mes){ gtool="mes"; updTool(); } };
+$("g_arr").onclick=()=>{ if(TOOL_OK.arr){ gtool="arr"; gsel=[]; updTool(); } };
+updTool();
+function setTab(t){ tab=t;
+  $("t_exp").classList.toggle("on", t==="exp"); $("t_traj").classList.toggle("on", t==="traj");
+  $("cv").classList.toggle("hidden", t!=="exp");
+  ["gv","gtools","ghelp"].forEach(id=>$(id).classList.toggle("hidden", t!=="traj"));
+  if(t==="traj") gdraw(); }
+$("t_exp").onclick=()=>setTab("exp");
+$("t_traj").onclick=()=>setTab("traj");
+
+// netteté écran haute densité
+(function(){ const dpr=Math.max(1,window.devicePixelRatio||1); cv.width=W*dpr; cv.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  gv.width=W*dpr; gv.height=H*dpr; gx.setTransform(dpr,0,0,dpr,0,0); })();
+gfit();
+reset(); renderInfo(); updUI();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
