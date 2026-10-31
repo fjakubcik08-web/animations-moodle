@@ -1068,7 +1068,7 @@ let vecs = [];     // {id, home:{x,y}, pt:null|pointId, ang}
 function initVecs(){
   vecs = [];
   const gap = W/(NVEC+1);
-  for(let i=0;i<NVEC;i++) vecs.push({id:i, home:{x:gap*(i+1)-LVEC/2, y:SCENE_H+85}, pt:null, ang:0});
+  for(let i=0;i<NVEC;i++) vecs.push({id:i, home:{x:gap*(i+1)-LVEC/2, y:SCENE_H+85}, pt:null, ang:0, num:null});
 }
 initVecs();
 let drag = null;
@@ -1124,6 +1124,29 @@ function drawArrow(v, t){
     ctx.save(); ctx.setLineDash([3,4]); ctx.lineWidth=2; ctx.strokeStyle="rgba(255,255,255,0.8)";
     ctx.beginPath(); ctx.arc(Hh.x,Hh.y,14,0,7); ctx.stroke(); ctx.restore();
   }
+  // nom du vecteur : F avec fleche et indice (F1, F2...)
+  if(v.pt && v.num!=null && !(active && drag.mode==="move")) drawVecName(v.num, T, Hh);
+}
+function drawVecName(k, T, Hh){
+  const dx=Hh.x-T.x, dy=Hh.y-T.y, L=Math.hypot(dx,dy)||1;
+  let nx=-dy/L, ny=dx/L; if(ny>0 || (Math.abs(ny)<1e-6 && nx<0)){ nx=-nx; ny=-ny; }   // cote "haut" du vecteur
+  const x=T.x+dx*0.55+nx*30, y=T.y+dy*0.55+ny*30;
+  ctx.save(); ctx.textBaseline="alphabetic"; ctx.textAlign="left"; ctx.lineJoin="round";
+  ctx.font='italic bold 26px "Times New Roman", Times, serif';
+  const wF=ctx.measureText("F").width;
+  ctx.font='bold 16px "Times New Roman", Times, serif';
+  const wk=ctx.measureText(String(k)).width;
+  const x0=x-(wF+wk+2)/2, yb=y+9;
+  const txt=(str,xx,yy,font)=>{ ctx.font=font; ctx.lineWidth=5; ctx.strokeStyle="rgba(255,255,255,0.95)"; ctx.strokeText(str,xx,yy); ctx.fillStyle="#111"; ctx.fillText(str,xx,yy); };
+  txt("F",x0,yb,'italic bold 26px "Times New Roman", Times, serif');
+  txt(String(k),x0+wF+1,yb+6,'bold 16px "Times New Roman", Times, serif');
+  // fleche au-dessus (notation vectorielle)
+  const ya=yb-23, xa1=x0+1, xa2=x0+wF+wk+3;
+  for(const [w,c] of [[5,"rgba(255,255,255,0.95)"],[2,"#111"]]){
+    ctx.lineWidth=w; ctx.strokeStyle=c; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(xa1,ya); ctx.lineTo(xa2,ya); ctx.moveTo(xa2-6,ya-4); ctx.lineTo(xa2,ya); ctx.lineTo(xa2-6,ya+4); ctx.stroke();
+  }
+  ctx.restore();
 }
 function drawAura(p, t){
   const occ = vecs.some(v=>v.pt===p.id);
@@ -1238,8 +1261,8 @@ function endDrag(e){
   if(drag.mode==="move" && moved){
     let best=null, bd=40;
     for(const pt of SC.points){ const d=Math.hypot(drag.x-pt.x, drag.y-pt.y); if(d<bd){bd=d; best=pt;} }
-    if(best){ v.pt=best.id; }
-    else { v.pt=null; v.ang=0; }
+    if(best){ v.pt=best.id; if(v.num==null){ let k=1; while(vecs.some(w=>w.num===k)) k++; v.num=k; } }
+    else { v.pt=null; v.ang=0; v.num=null; }
   }
   drag=null;
   updateCode();
