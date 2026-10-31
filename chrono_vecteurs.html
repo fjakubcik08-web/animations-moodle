@@ -59,7 +59,7 @@
     <button class="cbtn" id="bChrono">📷 Lancer la chronophoto !</button>
     <button class="cbtn blue hidden" id="bVec">⚡ Vecteurs vitesse !</button>
     <button class="cbtn green hidden" id="bCheck" disabled>✔ Vérifier</button>
-    <button class="cbtn yellow hidden" id="bReset">↺ Recommencer</button>
+    <button class="cbtn yellow" id="bReset">↺ Recommencer</button>
     <span id="codeBox" class="hidden">Code de vérification : <b id="code">-----</b></span>
   </div>
   <div id="modal" class="hidden">
@@ -421,13 +421,13 @@ const bChrono=document.getElementById('bChrono'), bVec=document.getElementById('
 const modal=document.getElementById('modal'), codeBox=document.getElementById('codeBox'), codeEl=document.getElementById('code');
 const bReset=document.getElementById('bReset');
 bReset.onclick=()=>location.reload();   // repart de zéro avec les mêmes paramètres d'URL
-bChrono.onclick=()=>{ bChrono.classList.add('hidden'); bReset.classList.remove('hidden'); phase='chrono'; tPhase=now(); shown=0; };
+bChrono.onclick=()=>{ bChrono.classList.add('hidden'); phase='chrono'; tPhase=now(); shown=0; };
 bVec.onclick=()=>{ bVec.classList.add('hidden'); startFly(); };
 document.getElementById('bOk').onclick=()=>{ modal.classList.add('hidden'); phase='mission'; bCheck.classList.remove('hidden'); };
 bCheck.onclick=()=>{
   let score=0; MISSING.forEach(idx=>{ if(vecs[idx].at===idx) score++; });
   codeEl.textContent=makeCode(score); codeBox.classList.remove('hidden'); verified=true; zapT=now();
-  if(!RETRY){ bCheck.disabled=true; bReset.classList.add('hidden'); }   // verrouillé : pas de nouvel essai
+  if(!RETRY) bCheck.disabled=true;
 };
 requestAnimationFrame(draw);
 })();
