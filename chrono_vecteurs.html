@@ -12,7 +12,10 @@
     background:#ffd84a radial-gradient(circle, rgba(220,60,30,.35) 1.6px, transparent 2px) 0 0/9px 9px;
   }
   #wrap{ position:relative; max-width:960px; margin:0 auto; padding:8px; }
-  canvas{ display:block; width:100%; height:auto; touch-action:none; user-select:none;
+  #bar{ padding-top:8px !important; min-height:54px !important; }
+  .cbtn{ font-size:19px !important; padding:6px 18px !important; }
+  /* le canevas tient toujours dans la hauteur de l'iframe (place réservée aux boutons) */
+  canvas{ display:block; width:min(100%, calc((100vh - 100px) * 4 / 3)); height:auto; margin:0 auto; touch-action:none; user-select:none;
           border:5px solid #111; background:#fff; box-shadow:7px 7px 0 #111; }
   #bar{ display:flex; gap:16px; justify-content:center; align-items:center; flex-wrap:wrap; min-height:64px; padding:12px 0 6px; }
   .cbtn{
@@ -102,7 +105,7 @@ function decodeP(s){
 const Q = new URLSearchParams(location.search);
 const P = Q.get('p') ? decodeP(Q.get('p')) : {};
 ['type','n','seed','dt','r'].forEach(k=>{ if(Q.has(k)) P[k]=Q.get(k); });   // les paramètres en clair priment
-const TYPES = ['parabole','arc','zigzag','sinus'];
+const TYPES = ['parabole','arc','sinus'];   // trajectoires dérivables uniquement
 const TYPE_IN = String(P.type ?? 'alea');
 const N = Math.max(8, Math.min(12, parseInt(P.n ?? 10) || 10));
 const SEED = parseInt(P.seed ?? 1) || 1;
@@ -124,13 +127,6 @@ function genTraj(){   // renvoie F(t) continue, t réel dans [0, N-1] ; x toujou
   } else if(TYPE==='arc'){
     const span=R(110,170)*Math.PI/180, off=R(0.04, Math.PI-span-0.04), a=R(0,0.9), up=rng()<0.5;
     return t=>{ const u=t/T, f=span*(u+a*u*u)/(1+a), th= up ? (Math.PI-off-f) : (Math.PI+off+f); return [Math.cos(th),Math.sin(th)]; };
-  } else if(TYPE==='zigzag'){
-    const nseg=3+Math.floor(rng()*2), head=R(-0.3,0.3), V=[[0,0]];
-    for(let k=0;k<nseg;k++){ const ang=head+(k%2?-1:1)*R(0.5,0.95), L=R(1,1.7), p=V[V.length-1]; V.push([p[0]+L*Math.cos(ang), p[1]+L*Math.sin(ang)]); }
-    const cum=[0]; for(let k=1;k<V.length;k++) cum.push(cum[k-1]+Math.hypot(V[k][0]-V[k-1][0],V[k][1]-V[k-1][1]));
-    const S=cum[cum.length-1], c=R(-0.4,1.5);
-    return t=>{ const u=t/T, s=S*(u+c*u*u)/(1+c); let k=1; while(k<V.length-1 && cum[k]<s) k++;
-      const f=(s-cum[k-1])/(cum[k]-cum[k-1]); return [V[k-1][0]+f*(V[k][0]-V[k-1][0]), V[k-1][1]+f*(V[k][1]-V[k-1][1])]; };
   } else {
     const A=T*R(0.13,0.2), cyc=R(0.8,1.5), ph=R(0,2*Math.PI), b=R(-0.3,0.6);
     return t=>{ const x=t+b*t*t/T; return [x, A*Math.sin(2*Math.PI*cyc*x/(T*(1+b))+ph)]; };
