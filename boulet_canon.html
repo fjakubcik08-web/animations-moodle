@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boulet de canon</title>
+<style>
+  :root { --ink:#1d1d2b; --paper:#fff7e3; }
+  html,body { margin:0; padding:0; background:var(--paper); color:var(--ink);
+    font-family:"Humor Sans","xkcd Script","Comic Neue","Comic Sans MS","Chalkboard SE",cursive; }
+  #wrap { max-width:920px; margin:0 auto; padding:6px; box-sizing:border-box; }
+  canvas { display:block; width:100%; height:auto; touch-action:none; }
+  .ctrls { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; justify-content:center;
+    margin-top:6px; padding:8px 12px; border:3px solid var(--ink); background:#ffe27a; box-shadow:4px 4px 0 var(--ink);
+    border-radius:255px 15px 225px 15px/15px 225px 15px 255px; }
+  .ctrl { display:flex; align-items:center; gap:6px; font-size:16px; white-space:nowrap; }
+  .ctrl b { min-width:58px; display:inline-block; text-align:right; font-weight:normal; }
+  input[type=range] { width:120px; accent-color:#7b4fd6; }
+  select { font:inherit; font-size:15px; border:2px solid #111; background:#fff; padding:1px 4px;
+    border-radius:15px 225px 15px 255px/255px 15px 225px 15px; }
+  button { font:inherit; font-size:17px; background:#4cc38a; color:#1d1d2b; border:3px solid #1d1d2b; padding:3px 14px; box-shadow:3px 3px 0 #1d1d2b;
+    border-radius:255px 15px 225px 15px/15px 225px 15px 255px; cursor:pointer; }
+  button:hover { filter:brightness(1.08); }
+  button:active { transform:translate(2px,2px); box-shadow:1px 1px 0 #1d1d2b; }
+  #b_reset { background:#ff9a5a; }
+  button:disabled, input:disabled, select:disabled { opacity:.4; cursor:default; }
+  .hidden { display:none !important; }
+  .tabs { display:flex; gap:6px; margin:0 0 -3px 10px; position:relative; z-index:2; }
+  .tab { font:inherit; font-size:17px; padding:4px 18px 6px; border:3px solid var(--ink); border-bottom:none; cursor:pointer;
+    background:#e9e3ff; color:var(--ink); border-radius:14px 14px 0 0; box-shadow:none; }
+  .tab.on { background:#bfe9ff; }
+  .tab:active { transform:none; box-shadow:none; }
+  .stage { position:relative; border:3px solid var(--ink); box-shadow:4px 4px 0 var(--ink); background:#bfe9ff; }
+  #gv { background:#fffdf7; cursor:crosshair; }
+  #gtools { position:absolute; top:8px; right:10px; display:flex; gap:6px; }
+  #gtools button { font-size:15px; padding:1px 10px; background:#fff; box-shadow:2px 2px 0 #1d1d2b; border-width:2px; }
+  #ghelp { position:absolute; left:12px; bottom:8px; font-size:13px; color:#555; pointer-events:none; }
+  #info { padding:6px 14px 8px; border:3px solid var(--ink); background:#fff; box-shadow:4px 4px 0 var(--ink);
+    border-radius:15px 225px 15px 255px/255px 15px 225px 15px; min-height:158px; box-sizing:border-box; display:flex; flex-direction:column; }
+  #info h3 { margin:0 0 4px; font-size:17px; font-weight:normal; text-decoration:underline; }
+  #info_l { flex:1; padding-right:8px; }
+  #info_l::-webkit-scrollbar { width:12px; }
+  #info_l::-webkit-scrollbar-track { background:#f3eefc; border-left:2px solid #1d1d2b; }
+  #info_l::-webkit-scrollbar-thumb { background:#7b4fd6; border:2px solid #1d1d2b; border-radius:6px; }
+  #info .l { font-size:15.5px; line-height:1.35; padding:4px 0; border-bottom:1px dashed #ccc; }
+  #info .t { font-weight:bold; }
+  #info .s { padding-left:26px; }
+  #info .l:last-child { border-bottom:none; }
+  #info .x { font-weight:bold; font-size:19px; margin-right:6px; }
+  #info label.t { cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  #info label.t input { width:18px; height:18px; margin:0; cursor:pointer; }
+  #info .l.off .s, #info .l.off .tn { opacity:.4; }
+  #info .vide { font-size:15px; color:#777; font-style:italic; }
+  #b_clear { background:#ff6b8f; }
+  #b_jpg { background:#5aa9ff; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="tabs"><button class="tab on" id="t_exp">Expérience</button><button class="tab" id="t_traj">Trajectoire</button></div>
+  <div class="stage">
+    <canvas id="cv" width="900" height="410"></canvas>
+    <canvas id="gv" width="900" height="410" class="hidden"></canvas>
+    <div id="gtools" class="hidden"><button id="g_in">+</button><button id="g_out">−</button><button id="g_fit">Ajuster</button><button id="g_mes">Mesure</button><button id="g_arr">Flèche</button><button id="g_clr">Effacer tracés</button></div>
+    <div id="ghelp" class="hidden">molette : zoom · glisser dans le vide : déplacer · glisser d'une croix à une autre (ou 2 clics) : distance</div>
+  </div>
+  <div class="ctrls">
+    <span class="ctrl" id="c_v">v<sub>0</sub> <input type="range" id="s_v" min="1" max="50" step="0.5"> <b id="o_v"></b></span>
+    <span class="ctrl" id="c_a">α <input type="range" id="s_a" min="0" max="90" step="1"> <b id="o_a"></b></span>
+    <span class="ctrl" id="c_h">h <input type="range" id="s_h" min="0" max="40" step="0.5"> <b id="o_h"></b></span>
+    <span class="ctrl" id="c_g">astre <select id="s_g"></select></span>
+    <span class="ctrl" id="c_f">frottements de l'air <input type="range" id="s_f" min="0" max="10" step="0.5"> <b id="o_f"></b></span>
+    <span class="ctrl" id="c_m">masse <select id="s_m"></select></span>
+    <span class="ctrl" id="c_slow">vitesse <select id="s_slow">
+      <option value="5">×5</option><option value="2">×2</option><option value="1">×1</option><option value="0.25">×1/4</option><option value="0.1">×1/10</option></select></span>
+    <span class="ctrl" id="c_t">Δt <select id="s_tau"></select></span>
+    <span class="ctrl" id="c_trace">tracé <select id="s_trace"><option value="0">croix</option><option value="1">courbe</option></select></span>
+    <button id="b_go">Feu !</button>
+    <button id="b_reset">Recommencer</button>
+    <button id="b_clear">Effacer</button>
+    <button id="b_jpg">Export JPG</button>
+  </div>
+  <div id="info"><h3>Informations</h3><div id="info_l"></div></div>
+</div>
+<script>
+"use strict";
+/* ================= Paramètres (URL) =================
+   p = base64url( XOR( JSON UTF-8, KEY ) )   — clé propre à cette animation
+   Champs : v (m/s), al (angle de tir, °), h (hauteur de la bouche du canon, m), g (N/kg),
+            f (frottements de l'air 0..10, 0 = aucun), m (masse du boulet, kg),
+            L (largeur du terrain affiché au départ, m — la vue se dézoome seule si le boulet sort),
+            ctrl (lettres des réglages visibles : v a h g f m t),
+            tr (1 = chronophoto), tau (s, 0 = auto ≈ 20 points), trace (0 croix / 1 courbe),
+            arr / mes (0 = outil Flèche / Mesure grisé), grid (0/1), slow, move (0/1),
+            o (origine du repère : 1 = sol sous le canon [défaut], 0 = point de lancement), deco (0/1 décor animé)
+   Les paramètres en clair (?v=20&al=30...) écrasent ceux de p.                                   */
+const KEY = "P2-boulet*canon#xkcd";
+const ASTRES = [
+  {id:"terre",   nom:"Terre",   g:9.81},
+  {id:"lune",    nom:"Lune",    g:1.62},
+  {id:"mars",    nom:"Mars",    g:3.71},
+  {id:"jupiter", nom:"Jupiter", g:24.79},
+];
+const MASSES = [0.5,1,2,5,10,20];
+const DEF = {v:20, al:45, h:0, g:9.81, f:0, m:5, L:60, ctrl:"vahgfmt", tr:1, tau:0, trace:1, arr:1, mes:1, grid:0, slow:1, move:1, o:1, deco:1};
+
+function decodeP(s){
+  s = s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="=";
+  const bin = atob(s); let out = "";
+  for(let i=0;i<bin.length;i++) out += String.fromCharCode(bin.charCodeAt(i) ^ KEY.charCodeAt(i%KEY.length));
+  return JSON.parse(decodeURIComponent(escape(out)));
+}
+const P = Object.assign({}, DEF);
+(function(){
+  const q = new URLSearchParams(location.search);
+  if(q.get("p")){ try{ Object.assign(P, decodeP(q.get("p"))); }catch(e){ console.warn("p invalide", e); } }
+  for(const k of Object.keys(DEF)){ if(q.has(k)){ const v=q.get(k); P[k] = (k==="ctrl") ? v : parseFloat(v); } }
+  for(const k of Object.keys(DEF)) if(k!=="ctrl" && !isFinite(P[k])) P[k]=DEF[k];
+  P.v  = Math.max(0, Math.min(200, P.v));
+  P.al = Math.max(0, Math.min(90, P.al));
+  P.h  = Math.max(0, Math.min(500, P.h));
+  P.g  = Math.max(0.1, Math.min(100, P.g));
+  P.f  = Math.max(0, Math.min(10, P.f));
+  P.m  = Math.max(0.1, Math.min(100, P.m));
+  P.L  = Math.max(5, Math.min(5000, P.L));
+})();
+const rad = d => d*Math.PI/180;
+const KF = 0.004;                    // k/m = f*KF/m  (m^-1), frottement quadratique
+
+/* ================= Vue ================= */
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const W = 900, H = 410;
+const OX = 120, GY = 340, RX = 32;   // abscisse du canon (px), ligne du sol (px), règle verticale (px)
+const SC0 = () => (W-OX-30)/P.L;
+let SC = SC0();                       // px/m (se dézoome si le boulet sort du cadre)
+const sx = x => OX + x*SC, sy = y => GY - y*SC;
+
+/* ================= Tracé "xkcd" ================= */
+function wob(t, s){ return Math.sin(t*5.3+s)*0.6 + Math.sin(t*12.1+s*2.3)*0.4; }
+function sline(x1,y1,x2,y2,seed=1,amp){
+  const L = Math.hypot(x2-x1,y2-y1); if(L<0.5) return;
+  if(amp===undefined) amp = Math.min(2.2, 0.5+L/120);
+  const n = Math.max(3, Math.ceil(L/10)), nx=-(y2-y1)/L, ny=(x2-x1)/L;
+  ctx.beginPath();
+  for(let i=0;i<=n;i++){ const t=i/n, o=amp*wob(t,seed)*Math.sin(Math.PI*t*0.9+0.15);
+    const x=x1+(x2-x1)*t+nx*o, y=y1+(y2-y1)*t+ny*o; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  ctx.stroke();
+}
+function spoly(pts, seed=1, close=true){
+  const n = pts.length;
+  for(let i=0;i<(close?n:n-1);i++){ const a=pts[i], b=pts[(i+1)%n]; sline(a[0],a[1],b[0],b[1],seed+i*1.7); }
+}
+function fpoly(pts, fill){ ctx.fillStyle=fill; ctx.beginPath(); pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.fill(); }
+function scircle(cx,cy,r,seed=1,fill=null,alpha=1){
+  if(fill){ ctx.save(); ctx.globalAlpha=alpha; ctx.fillStyle=fill; ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.fill(); ctx.restore(); }
+  const a0 = seed*0.9, n = Math.max(14, Math.ceil(r*1.2));
+  ctx.beginPath();
+  for(let i=0;i<=n;i++){ const t=i/n, a=a0+t*(2*Math.PI+0.35);
+    const rr = r*(1+0.045*Math.sin(3*a+seed)) + (t>0.9 ? (t-0.9)*r*0.25 : 0);
+    const x=cx+rr*Math.cos(a), y=cy+rr*Math.sin(a); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  ctx.stroke();
+}
+function txt(s,x,y,size=18,align="center",col="#1d1d2b"){ ctx.font=`${size}px "Humor Sans","xkcd Script","Comic Neue","Comic Sans MS","Chalkboard SE",cursive`;
+  ctx.textAlign=align; ctx.textBaseline="middle"; ctx.fillStyle=col; ctx.fillText(s,x,y); }
+function niceStep(pxPerUnit, target=60){ const t=target/pxPerUnit; const p=Math.pow(10,Math.floor(Math.log10(t)));
+  for(const m of [1,2,5,10]) if(m*p>=t) return m*p; return 10*p; }
+// pseudo-aléatoire stable
+const rnd = (i,s=1) => { const x=Math.sin(i*127.1+s*311.7)*43758.5453; return x-Math.floor(x); };
+
+/* ================= Décor (purement visuel, en px, ne dépend pas de l'échelle) ================= */
+function astreOf(g){ const a = ASTRES.find(A=>Math.abs(A.g-g)<0.006); return a || null; }
+const DECO = {
+  terre:   {sky:"#bfe9ff", ground:"#7cc46a", soil:"#b98a52", ink:"#1d1d2b", gink:"#3b2a12"},
+  lune:    {sky:"#15152e", ground:"#c9c9d1", soil:"#9a9aa6", ink:"#f2f2ff", gink:"#2a2a38"},
+  mars:    {sky:"#f4c39a", ground:"#c8643a", soil:"#9b4524", ink:"#3a1a0a", gink:"#2e1206"},
+  jupiter: {sky:"#efd9b4", ground:"#9a6a48", soil:"#6e4630", ink:"#3a2412", gink:"#f6e7cf"},
+};
+function decoKey(){ const a=astreOf(P.g); return a ? a.id : "terre"; }
+
+function drawSun(T, x, y, r, col, rays=true){
+  ctx.save(); ctx.translate(x,y);
+  if(rays){ ctx.strokeStyle=col; ctx.lineWidth=3; ctx.lineCap="round";
+    for(let i=0;i<12;i++){ const a=i*Math.PI/6 + T*0.25, r1=r+6, r2=r+14+3*Math.sin(T*2+i);
+      ctx.beginPath(); ctx.moveTo(r1*Math.cos(a), r1*Math.sin(a)); ctx.lineTo(r2*Math.cos(a), r2*Math.sin(a)); ctx.stroke(); } }
+  ctx.lineWidth=2.4; ctx.strokeStyle="#1d1d2b"; scircle(0,0,r,4,col);
+  ctx.restore();
+}
+function drawCloud(x,y,s,seed){
+  ctx.save(); ctx.translate(x,y); ctx.scale(s,s);
+  const puffs=[[-34,6,18],[-14,-8,24],[12,-12,22],[34,2,17],[2,8,20]];
+  ctx.fillStyle="#ffffff"; puffs.forEach(p=>{ ctx.beginPath(); ctx.arc(p[0],p[1],p[2],0,2*Math.PI); ctx.fill(); });
+  ctx.strokeStyle="rgba(29,29,43,0.55)"; ctx.lineWidth=2/s;
+  ctx.beginPath(); ctx.moveTo(-52,20); ctx.lineTo(52,20); ctx.stroke();
+  puffs.forEach((p,i)=>{ ctx.beginPath(); ctx.arc(p[0],p[1],p[2], Math.PI*(0.95+0.08*i%0.3), Math.PI*2.05); ctx.stroke(); });
+  ctx.fillStyle="#ffffff"; ctx.fillRect(-50,0,100,19.5);
+  ctx.restore();
+}
+function drawFlag(x,y,T,ph,col){
+  ctx.save(); ctx.strokeStyle="#6b6585"; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,y-20); ctx.stroke();
+  ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(x,y-20);
+  for(let i=0;i<=8;i++){ const u=i/8; ctx.lineTo(x+u*18, y-20+ 3*Math.sin(T*6+ph+u*4)*u); }
+  for(let i=8;i>=0;i--){ const u=i/8; ctx.lineTo(x+u*18, y-12+ 3*Math.sin(T*6+ph+u*4)*u); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function drawCastle(T){
+  const c = 655, b = GY-6;                     // centre et base du château (px)
+  const fill="#ded6ee", line="#8a84a8", roof="#eaa7a7", dark="#9d96b8";
+  ctx.save(); ctx.lineWidth=2; ctx.strokeStyle=line;
+  // collines lointaines
+  ctx.fillStyle="#a9dba0"; ctx.beginPath(); ctx.moveTo(380,GY);
+  for(let x=380;x<=W;x+=10) ctx.lineTo(x, GY-28-16*Math.sin(x/70)-10*Math.sin(x/23+1));
+  ctx.lineTo(W,GY); ctx.closePath(); ctx.fill();
+  const crenel=(x1,x2,y)=>{ ctx.fillStyle=fill; for(let x=x1;x<x2-2;x+=10){ ctx.fillRect(x,y-7,6,7); ctx.strokeRect(x,y-7,6,7); } };
+  const rect=(x1,y1,x2,y2)=>{ ctx.fillStyle=fill; ctx.fillRect(x1,y1,x2-x1,y2-y1); spoly([[x1,y1],[x2,y1],[x2,y2],[x1,y2]], x1*0.1); };
+  // remparts
+  rect(c-75,b-62,c+75,b); crenel(c-75,c+75,b-62);
+  // donjon
+  rect(c-24,b-118,c+24,b-62); crenel(c-24,c+24,b-118);
+  fpoly([[c-28,b-125],[c+28,b-125],[c,b-160]], roof); spoly([[c-28,b-125],[c+28,b-125],[c,b-160]], 9);
+  drawFlag(c,b-160,T,0,"#e0242f");
+  // tours
+  [[c-100,c-68],[c+68,c+100]].forEach(([x1,x2],k)=>{
+    rect(x1,b-98,x2,b); crenel(x1,x2,b-98);
+    const tp=[[x1-4,b-105],[x2+4,b-105],[(x1+x2)/2,b-138]];
+    fpoly(tp, roof); spoly(tp, 20+k);
+    drawFlag((x1+x2)/2, b-138, T, 1.7+k*2.1, k?"#4a7bd6":"#ffcc00");
+    // fenêtre qui s'allume de temps en temps
+    const lit = Math.sin(T*0.7+k*2.5)>0.6;
+    ctx.fillStyle = lit ? "#ffd94a" : dark; ctx.fillRect((x1+x2)/2-4, b-72, 8, 13); ctx.strokeRect((x1+x2)/2-4, b-72, 8, 13);
+  });
+  // fenêtres du donjon
+  ctx.fillStyle=dark; [[c-12,b-102],[c+6,b-102]].forEach(([x,y])=>{ ctx.fillRect(x,y,7,12); ctx.strokeRect(x,y,7,12); });
+  // porte
+  ctx.fillStyle="#7d7699"; ctx.beginPath(); ctx.moveTo(c-15,b); ctx.lineTo(c-15,b-22); ctx.arc(c,b-22,15,Math.PI,0); ctx.lineTo(c+15,b); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // petit garde qui fait les cent pas sur le rempart
+  const gx = c-60 + 30*(1+Math.sin(T*0.45)), gy=b-69, dir=Math.cos(T*0.45)>0?1:-1;
+  ctx.strokeStyle="#6b6585"; ctx.lineWidth=1.6; ctx.lineCap="round";
+  ctx.beginPath(); ctx.arc(gx,gy-14,3,0,2*Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(gx,gy-11); ctx.lineTo(gx,gy-4);
+  const st=Math.sin(T*6)*3; ctx.moveTo(gx,gy-4); ctx.lineTo(gx-2+st*0.5,gy+0.5); ctx.moveTo(gx,gy-4); ctx.lineTo(gx+2-st*0.5,gy+0.5);
+  ctx.moveTo(gx+4*dir,gy-20); ctx.lineTo(gx+4*dir,gy-1); ctx.stroke();   // lance
+  ctx.restore();
+}
+const CLOUDS = [0,1,2,3,4].map(i=>({x0:rnd(i,3)*1100, y:36+rnd(i,5)*105, s:0.6+rnd(i,7)*0.6, v:6+rnd(i,9)*10}));
+function drawClouds(T){ CLOUDS.forEach((c,i)=>{ const span=W+260; const x=((c.x0+T*c.v)%span)-130; drawCloud(x, c.y+3*Math.sin(T*0.5+i), c.s, i); }); }
+function drawBirds(T){
+  ctx.save(); ctx.strokeStyle="#1d1d2b"; ctx.lineWidth=1.8; ctx.lineCap="round";
+  [0,1].forEach(g=>{
+    const span=W+600, x0 = W+150 - ((T*(38+g*9) + g*520) % span), y0 = 70+g*55 + 10*Math.sin(T*0.6+g);
+    for(let k=0;k<3;k++){ const x=x0+k*22+(k%2)*6, y=y0+(k%2)*10, f=Math.sin(T*9+k*1.3+g)*5, w=7;
+      ctx.beginPath(); ctx.moveTo(x-w,y-f); ctx.quadraticCurveTo(x-w/2,y-4,x,y); ctx.quadraticCurveTo(x+w/2,y-4,x+w,y-f); ctx.stroke(); }
+  });
+  ctx.restore();
+}
+const STARS = Array.from({length:90},(_,i)=>({x:rnd(i,1)*W, y:rnd(i,2)*(GY-20), r:0.6+rnd(i,4)*1.4, ph:rnd(i,6)*6}));
+function drawBackground(T){
+  const D = DECO[decoKey()], k = decoKey(), anim = P.deco>=0.5;
+  const t = anim ? T : 0;
+  ctx.fillStyle=D.sky; ctx.fillRect(0,0,W,H);
+  if(k==="terre"){
+    drawSun(t, 815, 62, 26, "#ffd94a");
+    if(anim){ drawCastle(t); drawClouds(t); drawBirds(t); }
+    else { drawCastle(0); }
+  } else if(k==="lune"){
+    STARS.forEach(s=>{ ctx.fillStyle=`rgba(255,255,240,${0.45+0.55*Math.abs(Math.sin(t*1.3+s.ph))})`; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,2*Math.PI); ctx.fill(); });
+    // la Terre dans le ciel
+    ctx.save(); ctx.lineWidth=2.4; ctx.strokeStyle="#1d1d2b"; scircle(800,72,28,3,"#3d7fe0");
+    ctx.fillStyle="#3fae5a"; ctx.beginPath(); ctx.ellipse(790,64,10,7,0.4,0,2*Math.PI); ctx.fill(); ctx.beginPath(); ctx.ellipse(810,84,7,5,-0.3,0,2*Math.PI); ctx.fill();
+    ctx.fillStyle="rgba(255,255,255,0.8)"; ctx.fillRect(785+((t*6)%30)-10,76,22,3); ctx.restore();
+    // étoile filante
+    if(anim){ const ph=(t*0.23)%1; if(ph<0.12){ const u=ph/0.12, x=250+u*260, y=40+u*70;
+      ctx.save(); ctx.strokeStyle=`rgba(255,255,255,${1-u})`; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x-40,y-11); ctx.stroke(); ctx.restore(); } }
+    // module lunaire au loin
+    ctx.save(); ctx.translate(670,GY-4); ctx.strokeStyle="#1d1d2b"; ctx.lineWidth=2;
+    ctx.fillStyle="#e8c24a"; ctx.fillRect(-20,-22,40,16); ctx.strokeRect(-20,-22,40,16);
+    ctx.fillStyle="#d8d8e0"; ctx.beginPath(); ctx.moveTo(-14,-22); ctx.lineTo(-10,-40); ctx.lineTo(10,-40); ctx.lineTo(14,-22); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-20,-6); ctx.lineTo(-28,0); ctx.moveTo(20,-6); ctx.lineTo(28,0); ctx.stroke();
+    const blink = Math.sin(t*4)>0; ctx.fillStyle=blink?"#ff4d4d":"#6a2020"; ctx.beginPath(); ctx.arc(0,-43,2.5,0,2*Math.PI); ctx.fill();
+    ctx.restore();
+  } else if(k==="mars"){
+    drawSun(t, 815, 58, 15, "#fff1c9", false);
+    ctx.fillStyle="#b88a6c"; ctx.beginPath(); ctx.arc(160+20*Math.sin(t*0.05),50,5,0,2*Math.PI); ctx.fill();
+    ctx.fillStyle="#a07a5e"; ctx.beginPath(); ctx.arc(420,80+4*Math.sin(t*0.07),3.5,0,2*Math.PI); ctx.fill();
+    // mesas lointaines
+    ctx.fillStyle="#dd9468"; ctx.beginPath(); ctx.moveTo(360,GY); ctx.lineTo(380,GY-50); ctx.lineTo(470,GY-55); ctx.lineTo(490,GY);
+    ctx.moveTo(600,GY); ctx.lineTo(630,GY-85); ctx.lineTo(760,GY-82); ctx.lineTo(790,GY); ctx.fill();
+    // tourbillon de poussière
+    if(anim){ const x = 300 + ((t*22)%700); ctx.save(); ctx.strokeStyle="rgba(150,70,30,0.45)"; ctx.lineWidth=2;
+      for(let i=0;i<7;i++){ const y=GY-6-i*12, w=6+i*4; ctx.beginPath(); ctx.ellipse(x+3*Math.sin(t*3+i), y, w, 3, 0, t*5+i, t*5+i+4); ctx.stroke(); } ctx.restore(); }
+    // petit rover
+    const rx = 520 + 60*Math.sin(t*0.12); ctx.save(); ctx.translate(rx,GY-2); ctx.strokeStyle="#1d1d2b"; ctx.lineWidth=1.8;
+    ctx.fillStyle="#e8e8e8"; ctx.fillRect(-14,-14,28,8); ctx.strokeRect(-14,-14,28,8);
+    [-10,0,10].forEach(x=>{ ctx.beginPath(); ctx.arc(x,-3,3,0,2*Math.PI); ctx.fill(); ctx.stroke(); });
+    ctx.beginPath(); ctx.moveTo(8,-14); ctx.lineTo(8,-24); ctx.stroke(); ctx.fillStyle="#5aa9ff"; ctx.fillRect(5,-28,8,5); ctx.restore();
+  } else {
+    const cols=["#e8c9a0","#d9a873","#f1dfc2","#c98b5a","#ead2ad","#d39b67"];
+    for(let i=0;i<9;i++){ const y=i*40 - 10; ctx.fillStyle=cols[i%cols.length];
+      ctx.beginPath(); ctx.moveTo(0,y); for(let x=0;x<=W;x+=20) ctx.lineTo(x, y+6*Math.sin(x/90 + t*0.3*(i%2?1:-1)+i)); ctx.lineTo(W,y+50); ctx.lineTo(0,y+50); ctx.fill(); }
+    const rx = 620 + ((t*8)%400) - 200;
+    ctx.save(); ctx.fillStyle="#c7553a"; ctx.strokeStyle="#1d1d2b"; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(rx,150,46,22,0,0,2*Math.PI); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle="rgba(255,255,255,0.35)"; ctx.beginPath(); ctx.ellipse(rx,150,30,12,0,t,t+4); ctx.stroke(); ctx.restore();
+  }
+}
+function drawGround(T){
+  const D = DECO[decoKey()], k=decoKey(), t = P.deco>=0.5 ? T : 0;
+  ctx.fillStyle=D.ground; ctx.fillRect(0,GY,W,H-GY);
+  ctx.fillStyle=D.soil; ctx.fillRect(0,GY+30,W,H-GY-30);
+  ctx.save(); ctx.strokeStyle="rgba(0,0,0,0.25)"; ctx.lineWidth=1.5; sline(0,GY+30,W,GY+30,7,1.2); ctx.restore();
+  if(k==="terre"){
+    ctx.save(); ctx.strokeStyle="#3f8a35"; ctx.lineWidth=1.8; ctx.lineCap="round";
+    for(let i=0;i<26;i++){ const x=150+i*29+rnd(i,2)*12; if(x>W-5) break; const sw=2.5*Math.sin(t*1.6+i*0.7);
+      for(let j=-1;j<=1;j++){ ctx.beginPath(); ctx.moveTo(x+j*3,GY+1); ctx.quadraticCurveTo(x+j*4,GY-4,x+j*5+sw,GY-8-(j===0?3:0)); ctx.stroke(); } }
+    // fleurs
+    [[260,"#ff6b8f"],[470,"#ffd94a"],[575,"#ffffff"],[790,"#ff6b8f"]].forEach(([x,c],i)=>{ const sw=2*Math.sin(t*1.4+i);
+      ctx.strokeStyle="#3f8a35"; ctx.beginPath(); ctx.moveTo(x,GY+1); ctx.lineTo(x+sw,GY-12); ctx.stroke();
+      ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x+sw,GY-13,3.5,0,2*Math.PI); ctx.fill(); });
+    ctx.restore();
+  } else if(k==="lune"){
+    ctx.save(); ctx.strokeStyle="rgba(60,60,80,0.45)"; ctx.lineWidth=1.5;
+    for(let i=0;i<9;i++){ const x=170+i*85+rnd(i,3)*30, y=GY+8+rnd(i,4)*16, r=6+rnd(i,5)*10; ctx.beginPath(); ctx.ellipse(x,y,r,r*0.3,0,0,2*Math.PI); ctx.stroke(); }
+    ctx.restore();
+  } else if(k==="mars"){
+    ctx.save(); ctx.fillStyle="#8e3b1c"; for(let i=0;i<12;i++){ const x=170+i*62+rnd(i,8)*20; ctx.beginPath(); ctx.ellipse(x,GY+4+rnd(i,9)*18,3+rnd(i,1)*4,2,0,0,2*Math.PI); ctx.fill(); } ctx.restore();
+  }
+  ctx.save(); ctx.lineWidth=3; ctx.strokeStyle="#1d1d2b"; sline(0,GY,W,GY,3,1); ctx.restore();
+}
+// règles graduées (m) : le long du sol et verticale à gauche
+function drawRulers(){
+  const D = DECO[decoKey()], step = niceStep(SC, 70), mi = step/5, showMi = mi*SC >= 5;
+  ctx.save(); ctx.lineWidth=1.3; ctx.strokeStyle=D.gink;
+  const xmax = (W-8-OX)/SC;
+  for(let i=0; i*mi <= xmax+1e-9; i++){ const x=i*mi, major = i%5===0; if(!major && !showMi) continue;
+    const X=sx(x), l = major?10:5; sline(X,GY,X,GY+l,i,0.3);
+    if(major && X < W-34) txt(gfmt(x), X, GY+19, 13, "center", D.gink); }
+  txt("m", W-14, GY+19, 13, "center", D.gink);
+  ctx.strokeStyle=D.ink; ctx.lineWidth=2; sline(RX,GY,RX,12,5,0.6);
+  ctx.lineWidth=1.3;
+  const ymax = (GY-14)/SC;
+  for(let i=0; i*mi <= ymax+1e-9; i++){ const y=i*mi, major=i%5===0; if(!major && !showMi) continue;
+    const Y=sy(y), l = major?9:5; sline(RX,Y,RX+l,Y,i+40,0.3);
+    if(major && i>0) txt(gfmt(y), RX-4, Y, 12, "right", D.ink); }
+  txt("m", RX+14, 14, 13, "center", D.ink);
+  if(P.grid>=0.5){
+    ctx.strokeStyle = decoKey()==="lune" ? "rgba(255,255,255,0.15)" : "rgba(29,29,43,0.15)"; ctx.lineWidth=1;
+    for(let x=step; x<=xmax; x+=step){ ctx.beginPath(); ctx.moveTo(sx(x),GY); ctx.lineTo(sx(x),10); ctx.stroke(); }
+    for(let y=step; y<=ymax; y+=step){ ctx.beginPath(); ctx.moveTo(RX,sy(y)); ctx.lineTo(W,sy(y)); ctx.stroke(); }
+  }
+  ctx.restore();
+}
+
+/* ================= Simulation ================= */
+let st;
+const COLS = ["#7b4fd6","#e0242f","#0f9d58","#ff7a00"];   // 4 trajectoires max
+const NMAX = 4;
+const HS = 0.001, PATH_DT = 0.005, PATH_K = Math.round(PATH_DT/HS);
+let hist = [], nLaunch = 0, fx = {smoke:[], dust:[], flash:0, recoil:0, boum:null};
+function reset(){
+  const a = rad(P.al);
+  st = {phase:"ready", t:0, n:0, acc:0, x:0, y:P.h, vx:P.v*Math.cos(a), vy:P.v*Math.sin(a),
+        path:[[0,P.h]], mx:0, my:P.h, end:"", col:COLS[nLaunch%NMAX], num:nLaunch+1};
+}
+function accel(vx,vy){ const k = P.f*KF/P.m, vv = Math.hypot(vx,vy); return [-k*vv*vx, -P.g - k*vv*vy]; }
+function step(dt){
+  const px=st.x, py=st.y;
+  let [ax,ay] = accel(st.vx,st.vy);
+  const vmx = st.vx+ax*dt/2, vmy = st.vy+ay*dt/2;
+  [ax,ay] = accel(vmx,vmy);
+  st.x += vmx*dt; st.y += vmy*dt; st.vx += ax*dt; st.vy += ay*dt; st.t += dt; st.n++;
+  if(st.y < 0){   // impact au sol : interpolation linéaire sur le dernier pas
+    const fr = py/(py-st.y);
+    st.x = px+(st.x-px)*fr; st.y = 0; st.t = st.t-dt+dt*fr;
+    st.np = st.path.length; st.path.push([st.x,0]); st.mx=Math.max(st.mx,st.x);
+    st.phase="done"; st.end="boum"; impactFx(); return;
+  }
+  if(st.n % PATH_K === 0){ st.path.push([st.x,st.y]); st.mx=Math.max(st.mx,st.x); st.my=Math.max(st.my,st.y); }
+  if(st.t > 600){ st.np = st.path.length; st.phase="done"; }
+}
+function impactFx(){
+  const now=performance.now();
+  fx.boum = {x:st.x, t:now};
+  for(let i=0;i<14;i++){ const a = Math.PI*(0.1+0.8*Math.random()); const v = 40+80*Math.random();
+    fx.dust.push({x:st.x, ox:0, oy:0, vx:Math.cos(a)*v, vy:-Math.sin(a)*v, r:3+Math.random()*4, t:now, life:700+500*Math.random()}); }
+}
+function launchFx(){
+  const now=performance.now(), a=rad(P.al);
+  fx.flash = now; fx.recoil = now;
+  for(let i=0;i<10;i++){ const sp=(Math.random()-0.5)*0.9, v=30+50*Math.random();
+    fx.smoke.push({ox:0, oy:0, vx:Math.cos(a+sp)*v, vy:-Math.sin(a+sp)*v, r:5+Math.random()*6, t:now, life:900+700*Math.random()}); }
+}
+
+/* ================= Dessin ================= */
+function ballR(m){ return Math.max(3, Math.min(11, 6*Math.cbrt(m/5))); }
+function cannonGeom(){
+  const a=rad(P.al), ux=Math.cos(a), uy=-Math.sin(a), Lb=40;
+  const Mx=sx(0), My=sy(P.h);
+  const Px=Mx-ux*Lb, Py=My-uy*Lb;
+  return {a,ux,uy,Lb,Mx,My,Px,Py, wx:Px-4, wy:Py+14, wr:13, base:Py+27};
+}
+function drawCannon(){
+  const C = cannonGeom(), now=performance.now();
+  const rec = 9*Math.exp(-(now-fx.recoil)/120)*(now-fx.recoil<1200?1:0);
+  // support : tour de pierre si la bouche est haute, tranchée sinon
+  ctx.save(); ctx.lineWidth=2.6; ctx.strokeStyle="#1d1d2b";
+  const x1=C.Px-36, x2=C.Px+28;
+  if(C.base < GY-1){
+    ctx.fillStyle="#1d1d2b"; ctx.fillRect(x1+5,C.base+5,x2-x1,GY-C.base-5);
+    ctx.fillStyle="#a7a3b4"; ctx.fillRect(x1,C.base,x2-x1,GY-C.base);
+    ctx.save(); ctx.strokeStyle="rgba(29,29,43,0.35)"; ctx.lineWidth=1.3;
+    for(let y=C.base+12, r=0; y<GY; y+=12, r++){ sline(x1+2,y,x2-2,y,r,0.4);
+      for(let x=x1+(r%2?10:20); x<x2-4; x+=22) sline(x,y-12,x,y,r+x,0.2); }
+    ctx.restore();
+    spoly([[x1,C.base],[x2,C.base],[x2,GY],[x1,GY]], 17);
+  } else if(C.base > GY+1){
+    ctx.fillStyle="#4a3018"; ctx.fillRect(x1,GY,x2-x1,C.base+3-GY);
+    sline(x1,GY,x1,C.base+3,2); sline(x2,GY,x2,C.base+3,3); sline(x1,C.base+3,x2,C.base+3,4);
+  }
+  // affût en bois
+  const base=C.base;
+  const aff=[[C.Px-30,base-2],[C.Px+18,base-2],[C.Px+6,C.Py-3],[C.Px-12,C.Py-6]];
+  fpoly(aff,"#9b6a35"); spoly(aff,23);
+  // fût
+  const bx=C.Mx-C.ux*rec, by=C.My-C.uy*rec, nx=-C.uy, ny=C.ux;
+  const Bx=bx-C.ux*(C.Lb+12), By=by-C.uy*(C.Lb+12);
+  const barrel=[[Bx+nx*9,By+ny*9],[bx+nx*6,by+ny*6],[bx-nx*6,by-ny*6],[Bx-nx*9,By-ny*9]];
+  ctx.fillStyle="#1d1d2b"; ctx.save(); ctx.translate(3,3); fpoly(barrel,"rgba(29,29,43,0.5)"); ctx.restore();
+  fpoly(barrel,"#3d4352"); spoly(barrel,29);
+  ctx.strokeStyle="#7d8597"; ctx.lineWidth=2;
+  [0.3,0.62].forEach(u=>{ const cx=Bx+(bx-Bx)*u, cy=By+(by-By)*u, w=9-3*u; ctx.beginPath(); ctx.moveTo(cx+nx*w,cy+ny*w); ctx.lineTo(cx-nx*w,cy-ny*w); ctx.stroke(); });
+  ctx.strokeStyle="#1d1d2b"; ctx.lineWidth=2.4;
+  ctx.fillStyle="#3d4352"; ctx.beginPath(); ctx.arc(Bx-C.ux*3,By-C.uy*3,5,0,2*Math.PI); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#5a6172"; ctx.fillRect(bx-3,by-3,6,6);
+  // roue
+  ctx.lineWidth=2.6; scircle(C.wx,C.wy,C.wr,6,"#c48a4a");
+  ctx.lineWidth=1.8; for(let i=0;i<6;i++){ const a=i*Math.PI/3+0.3; ctx.beginPath(); ctx.moveTo(C.wx,C.wy); ctx.lineTo(C.wx+C.wr*0.9*Math.cos(a), C.wy+C.wr*0.9*Math.sin(a)); ctx.stroke(); }
+  ctx.fillStyle="#1d1d2b"; ctx.beginPath(); ctx.arc(C.wx,C.wy,3,0,2*Math.PI); ctx.fill();
+  ctx.restore();
+}
+function drawBall(x,y){
+  const X=sx(x), Y=sy(y), R=ballR(P.m);
+  ctx.save(); ctx.fillStyle="rgba(29,29,43,0.3)"; ctx.beginPath(); ctx.arc(X+2,Y+2,R,0,2*Math.PI); ctx.fill(); ctx.restore();
+  ctx.lineWidth=2.2; ctx.strokeStyle="#1d1d2b"; scircle(X,Y,R,5,"#2e2e38");
+  ctx.save(); ctx.fillStyle="rgba(255,255,255,0.7)"; ctx.beginPath(); ctx.arc(X-R*0.35,Y-R*0.35,R*0.28,0,2*Math.PI); ctx.fill(); ctx.restore();
+}
+function drawFx(){
+  const now=performance.now(), C=cannonGeom();
+  // fumée de tir
+  fx.smoke = fx.smoke.filter(p=>now-p.t<p.life);
+  fx.smoke.forEach(p=>{ const u=(now-p.t)/p.life, tt=(now-p.t)/1000, dmp=Math.exp(-tt*2.2);
+    const X=C.Mx + p.vx*(1-dmp)/2.2, Y=C.My + p.vy*(1-dmp)/2.2 - 12*tt;
+    ctx.save(); ctx.globalAlpha=0.7*(1-u); ctx.fillStyle="#d8d8de"; ctx.strokeStyle="#8d8d99"; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(X,Y,p.r*(1+1.6*u),0,2*Math.PI); ctx.fill(); ctx.stroke(); ctx.restore(); });
+  // flash
+  const df=now-fx.flash; if(df<160){ ctx.save(); ctx.translate(C.Mx+C.ux*10, C.My+C.uy*10); ctx.rotate(-C.a);
+    ctx.beginPath(); for(let i=0;i<=16;i++){ const a=i/16*2*Math.PI, r=(i%2?8:20)*(1-df/200); ctx.lineTo(r*1.3*Math.cos(a), r*0.9*Math.sin(a)); }
+    ctx.closePath(); ctx.fillStyle="#ffcc00"; ctx.fill(); ctx.strokeStyle="#ff7a00"; ctx.lineWidth=2; ctx.stroke(); ctx.restore(); }
+  // poussière d'impact
+  fx.dust = fx.dust.filter(p=>now-p.t<p.life);
+  fx.dust.forEach(p=>{ const tt=(now-p.t)/1000, u=(now-p.t)/p.life;
+    const X=sx(p.x)+p.vx*tt, Y=Math.min(GY, GY + p.vy*tt + 160*tt*tt);
+    ctx.save(); ctx.globalAlpha=0.8*(1-u); ctx.fillStyle=DECO[decoKey()].soil; ctx.beginPath(); ctx.arc(X,Y,p.r,0,2*Math.PI); ctx.fill(); ctx.restore(); });
+  // BOUM !
+  if(fx.boum && now-fx.boum.t<1000){ const X=Math.min(W-70, sx(fx.boum.x)+30);
+    ctx.save(); ctx.translate(X, GY-48); ctx.rotate(-0.1); const s=Math.min(1,(now-fx.boum.t)/120); ctx.scale(s,s);
+    ctx.beginPath(); for(let i=0;i<=24;i++){ const a=i/24*2*Math.PI, r=(i%2?28:44); ctx.lineTo(r*1.35*Math.cos(a), r*0.8*Math.sin(a)); }
+    ctx.closePath(); ctx.fillStyle="#ffcc00"; ctx.fill(); ctx.lineWidth=3; ctx.strokeStyle="#1d1d2b"; ctx.stroke();
+    txt("BOUM !",0,1,22,"center","#e0242f"); ctx.restore(); }
+}
+function drawTraj(T){
+  if(P.tr<0.5 || T.vis===false) return;
+  ctx.save(); ctx.strokeStyle=T.col; ctx.lineCap="round"; ctx.lineJoin="round";
+  if(P.trace>=0.5){
+    ctx.lineWidth=3; ctx.beginPath();
+    T.path.forEach((p,i)=>{ const X=sx(p[0]),Y=sy(p[1]); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+    ctx.stroke();
+  } else {
+    ctx.lineWidth=2.2; const c=5;
+    T.marks.forEach(m=>{ const X=sx(m[0]),Y=sy(m[1]);
+      ctx.beginPath(); ctx.moveTo(X-c,Y-c); ctx.lineTo(X+c,Y+c); ctx.moveTo(X-c,Y+c); ctx.lineTo(X+c,Y-c); ctx.stroke(); });
+  }
+  ctx.restore();
+}
+function drawGhostStart(T){
+  // point de lancement d'une trajectoire conservée, s'il n'est plus au même endroit
+  if(T.vis===false || Math.abs(T.p.h-P.h)<1e-9) return;
+  ctx.save(); ctx.setLineDash([5,4]); ctx.lineWidth=2; ctx.strokeStyle=T.col;
+  ctx.beginPath(); ctx.arc(sx(0),sy(T.p.h),8,0,2*Math.PI); ctx.stroke(); ctx.restore();
+}
+function draw(){
+  const T = performance.now()/1000;
+  drawBackground(T);
+  drawGround(T);
+  drawRulers();
+  hist.forEach(drawGhostStart);
+  hist.forEach(drawTraj);
+  if(st.phase!=="done" && st.phase!=="ready"){ drawTraj({path:st.path, col:st.col, marks:marksOf({path:st.path,np:st.path.length})}); }
+  if(st.phase==="ready"){ drawCannon(); }
+  else { drawCannon(); drawBall(st.x, st.y); }
+  drawFx();
+}
+
+/* ================= Échelle automatique (dézoom seulement quand le boulet sort du cadre) ================= */
+function targetSC(){
+  let mx = 0, my = P.h;
+  hist.forEach(T=>{ mx=Math.max(mx,T.mx); my=Math.max(my,T.my); });
+  if(st && st.phase!=="ready"){ mx=Math.max(mx,st.mx,st.x); my=Math.max(my,st.my,st.y); }
+  let s = SC0();
+  if(mx>0) s = Math.min(s, (W-OX-30)/(mx*1.04));
+  if(my>0) s = Math.min(s, (GY-30)/(my*1.06));
+  return s;
+}
+
+/* ================= Boucle ================= */
+let last=null;
+function loop(ts){
+  if(last===null) last=ts;
+  let real = Math.min(0.05,(ts-last)/1000); last=ts;
+  if(st.phase==="fly"){
+    st.acc += real*P.slow;
+    let guard = 0;
+    while(st.acc >= HS && st.phase==="fly" && guard++ < 400000){ step(HS); st.acc -= HS; }
+    if(st.phase==="done"){ archive(); updUI(); }
+  }
+  const t = targetSC(); SC += (t-SC)*Math.min(1, real*6); if(Math.abs(t-SC)<1e-6*t) SC=t;
+  draw();
+  if(tab==="traj") gdraw();
+  if(!(P.tau>0)) updTau();
+  requestAnimationFrame(loop);
+}
+// positions chronophoto = rééchantillonnage de la trajectoire fine (pas 5 ms) au pas Δt courant
+const TAUS = [0.02,0.05,0.1,0.2,0.25,0.3,0.4,0.5,1,2];
+function flightEst(){ const g=P.g, vy=P.v*Math.sin(rad(P.al)); return (vy+Math.sqrt(vy*vy+2*g*P.h))/g || 1; }
+function tauEff(){
+  if(P.tau>0) return P.tau;
+  let dur = 0;
+  hist.forEach(T=>{ dur=Math.max(dur,(T.np-1)*PATH_DT); });
+  if(st && st.phase!=="ready") dur=Math.max(dur, st.phase==="fly" ? Math.max(flightEst(), st.t) : st.t);
+  if(!dur) dur=flightEst();
+  return TAUS.reduce((b,t)=>Math.abs(dur/t-20)<Math.abs(dur/b-20)?t:b, TAUS[0]);
+}
+function marksOf(T){ const k=Math.max(1,Math.round(tauEff()/PATH_DT)), out=[];
+  for(let i=0;i<T.np;i+=k) out.push(T.path[i]); return out; }
+function archive(){
+  if(st.np===undefined) st.np = st.path.length;
+  hist.push({vis:true, path:st.path, np:st.np, col:st.col, num:st.num, mx:st.mx, my:st.my, get marks(){ return marksOf(this); },
+             p:{v:P.v, al:P.al, h:P.h, g:P.g, f:P.f, m:P.m}});
+  while(hist.length>NMAX) hist.shift();
+  gsel=[]; gfit();
+  nLaunch++;
+  renderInfo();
+}
+const fr = (x,n)=>(+x).toFixed(n).replace(".",",");
+const gfmt = v => { const r=Math.round(v*100)/100; return String(r).replace(".",","); };
+function astreTxt(g){ const a=astreOf(g); return a ? "sur "+(a.id==="terre"?"Terre":a.id==="lune"?"la Lune":a.id==="mars"?"Mars":"Jupiter")+" (g = "+fr(g,2)+" N/kg)" : "avec g = "+fr(g,2)+" N/kg"; }
+function phrase(T){
+  // n'affiche QUE les paramètres dont le réglage est visible par l'élève
+  const p=T.p, sh=String(P.ctrl||"");
+  let s = "Boulet" + (sh.includes("m") ? " de "+gfmt(p.m)+" kg" : "") + " tiré";
+  const a=[];
+  if(sh.includes("v")) a.push("à v₀ = "+fr(p.v,1)+" m/s");
+  if(sh.includes("a")) a.push("sous un angle α = "+fr(p.al,0)+"°");
+  if(sh.includes("h")) a.push("depuis une hauteur h = "+fr(p.h,1)+" m");
+  if(a.length) s += " " + a.join(", ");
+  const parts=[];
+  if(sh.includes("g")) parts.push(astreTxt(p.g));
+  if(sh.includes("f")) parts.push(p.f>0 ? "frottements de l'air : "+fr(p.f,1) : "sans frottements");
+  if(parts.length) s += " ; " + parts.join(", ");
+  return s + ".";
+}
+function renderInfo(){
+  const el=$("info_l");
+  if(!hist.length){ el.innerHTML='<div class="vide">Aucune trajectoire pour l\'instant.</div>'; return; }
+  el.innerHTML = hist.map(T=>`<div class="l${T.vis?"":" off"}"><label class="t" style="color:${T.col}" title="afficher / masquer"><input type="checkbox" data-n="${T.num}" style="accent-color:${T.col}" ${T.vis?"checked":""}><span class="tn"><span class="x">✕</span>Trajectoire ${T.num}</span></label><div class="s">${phrase(T)}</div></div>`).join("");
+  el.querySelectorAll("input[type=checkbox]").forEach(cb=>cb.onchange=()=>setVis(+cb.dataset.n, cb.checked));
+}
+function setVis(num, vis){
+  const T=hist.find(H=>H.num===num); if(!T) return; T.vis=vis;
+  gsel=[]; ghov=null; garr=garr.filter(A=>A.num!==T.num || T.vis); renderInfo(); }
+function go(){ if(st.phase!=="ready") reset(); st.phase="fly"; launchFx(); updUI(); }
+
+/* ================= UI ================= */
+const $=id=>document.getElementById(id);
+function fillSelect(sel, list, val, label){
+  let found=false;
+  list.forEach(v=>{ const o=document.createElement("option"); o.value=String(v.val); o.textContent=v.txt; sel.appendChild(o); if(Math.abs(v.val-val)<0.006) found=v.val; });
+  if(found===false){ const o=document.createElement("option"); o.value=String(val); o.textContent=label(val); sel.appendChild(o); found=val; }
+  sel.value=String(found); return found;
+}
+P.g = fillSelect($("s_g"), ASTRES.map(a=>({val:a.g, txt:a.nom+" (g = "+fr(a.g,2)+" N/kg)"})), P.g, v=>"g = "+fr(v,2)+" N/kg");
+P.m = fillSelect($("s_m"), MASSES.map(m=>({val:m, txt:gfmt(m)+" kg"})), P.m, v=>gfmt(v)+" kg");
+const show = String(P.ctrl||"");
+[["v","c_v"],["a","c_a"],["h","c_h"],["g","c_g"],["f","c_f"],["m","c_m"],["t","c_t"]].forEach(([l,id])=>{ if(!show.includes(l)) $(id).classList.add("hidden"); });
+$("s_v").max = Math.max(50, P.v); $("s_h").max = Math.max(40, P.h);
+$("s_v").value=P.v; $("s_a").value=P.al; $("s_h").value=P.h; $("s_f").value=P.f;
+$("s_slow").value = String([5,2,1,0.25,0.1].reduce((b,v)=>Math.abs(v-P.slow)<Math.abs(b-P.slow)?v:b,1));
+P.slow = parseFloat($("s_slow").value);
+function updUI(){
+  $("o_v").textContent = fr(P.v,1)+" m/s";
+  $("o_a").textContent = fr(P.al,0)+" °";
+  $("o_h").textContent = fr(P.h,1)+" m";
+  $("o_f").textContent = P.f>0 ? fr(P.f,1) : "aucun";
+  const lock = P.move<0.5, flying = st && st.phase==="fly";
+  ["s_v","s_a","s_h","s_g","s_f","s_m"].forEach(id=>$(id).disabled = lock||flying);
+  $("b_go").disabled = lock||flying; $("b_reset").disabled = lock; $("b_clear").disabled = lock;
+}
+$("s_v").oninput=e=>{P.v=+e.target.value; reset(); updUI();};
+$("s_a").oninput=e=>{P.al=+e.target.value; reset(); updUI();};
+$("s_h").oninput=e=>{P.h=+e.target.value; reset(); updUI();};
+$("s_f").oninput=e=>{P.f=+e.target.value; reset(); updUI();};
+$("s_g").onchange=e=>{P.g=+e.target.value; reset(); updUI();};
+$("s_m").onchange=e=>{P.m=+e.target.value; reset(); updUI();};
+$("s_slow").onchange=e=>{P.slow=+e.target.value;};
+$("s_trace").value = P.trace>=0.5 ? "1" : "0";
+(function(){ const sel=$("s_tau");
+  const oa=document.createElement("option"); oa.value="0"; oa.id="o_tauauto"; sel.appendChild(oa);
+  TAUS.forEach(t=>{ const o=document.createElement("option"); o.value=String(t); o.textContent=t.toFixed(2).replace(".",",")+" s"; sel.appendChild(o); });
+  if(P.tau>0) P.tau = TAUS.reduce((b,t)=>Math.abs(t-P.tau)<Math.abs(b-P.tau)?t:b, TAUS[0]);
+  sel.value = String(P.tau>0 ? P.tau : 0);
+  sel.onchange=e=>{ P.tau=+e.target.value; gsel=[]; updTau(); };
+})();
+let lastTauTxt="";
+function updTau(){ const t="auto ("+tauEff().toFixed(2).replace(".",",")+" s)"; if(t!==lastTauTxt){ $("o_tauauto").textContent=t; lastTauTxt=t; } }
+$("s_trace").onchange=e=>{P.trace=+e.target.value;};
+$("b_jpg").onclick=()=>{
+  const dpr = cv.width / W, lh = 24, pad = 14, gap = 8, xT = 42, maxW = W - xT - 20;
+  const FONT = '16px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  const m = document.createElement("canvas").getContext("2d"); m.font = FONT;
+  const wrap = t => { const out=[]; let cur="";
+    t.split(" ").forEach(w=>{ const test = cur ? cur+" "+w : w;
+      if(m.measureText(test).width > maxW && cur){ out.push(cur); cur=w; } else cur=test; });
+    if(cur) out.push(cur); return out; };
+  const blocks = hist.filter(T=>T.vis).map(T=>({col:T.col, lines:wrap("Trajectoire "+T.num+" : "+phrase(T))}));
+  const nL = blocks.reduce((n,B)=>n+B.lines.length,0);
+  const legH = pad*2 + Math.max(1,nL)*lh + Math.max(0,blocks.length-1)*gap;
+  const out = document.createElement("canvas");
+  out.width = cv.width; out.height = cv.height + Math.round(legH*dpr);
+  const o = out.getContext("2d");
+  o.fillStyle="#fff7e3"; o.fillRect(0,0,out.width,out.height);
+  draw(); if(tab==="traj"){ gdraw(); o.drawImage(gv,0,0); } else o.drawImage(cv,0,0);
+  o.scale(dpr,dpr); o.textBaseline="middle";
+  let y = H + pad + lh/2;
+  if(!blocks.length){ o.font=FONT; o.fillStyle="#777"; o.fillText("Aucune trajectoire.", 20, y); }
+  blocks.forEach(B=>{
+    o.fillStyle=B.col; o.font='bold 18px "Comic Neue","Comic Sans MS",cursive'; o.fillText("✕", 20, y);
+    o.fillStyle="#1d1d2b"; o.font=FONT;
+    B.lines.forEach(L=>{ o.fillText(L, xT, y); y += lh; });
+    y += gap;
+  });
+  out.toBlob(bl=>{ const a=document.createElement("a"); a.href=URL.createObjectURL(bl);
+    a.download = tab==="traj" ? "graphique_trajectoires_boulet.jpg" : "trajectoires_boulet_canon.jpg"; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000); }, "image/jpeg", 0.92);
+};
+$("b_clear").onclick=()=>{ hist=[]; nLaunch=0; gsel=[]; garr=[]; gfit(); reset(); renderInfo(); updUI(); };
+$("b_go").onclick=go;
+$("b_reset").onclick=()=>{ reset(); updUI(); };
+
+/* ================= Onglet Trajectoire : repère orthonormé ================= */
+// Repère : x vers la droite, y vers le haut, en m. Origine = point de lancement (o=0) ou sol sous le canon (o=1).
+const gv = document.getElementById("gv"), gx = gv.getContext("2d");
+let tab = "exp";
+let gV = {cx:30, cy:5, s:10};
+let gsel = [], ghov = null, gmouse = null, gdrag = null;
+let gtool = "mes", garr = [], gdraft = null, gLeg = [];
+const G_ML = 58, G_MB = 40, G_MT = 14, G_MR = 14;
+const yOff = T => P.o>=0.5 ? 0 : T.p.h;
+const toGT = (T,p) => [p[0], p[1]-yOff(T)];
+const gpx = x => G_ML + (W-G_ML-G_MR)/2 + (x-gV.cx)*gV.s;
+const gpy = y => G_MT + (H-G_MT-G_MB)/2 - (y-gV.cy)*gV.s;
+const gfromPx = (px,py) => [gV.cx + (px - G_ML - (W-G_ML-G_MR)/2)/gV.s, gV.cy - (py - G_MT - (H-G_MT-G_MB)/2)/gV.s];
+function gfit(){
+  let xs=[], ys=[];
+  hist.forEach(T=>{ if(!T.vis) return; T.path.forEach((p,i)=>{ if(i%4 && i!==T.path.length-1) return; const [x,y]=toGT(T,p); xs.push(x); ys.push(y); }); });
+  if(!xs.length){ xs=[0,P.L]; ys=[P.o>=0.5?0:-P.h, P.L*0.35]; }
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  const w=Math.max(x1-x0,1), h=Math.max(y1-y0,1);
+  gV.cx=(x0+x1)/2; gV.cy=(y0+y1)/2;
+  gV.s=Math.min((W-G_ML-G_MR)/(w*1.12), (H-G_MT-G_MB)/(h*1.18));
+  gV.s=Math.max(0.05, Math.min(gV.s, 4000));
+}
+function gdraw(){
+  const c=gx; c.save(); c.fillStyle="#fffdf7"; c.fillRect(0,0,W,H);
+  const L=G_ML, Rr=W-G_MR, T=G_MT, B=H-G_MB;
+  const st_=niceStep(gV.s), mi=st_/5;
+  const [xa,ya]=gfromPx(L,B), [xb,yb]=gfromPx(Rr,T);
+  c.save(); c.beginPath(); c.rect(L,T,Rr-L,B-T); c.clip();
+  c.lineWidth=1;
+  c.strokeStyle="rgba(123,79,214,0.10)";
+  for(let x=Math.ceil(xa/mi)*mi; x<=xb; x+=mi){ c.beginPath(); c.moveTo(gpx(x),T); c.lineTo(gpx(x),B); c.stroke(); }
+  for(let y=Math.ceil(ya/mi)*mi; y<=yb; y+=mi){ c.beginPath(); c.moveTo(L,gpy(y)); c.lineTo(Rr,gpy(y)); c.stroke(); }
+  c.strokeStyle="rgba(123,79,214,0.28)";
+  for(let x=Math.ceil(xa/st_)*st_; x<=xb; x+=st_){ c.beginPath(); c.moveTo(gpx(x),T); c.lineTo(gpx(x),B); c.stroke(); }
+  for(let y=Math.ceil(ya/st_)*st_; y<=yb; y+=st_){ c.beginPath(); c.moveTo(L,gpy(y)); c.lineTo(Rr,gpy(y)); c.stroke(); }
+  // axes
+  c.strokeStyle="#1d1d2b"; c.lineWidth=2;
+  c.beginPath(); c.moveTo(L,gpy(0)); c.lineTo(Rr,gpy(0)); c.stroke();
+  c.beginPath(); c.moveTo(gpx(0),T); c.lineTo(gpx(0),B); c.stroke();
+  // trajectoires
+  hist.forEach(Tj=>{ if(!Tj.vis) return;
+    c.strokeStyle=Tj.col; c.lineCap="round"; c.lineJoin="round";
+    if(P.trace>=0.5){ c.lineWidth=2.5; c.beginPath();
+      Tj.path.forEach((p,i)=>{ const [x,y]=toGT(Tj,p); i?c.lineTo(gpx(x),gpy(y)):c.moveTo(gpx(x),gpy(y)); }); c.stroke(); }
+    const cs = P.trace>=0.5 ? 3 : 5; c.lineWidth = P.trace>=0.5 ? 1.6 : 2.2;
+    Tj.marks.forEach(m=>{ const [x,y]=toGT(Tj,m), X=gpx(x), Y=gpy(y);
+      c.beginPath(); c.moveTo(X-cs,Y-cs); c.lineTo(X+cs,Y+cs); c.moveTo(X-cs,Y+cs); c.lineTo(X+cs,Y-cs); c.stroke(); });
+  });
+  // flèches
+  const drawArrow=(A,col,dash)=>{ const X1=gpx(A.x0),Y1=gpy(A.y0),X2=gpx(A.x1),Y2=gpy(A.y1), Lp=Math.hypot(X2-X1,Y2-Y1); if(Lp<3) return;
+    const ux=(X2-X1)/Lp, uy=(Y2-Y1)/Lp, nx=-uy, ny=ux, h=Math.min(14,Lp*0.35);
+    c.save(); c.strokeStyle=col; c.lineWidth=3; c.lineCap="round"; if(dash) c.setLineDash([8,6]);
+    c.beginPath(); c.moveTo(X1,Y1); c.quadraticCurveTo((X1+X2)/2+nx*1.5,(Y1+Y2)/2+ny*1.5,X2,Y2); c.stroke(); c.setLineDash([]);
+    c.beginPath(); c.moveTo(X2,Y2); c.lineTo(X2-ux*h+nx*h*0.55,Y2-uy*h+ny*h*0.55); c.moveTo(X2,Y2); c.lineTo(X2-ux*h-nx*h*0.5,Y2-uy*h-ny*h*0.5); c.stroke();
+    c.restore(); };
+  garr = garr.filter(A=>hist.some(T=>T.num===A.num && T.vis));
+  garr.forEach(A=>drawArrow(A, A.col, false));
+  if(gdraft){ drawArrow(gdraft, gdraft.col, true);
+    const Lc=Math.hypot(gdraft.x1-gdraft.x0, gdraft.y1-gdraft.y0), lab="longueur = "+gfmt(Lc)+" m";
+    c.font='15px "Humor Sans","Comic Neue","Comic Sans MS",cursive'; const w=c.measureText(lab).width+14;
+    const bx=gpx(gdraft.x1)+12, by=gpy(gdraft.y1)-30;
+    c.fillStyle="#ffe27a"; c.fillRect(bx,by,w,24); c.strokeStyle="#1d1d2b"; c.lineWidth=1.5; c.strokeRect(bx,by,w,24);
+    c.fillStyle="#1d1d2b"; c.textAlign="left"; c.textBaseline="middle"; c.fillText(lab,bx+7,by+12); }
+  // mesure de distance
+  let distLab = null;
+  const DL_F1='13px "Humor Sans","Comic Neue","Comic Sans MS",cursive', DL_F2='17px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  const distSize=d=>{ c.font=DL_F2; let w=Math.max(c.measureText(d.num).width, d.den?c.measureText(d.den).width:0);
+    c.font=DL_F1; w=Math.max(w,c.measureText(d.head).width); return {w:w+24, h: d.den ? 74 : 48}; };
+  const drawDist=(d,mx,my)=>{
+    const {w,h}=distSize(d); mx=Math.max(L+w/2+4, Math.min(Rr-w/2-4, mx)); my=Math.max(T+30+h/2, Math.min(B-h/2-2, my));
+    const x0=mx-w/2, y0=my-h/2;
+    c.fillStyle="#1d1d2b"; c.fillRect(x0+3,y0+3,w,h); c.fillStyle="#ffe27a"; c.fillRect(x0,y0,w,h);
+    c.strokeStyle="#1d1d2b"; c.lineWidth=2; c.strokeRect(x0,y0,w,h);
+    c.fillStyle="#555"; c.font=DL_F1; c.textAlign="center"; c.textBaseline="middle"; c.fillText(d.head,mx,y0+11);
+    c.fillStyle="#1d1d2b"; c.font=DL_F2; c.fillText(d.num,mx,y0+31);
+    if(d.den){ c.lineWidth=2; c.beginPath(); c.moveTo(x0+10,y0+45); c.lineTo(x0+w-10,y0+45); c.stroke(); c.fillText(d.den,mx,y0+60); }
+    return h; };
+  const ptOf = q => toGT(hist[q.h], hist[q.h].marks[q.i]);
+  gsel = gsel.filter(q=>hist[q.h] && hist[q.h].vis && hist[q.h].marks[q.i]);
+  gsel.forEach((q,k)=>{ const [x,y]=ptOf(q), X=gpx(x), Y=gpy(y);
+    c.strokeStyle="#1d1d2b"; c.lineWidth=2; c.beginPath(); c.arc(X,Y,8,0,2*Math.PI); c.stroke();
+    const nm="M"+q.i; c.font='bold 15px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+    const w=c.measureText(nm).width+10; let lx, ly;
+    if(gsel.length===2){ const o=ptOf(gsel[1-k]); const dx=X-gpx(o[0]), dy=Y-gpy(o[1]), n=Math.hypot(dx,dy)||1;
+      lx=X+dx/n*20 - w/2; ly=Y+dy/n*20 - 10; }
+    else { lx=X-w/2; ly=Y+12; }
+    c.fillStyle="#fff"; c.fillRect(lx,ly,w,20); c.strokeStyle=hist[q.h].col; c.lineWidth=1.8; c.strokeRect(lx,ly,w,20);
+    c.fillStyle=hist[q.h].col; c.textAlign="center"; c.textBaseline="middle"; c.fillText(nm,lx+w/2,ly+10); });
+  if(gsel.length===2){
+    const [x1,y1]=ptOf(gsel[0]), [x2,y2]=ptOf(gsel[1]);
+    c.strokeStyle="#1d1d2b"; c.lineWidth=2; c.setLineDash([7,5]);
+    c.beginPath(); c.moveTo(gpx(x1),gpy(y1)); c.lineTo(gpx(x2),gpy(y2)); c.stroke(); c.setLineDash([]);
+    const D=Math.hypot(x2-x1,y2-y1);
+    const dT = Math.abs(gsel[1].i-gsel[0].i)*tauEff();
+    const same = gsel[0].h===gsel[1].h;
+    distLab = { head:"M"+gsel[0].i+" → M"+gsel[1].i, num:"distance = "+gfmt(D)+" m",
+                den: same ? "durée Δt = "+dT.toFixed(2).replace(".",",")+" s" : null,
+                x:(gpx(x1)+gpx(x2))/2, y:(gpy(y1)+gpy(y2))/2 };
+  }
+  if(gmouse && !gdraft && (!gdrag || gdrag.from)){
+    c.strokeStyle="rgba(29,29,43,0.35)"; c.lineWidth=1; c.setLineDash([4,4]);
+    const [hx,hy] = ghov ? ptOf(ghov).map((v,i)=>i?gpy(v):gpx(v)) : gmouse;
+    c.beginPath(); c.moveTo(hx,T); c.lineTo(hx,B); c.moveTo(L,hy); c.lineTo(Rr,hy); c.stroke(); c.setLineDash([]);
+    let lab;
+    if(ghov){ const [x,y]=ptOf(ghov); const Tj=hist[ghov.h];
+      c.strokeStyle=Tj.col; c.lineWidth=3; c.beginPath(); c.arc(hx,hy,7,0,2*Math.PI); c.stroke();
+      const tt=(ghov.i*tauEff()).toFixed(2).replace(".",",");
+      lab = "M"+ghov.i+" (traj. "+Tj.num+")   t = "+tt+" s   x = "+gfmt(x)+" m   y = "+gfmt(y)+" m"; }
+    else { const [x,y]=gfromPx(gmouse[0],gmouse[1]); lab = "x = "+gfmt(x)+" m   y = "+gfmt(y)+" m"; }
+    c.font='14px "Humor Sans","Comic Neue","Comic Sans MS",cursive'; const w=c.measureText(lab).width+14;
+    let bx=hx+14, by=hy-30; if(bx+w>Rr) bx=hx-14-w; if(by<T+2) by=hy+12;
+    c.fillStyle="rgba(255,255,255,0.95)"; c.fillRect(bx,by,w,22); c.strokeStyle="#1d1d2b"; c.lineWidth=1.5; c.strokeRect(bx,by,w,22);
+    c.fillStyle="#1d1d2b"; c.textAlign="left"; c.textBaseline="middle"; c.fillText(lab,bx+7,by+11);
+    if(distLab){ const {w:wd,h:hd}=distSize(distLab);
+      let dy=by-8-hd/2; if(dy-hd/2<T+30) dy=by+22+8+hd/2;
+      drawDist(distLab, bx+wd/2, dy); distLab=null; }
+  }
+  if(distLab){ const {h:hd}=distSize(distLab); let my=distLab.y-20-hd/2; if(my-hd/2<T+30) my=distLab.y+20+hd/2; drawDist(distLab, distLab.x, my); }
+  c.restore();
+  c.strokeStyle="#1d1d2b"; c.lineWidth=2.5; c.strokeRect(L,T,Rr-L,B-T);
+  c.fillStyle="#1d1d2b"; c.font='13px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  c.textAlign="center"; c.textBaseline="top";
+  for(let x=Math.ceil(xa/st_)*st_; x<=xb+1e-9; x+=st_){ const X=gpx(x); c.beginPath(); c.moveTo(X,B); c.lineTo(X,B+6); c.stroke(); c.fillText(gfmt(x),X,B+8); }
+  c.textAlign="right"; c.textBaseline="middle";
+  for(let y=Math.ceil(ya/st_)*st_; y<=yb+1e-9; y+=st_){ const Y=gpy(y); c.beginPath(); c.moveTo(L-6,Y); c.lineTo(L,Y); c.stroke(); c.fillText(gfmt(y),L-9,Y); }
+  c.font='15px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  c.textAlign="right"; c.textBaseline="bottom"; c.fillText("x (m)", Rr-4, B-4);
+  c.save(); c.translate(L+16,T+6); c.textAlign="left"; c.textBaseline="top"; c.fillText("y (m)",0,0); c.restore();
+  const hv = hist.filter(Tj=>Tj.vis);
+  gLeg=[];
+  if(hist.length){ c.textAlign="left"; c.textBaseline="middle"; const lw=150, lx=Rr-lw-4; let ly=T+44;
+    c.fillStyle="rgba(255,255,255,0.92)"; c.fillRect(lx-6,ly-14,lw,hist.length*22+6);
+    c.strokeStyle="#1d1d2b"; c.lineWidth=1.5; c.strokeRect(lx-6,ly-14,lw,hist.length*22+6);
+    hist.forEach(Tj=>{
+      // case à cocher (cliquable)
+      c.lineWidth=2; c.strokeStyle=Tj.vis?Tj.col:"#999"; c.fillStyle=Tj.vis?Tj.col:"#fff";
+      c.fillRect(lx,ly-7,14,14); c.strokeRect(lx,ly-7,14,14);
+      if(Tj.vis){ c.strokeStyle="#fff"; c.lineWidth=2.4; c.beginPath(); c.moveTo(lx+3,ly); c.lineTo(lx+6,ly+4); c.lineTo(lx+11,ly-4); c.stroke(); }
+      c.fillStyle=Tj.vis?Tj.col:"#bbb"; c.font='bold 16px "Comic Neue","Comic Sans MS",cursive'; c.fillText("✕",lx+20,ly);
+      c.fillStyle=Tj.vis?"#1d1d2b":"#aaa"; c.font='14px "Humor Sans","Comic Neue","Comic Sans MS",cursive'; c.fillText("Trajectoire "+Tj.num,lx+38,ly);
+      gLeg.push({x:lx-6, y:ly-11, w:lw, h:22, num:Tj.num}); ly+=22; }); }
+  if(!hv.length){ c.fillStyle="#888"; c.textAlign="center"; c.textBaseline="middle"; c.font='17px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+    c.fillText(hist.length ? "Toutes les trajectoires sont masquées." : "Tirez au canon dans l'onglet Expérience : les trajectoires apparaîtront ici.", W/2, H/2); }
+  c.restore();
+}
+function gpos(e){ const r=gv.getBoundingClientRect(); return [(e.clientX-r.left)*W/r.width, (e.clientY-r.top)*H/r.height]; }
+function gnear(px,py){ let best=null, bd=40*40;
+  hist.forEach((Tj,h)=>Tj.vis && Tj.marks.forEach((m,i)=>{ const [x,y]=toGT(Tj,m); const d=(gpx(x)-px)**2+(gpy(y)-py)**2; if(d<bd){bd=d; best={h,i};} }));
+  return best; }
+gv.addEventListener("pointerdown",e=>{ const p0=gpos(e), lg=gLeg.find(r=>p0[0]>=r.x&&p0[0]<=r.x+r.w&&p0[1]>=r.y&&p0[1]<=r.y+r.h);
+  if(lg){ const T=hist.find(H=>H.num===lg.num); if(T) setVis(T.num, !T.vis); return; }
+  const p=p0, q = gtool==="none" ? null : gnear(p[0],p[1]);
+  gdrag={p, c:[gV.cx,gV.cy], moved:false, from:q}; gv.setPointerCapture(e.pointerId); });
+gv.addEventListener("pointermove",e=>{ const p=gpos(e); gmouse=p;
+  if(gdrag){ const dx=p[0]-gdrag.p[0], dy=p[1]-gdrag.p[1]; if(Math.abs(dx)+Math.abs(dy)>4) gdrag.moved=true;
+    if(gdrag.moved){
+      if(gdrag.from && gtool==="arr"){ const [x,y]=gfromPx(p[0],p[1]); const Tf=hist[gdrag.from.h]; const [x0,y0]=toGT(Tf, Tf.marks[gdrag.from.i]);
+        gdraft={x0,y0,x1:x,y1:y,col:"#1d1d2b",num:Tf.num}; ghov=null; }
+      else if(gdrag.from){ ghov=gnear(p[0],p[1]); gsel=[gdrag.from]; if(ghov && (ghov.h!==gdrag.from.h || ghov.i!==gdrag.from.i)) gsel.push(ghov); }
+      else { gV.cx=gdrag.c[0]-dx/gV.s; gV.cy=gdrag.c[1]+dy/gV.s; gv.style.cursor="grabbing"; } } }
+  else ghov=gnear(p[0],p[1]); });
+gv.addEventListener("pointerup",e=>{ const p=gpos(e); gv.style.cursor="crosshair";
+  if(gdrag && gdrag.moved && gdrag.from && gtool==="arr"){ if(gdraft && Math.hypot(gpx(gdraft.x1)-gpx(gdraft.x0),gpy(gdraft.y1)-gpy(gdraft.y0))>6) garr.push(gdraft); gdraft=null; }
+  else if(gdrag && gdrag.moved && gdrag.from){ if(gsel.length<2) gsel=[]; }
+  else if(gdrag && !gdrag.moved && gtool==="arr"){ }
+  else if(gdrag && !gdrag.moved && gtool==="mes"){ const q=gnear(p[0],p[1]);
+    if(!q) gsel=[]; else if(gsel.length>=2) gsel=[q]; else gsel.push(q); }
+  gdrag=null; ghov=gnear(p[0],p[1]); });
+gv.addEventListener("pointerleave",()=>{ if(!gdrag){ gmouse=null; ghov=null; } });
+function gzoom(f, px, py){ const [x,y]=gfromPx(px,py); gV.s=Math.max(0.05,Math.min(6000,gV.s*f));
+  const [x2,y2]=gfromPx(px,py); gV.cx+=x-x2; gV.cy+=y-y2; }
+gv.addEventListener("wheel",e=>{ e.preventDefault(); const p=gpos(e); gzoom(e.deltaY<0?1.15:1/1.15, p[0], p[1]); }, {passive:false});
+$("g_in").onclick=()=>gzoom(1.3, W/2, H/2);
+$("g_out").onclick=()=>gzoom(1/1.3, W/2, H/2);
+$("g_fit").onclick=()=>gfit();
+$("g_clr").onclick=()=>{ gsel=[]; garr=[]; gdraft=null; };
+const TOOL_OK = { mes: P.mes>=0.5, arr: P.arr>=0.5 };
+$("g_mes").disabled = !TOOL_OK.mes; $("g_arr").disabled = !TOOL_OK.arr;
+if(!TOOL_OK[gtool]) gtool = TOOL_OK.mes ? "mes" : (TOOL_OK.arr ? "arr" : "none");
+const updTool=()=>{ $("g_mes").style.background = gtool==="mes" ? "#ffe27a" : "#fff"; $("g_arr").style.background = gtool==="arr" ? "#ffe27a" : "#fff";
+  $("ghelp").textContent = gtool==="mes"
+    ? "molette : zoom · glisser dans le vide : déplacer · glisser d'une croix à une autre (ou 2 clics) : distance"
+    : gtool==="arr" ? "molette : zoom · glisser dans le vide : déplacer · glisser depuis une croix : tracer une flèche"
+    : "molette : zoom · glisser : déplacer"; };
+$("g_mes").onclick=()=>{ if(TOOL_OK.mes){ gtool="mes"; updTool(); } };
+$("g_arr").onclick=()=>{ if(TOOL_OK.arr){ gtool="arr"; gsel=[]; updTool(); } };
+updTool();
+function setTab(t){ tab=t;
+  $("t_exp").classList.toggle("on", t==="exp"); $("t_traj").classList.toggle("on", t==="traj");
+  $("cv").classList.toggle("hidden", t!=="exp");
+  ["gv","gtools","ghelp"].forEach(id=>$(id).classList.toggle("hidden", t!=="traj"));
+  if(t==="traj") gdraw(); }
+$("t_exp").onclick=()=>setTab("exp");
+$("t_traj").onclick=()=>setTab("traj");
+
+(function(){ const dpr=Math.max(1,window.devicePixelRatio||1); cv.width=W*dpr; cv.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  gv.width=W*dpr; gv.height=H*dpr; gx.setTransform(dpr,0,0,dpr,0,0); })();
+reset(); gfit(); renderInfo(); updUI();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
