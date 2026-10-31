@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chronophotographie – orienter le vecteur vitesse</title>
+<style>
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:'Comic Sans MS','Comic Neue',cursive; color:#111;
+    background:#ffd84a radial-gradient(circle, rgba(220,60,30,.35) 1.6px, transparent 2px) 0 0/9px 9px;
+  }
+  #wrap{ position:relative; max-width:960px; margin:0 auto; padding:8px; }
+  canvas{ display:block; width:min(100%, calc((100vh - 100px) * 4 / 3)); height:auto; margin:0 auto; touch-action:none; user-select:none;
+          border:5px solid #111; background:#fff; box-shadow:7px 7px 0 #111; }
+  #bar{ display:flex; gap:16px; justify-content:center; align-items:center; flex-wrap:wrap; min-height:54px; padding:8px 0 6px; }
+  .cbtn{
+    font-family:Impact,'Arial Black',sans-serif; font-size:19px; letter-spacing:1px; text-transform:uppercase;
+    background:#e8202a; color:#fff; -webkit-text-stroke:1px #111;
+    border:4px solid #111; padding:6px 18px; cursor:pointer; box-shadow:5px 5px 0 #111;
+    transform:skew(-8deg) rotate(-1deg); transition:transform .1s, box-shadow .1s;
+  }
+  .cbtn.yellow{ background:#ffc400; color:#111; -webkit-text-stroke:0; } .cbtn.green{ background:#19a64a; }
+  .cbtn:hover{ transform:skew(-8deg) rotate(-1deg) scale(1.06); }
+  .cbtn:active{ transform:skew(-8deg) translate(4px,4px); box-shadow:1px 1px 0 #111; }
+  .cbtn:disabled{ background:#999; cursor:default; transform:skew(-8deg); }
+  .hidden{ display:none !important; }
+  #codeBox{ background:#fff; border:4px solid #111; box-shadow:5px 5px 0 #111; padding:6px 16px; font-size:18px; transform:rotate(1deg); }
+  #codeBox b{ font-family:Consolas,monospace; font-size:24px; letter-spacing:4px; color:#e8202a; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="bar">
+    <button class="cbtn" id="bStart">📷 Démarrer !</button>
+    <button class="cbtn green hidden" id="bCheck" disabled>✔ Vérifier</button>
+    <button class="cbtn yellow" id="bReset">↺ Recommencer</button>
+    <span id="codeBox" class="hidden">Code de vérification : <b id="code">-----</b></span>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+/* ==================== Paramètres (XOR + base64url) ==================== */
+const KEY = "T4ng3nt3_V1t3sse!";
+function decodeP(s){
+  try{
+    s = s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='=';
+    const bin = atob(s), b = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) b[i] = bin.charCodeAt(i) ^ KEY.charCodeAt(i%KEY.length);
+    return JSON.parse(new TextDecoder().decode(b));
+  }catch(e){ return {}; }
+}
+const Q = new URLSearchParams(location.search);
+const P = Q.get('p') ? decodeP(Q.get('p')) : {};
+['type','n','seed','dir','dt','r','tol'].forEach(k=>{ if(Q.has(k)) P[k]=Q.get(k); });   // paramètres en clair prioritaires
+const TYPES = ['arc','sinus','bosse','virage'];
+const TYPE_IN = String(P.type ?? 'alea');
+const DIR_IN  = String(P.dir ?? 'alea');          // 'd' : gauche→droite, 'g' : droite→gauche
+const N = Math.max(10, Math.min(15, parseInt(P.n ?? 13) || 13));
+const SEED = parseInt(P.seed ?? 1) || 1;
+const DT = parseInt(P.dt ?? 40) || 40;
+const RETRY = String(P.r ?? '0') === '1';
+const TOL = Math.max(2, Math.min(30, parseFloat(P.tol ?? 10) || 10)) * Math.PI/180;   // tolérance d'orientation (± degrés)
+
+/* ==================== PRNG ==================== */
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+const rng = mulberry32(SEED*9973 + N*31 + 7);
+const R = (a,b)=> a + (b-a)*rng();
+const TYPE = TYPES.includes(TYPE_IN) ? TYPE_IN : TYPES[Math.floor(rng()*TYPES.length)];
+const DIR  = (DIR_IN==='d' || DIR_IN==='g') ? DIR_IN : (rng()<0.5 ? 'd' : 'g');
+
+/* ==================== Trajectoire (forme, y vers le haut, u ∈ [0,1]) ==================== */
+function genShape(){
+  if(TYPE==='arc'){
+    const span=R(100,160)*Math.PI/180, hill=rng()<0.5, c=(hill?Math.PI/2:3*Math.PI/2)+R(-0.3,0.3);
+    return u=> hill ? [Math.cos(c+span/2-span*u), Math.sin(c+span/2-span*u)]
+                    : [Math.cos(c-span/2+span*u), Math.sin(c-span/2+span*u)];
+  }
+  if(TYPE==='sinus'){
+    const A=R(0.10,0.17), cyc=R(0.75,1.3), ph=R(0,2*Math.PI);
+    return u=>[u, A*Math.sin(2*Math.PI*cyc*u+ph)];
+  }
+  if(TYPE==='bosse'){
+    const h=R(0.25,0.42)*(rng()<0.5?1:-1), a=R(-0.3,0.3);
+    return u=>{ const w=2*u-1; return [u, h*(1-w*w)*(1+a*w)]; };
+  }
+  // virage : courbe de Bézier (S ou virage simple)
+  const s=rng()<0.5?1:-1, S=rng()<0.5;
+  const P0=[0,0], P1=[R(0.45,0.7),0], P2=S?[R(0.3,0.55),s*R(0.4,0.6)]:[R(0.85,1),s*R(0.1,0.25)], P3=S?[1,s*R(0.4,0.6)]:[R(0.85,1),s*R(0.55,0.8)];
+  return u=>{ const v=1-u, a=v*v*v, b=3*v*v*u, c=3*v*u*u, d=u*u*u;
+    return [a*P0[0]+b*P1[0]+c*P2[0]+d*P3[0], a*P0[1]+b*P1[1]+c*P2[1]+d*P3[1]]; };
+}
+const G=genShape();
+
+/* ==================== Mise en page ==================== */
+const W=960, H=720;
+const TOP={x0:14,y0:14,x1:946,y1:440};
+const TRAY={x0:14,y0:458,x1:946,y1:706};
+const K=3000, dense=[];
+for(let j=0;j<=K;j++){ const p=G(j/K); dense.push([DIR==='g'?-p[0]:p[0], p[1]]); }
+const SC=[];   // courbe dense en coordonnées écran
+(function fit(){
+  const xs=dense.map(p=>p[0]), ys=dense.map(p=>p[1]);
+  const mnx=Math.min(...xs), mxx=Math.max(...xs), mny=Math.min(...ys), mxy=Math.max(...ys);
+  const mx=105, my=95, bw=(TOP.x1-TOP.x0)-2*mx, bh=(TOP.y1-TOP.y0)-2*my;   // marges : un vecteur ne sort jamais du canevas
+  const s=Math.min(bw/Math.max(mxx-mnx,1e-9), bh/Math.max(mxy-mny,1e-9));
+  const ox=TOP.x0+mx+(bw-s*(mxx-mnx))/2-s*mnx, oy=TOP.y0+my+(bh-s*(mxy-mny))/2+s*mxy;
+  dense.forEach(p=>SC.push([ox+s*p[0], oy-s*p[1]]));
+})();
+// abscisse curviligne → points équidistants (mouvement uniforme)
+const CUM=[0]; for(let j=1;j<=K;j++) CUM.push(CUM[j-1]+Math.hypot(SC[j][0]-SC[j-1][0], SC[j][1]-SC[j-1][1]));
+const LEN=CUM[K];
+const M=[], TAN=[], TPAR=[];
+for(let i=0;i<N;i++){
+  const sTarget=LEN*i/(N-1); let j=0; while(j<K-1 && CUM[j+1]<sTarget) j++;
+  const f=(sTarget-CUM[j])/Math.max(CUM[j+1]-CUM[j],1e-9);
+  M.push([SC[j][0]+f*(SC[j+1][0]-SC[j][0]), SC[j][1]+f*(SC[j+1][1]-SC[j][1])]);
+  const a=SC[Math.max(0,j-2)], b=SC[Math.min(K,j+3)];
+  TAN.push(Math.atan2(b[1]-a[1], b[0]-a[0]));   // sens du mouvement
+  TPAR.push((j+f)/K);
+}
+const SP=LEN/(N-1);
+const VL=Math.max(65, Math.min(100, SP*R(1.3,1.8)));   // longueur commune des 4 vecteurs
+
+/* -- 4 points bien répartis (intérieurs, non adjacents) -- */
+function pickHot(){
+  const c=N-2;
+  for(let t=0;t<400;t++){
+    const set=[]; for(let b=0;b<4;b++){ const lo=1+Math.floor(b*c/4), hi=Math.floor((b+1)*c/4); set.push(lo+Math.floor(rng()*(hi-lo+1))); }
+    let ok=true; for(let k=1;k<4;k++) if(set[k]-set[k-1]<2) ok=false;
+    if(ok) return set;
+  }
+  return [1,3,5,7].map(v=>Math.round(v*(N-2)/8));
+}
+const HOT=pickHot();
+
+/* -- Vecteurs (même norme) -- */
+const vecs=[0,1,2,3].map(id=>({id, x:0, y:0, ang:R(0,2*Math.PI), at:-1, hx:0, hy:0}));
+(function homes(){
+  vecs.forEach((v,n)=>{ const sw=(TRAY.x1-TRAY.x0)/4, cx=TRAY.x0+sw*(n+0.5), cy=(TRAY.y0+28+TRAY.y1)/2;
+    v.hx=cx-Math.cos(v.ang)*VL/2; v.hy=cy-Math.sin(v.ang)*VL/2; v.x=v.hx; v.y=v.hy; });
+})();
+const tipOf=v=>[v.x+Math.cos(v.ang)*VL, v.y+Math.sin(v.ang)*VL];
+const homeOf=v=>{ const sw=(TRAY.x1-TRAY.x0)/4, cx=TRAY.x0+sw*(v.id+0.5), cy=(TRAY.y0+28+TRAY.y1)/2;
+  v.x=cx-Math.cos(v.ang)*VL/2; v.y=cy-Math.sin(v.ang)*VL/2; };
+
+/* ==================== Code de vérification ==================== */
+function fnv(str){ let h=0x811c9dc5; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; } return h>>>0; }
+function makeCode(score){
+  const raw24=(((fnv(TYPE_IN+'|'+N+'|'+SEED+'|'+DIR_IN)&0xFFFFF)<<4)|(score&15))>>>0;
+  let m=(Math.imul((raw24^0x5A3C96)>>>0, 7919)>>>0)&0xFFFFFF;
+  m=(m^(m>>>12))&0xFFFFFF;
+  const mixed=(Math.imul(m, 7919)>>>0)&0xFFFFFF;
+  return mixed.toString(36).toUpperCase().padStart(5,'0');
+}
+
+/* ==================== Canvas & outils « comics » ==================== */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let dpr=1; function resize(){ dpr=Math.max(1,window.devicePixelRatio||1); cv.width=W*dpr; cv.height=H*dpr; }
+resize(); window.addEventListener('resize',resize);
+const FCOMIC="Impact,'Arial Black',sans-serif", FTEXT="'Comic Sans MS','Comic Neue',cursive";
+
+function halftone(col,bg,step,r){ const c=document.createElement('canvas'); c.width=c.height=step; const g=c.getContext('2d');
+  if(bg){ g.fillStyle=bg; g.fillRect(0,0,step,step); } g.fillStyle=col; g.beginPath(); g.arc(step/2,step/2,r,0,7); g.fill(); return ctx.createPattern(c,'repeat'); }
+const HT_RED=halftone('rgba(232,32,42,.55)',null,8,2.2), HT_TRAY=halftone('rgba(29,91,224,.22)','#eef4ff',9,2);
+
+function noise(seed,j){ const x=Math.sin(seed*127.1+j*311.7)*43758.5453; return (x-Math.floor(x))*2-1; }
+function comicText(txt,x,y,size,fill,rot,stroke='#111'){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rot||0);
+  ctx.font=size+'px '+FCOMIC; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineJoin='round';
+  ctx.fillStyle='#111'; ctx.fillText(txt,size*0.07,size*0.07);
+  ctx.lineWidth=size/7; ctx.strokeStyle=stroke; ctx.strokeText(txt,0,0);
+  ctx.fillStyle=fill; ctx.fillText(txt,0,0); ctx.restore();
+}
+function burst(cx,cy,rx,ry,spikes,fill,seed,rot){
+  ctx.save(); ctx.translate(cx,cy); ctx.rotate(rot||0); ctx.beginPath();
+  for(let j=0;j<spikes*2;j++){ const a=j/(spikes*2)*Math.PI*2, f=j%2?0.62:1+noise(seed,j)*0.18; ctx.lineTo(Math.cos(a)*rx*f, Math.sin(a)*ry*f); }
+  ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); ctx.fillStyle=HT_RED; ctx.fill();
+  ctx.lineWidth=4; ctx.strokeStyle='#111'; ctx.lineJoin='round'; ctx.stroke(); ctx.restore();
+}
+function actionLines(cx,cy,r0,r1,n,alpha,seed){
+  ctx.save(); ctx.strokeStyle='rgba(0,0,0,'+alpha+')';
+  for(let j=0;j<n;j++){ const a=j/n*Math.PI*2+noise(seed,j)*0.05, rr=r0*(1+0.3*Math.abs(noise(seed,j+50)));
+    ctx.lineWidth=1.5+2*Math.abs(noise(seed,j+9)); ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr); ctx.lineTo(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1); ctx.stroke(); }
+  ctx.restore();
+}
+function wobble(x1,y1,x2,y2,seed,amp){   // trait XKCD tremblé (bruit lié à l'identité du vecteur : stable en rotation)
+  const dx=x2-x1, dy=y2-y1, L=Math.hypot(dx,dy); if(L<0.3) return;
+  const nx=-dy/L, ny=dx/L, n=Math.max(2,Math.ceil(L/18)), Pt=[];
+  for(let j=0;j<=n;j++){ const t=j/n, o=noise(seed,j)*amp*Math.sin(Math.PI*t)+noise(seed,j+40)*amp*0.25;
+    Pt.push([x1+dx*t+nx*o, y1+dy*t+ny*o]); }
+  ctx.beginPath(); ctx.moveTo(Pt[0][0],Pt[0][1]);
+  for(let j=1;j<Pt.length-1;j++){ ctx.quadraticCurveTo(Pt[j][0],Pt[j][1],(Pt[j][0]+Pt[j+1][0])/2,(Pt[j][1]+Pt[j+1][1])/2); }
+  ctx.lineTo(Pt[Pt.length-1][0],Pt[Pt.length-1][1]); ctx.stroke();
+}
+function arrow(x,y,ang,L,col,mode,seed){
+  const lw={thin:2.4,normal:3.6,big:4.6}[mode||'normal'];
+  const ux=Math.cos(ang), uy=Math.sin(ang), tx=x+ux*L, ty=y+uy*L, h=Math.min(lw*3.2+6, 0.45*L+4), a=0.5;
+  const strokes=()=>{
+    wobble(x,y,tx,ty,seed,Math.min(1.0,0.4+L/150));
+    for(const sg of [-1,1]){
+      const c=Math.cos(a), sn=Math.sin(a)*sg, bx=-(ux*c-uy*sn), by=-(uy*c+ux*sn);
+      const ex=tx+bx*h, ey=ty+by*h, mx=(tx+ex)/2+(-by)*sg*1.2, my=(ty+ey)/2+bx*sg*1.2;
+      ctx.beginPath(); ctx.moveTo(tx,ty); ctx.quadraticCurveTo(mx,my,ex,ey); ctx.stroke(); }
+  };
+  ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.strokeStyle='rgba(255,255,255,.95)'; ctx.lineWidth=lw+4; strokes();
+  ctx.strokeStyle=col; ctx.lineWidth=lw; strokes();
+  ctx.restore();
+}
+function drawCurve(umax){
+  ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round'; ctx.beginPath();
+  const jm=Math.round(Math.max(0,Math.min(1,umax))*K);
+  ctx.moveTo(SC[0][0],SC[0][1]); for(let j=4;j<=jm;j+=4) ctx.lineTo(SC[j][0],SC[j][1]);
+  ctx.strokeStyle='#444'; ctx.lineWidth=2; ctx.setLineDash([7,6]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.restore();
+}
+function aura(x,y,t,ph,hot){   // aura scintillante d'un point (hot = point à équiper)
+  const f=0.5+0.5*Math.sin(t/260+ph), r=(hot?13:11)+4*f;
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,'rgba(255,255,255,.95)');
+  if(hot){ g.addColorStop(0.45,'rgba(255,140,40,'+(0.6+0.35*f)+')'); g.addColorStop(1,'rgba(255,90,0,0)'); }
+  else { g.addColorStop(0.45,'rgba(255,236,90,'+(0.65+0.3*f)+')'); g.addColorStop(1,'rgba(255,200,0,0)'); }
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+  ctx.save(); ctx.strokeStyle='rgba(255,170,0,'+(0.35+0.5*f)+')'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.arc(x,y,r-1,0,7); ctx.stroke();
+  for(let j=0;j<4;j++){ const a=t/900+ph+j*Math.PI/2, rr=r+3+2*Math.sin(t/180+j+ph);
+    ctx.fillStyle='rgba(255,215,0,'+(0.4+0.5*Math.abs(Math.sin(t/220+j*1.3+ph)))+')'; ctx.beginPath(); ctx.arc(x+Math.cos(a)*rr,y+Math.sin(a)*rr,1.4,0,7); ctx.fill(); }
+  ctx.restore();
+}
+function tipAura(v,t,strong){   // aura circulaire à la pointe : « c'est ce vecteur qu'on manipule »
+  const [x,y]=tipOf(v), f=0.5+0.5*Math.sin(t/200), r=(strong?17:13)+3*f;
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(0.55,'rgba(29,180,255,'+(strong?0.25+0.2*f:0.15)+')'); g.addColorStop(1,'rgba(29,120,255,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+  ctx.save(); ctx.strokeStyle=strong?'rgba(20,110,230,.9)':'rgba(20,110,230,.45)'; ctx.lineWidth=strong?2.4:1.6;
+  ctx.setLineDash([5,4]); ctx.lineDashOffset=-t/40; ctx.beginPath(); ctx.arc(x,y,r-2,0,7); ctx.stroke(); ctx.restore();
+}
+function grid(){
+  const {x0,y0,x1,y1}=TOP; ctx.fillStyle='#fffdf6'; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+  const st=6; let n=0;
+  for(let x=x0;x<=x1+0.1;x+=st,n++){ ctx.strokeStyle=n%10===0?'rgba(230,110,30,.8)':n%5===0?'rgba(230,110,30,.45)':'rgba(230,110,30,.18)'; ctx.lineWidth=n%10===0?1.2:0.7; ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y1); ctx.stroke(); }
+  n=0; for(let y=y0;y<=y1+0.1;y+=st,n++){ ctx.strokeStyle=n%10===0?'rgba(230,110,30,.8)':n%5===0?'rgba(230,110,30,.45)':'rgba(230,110,30,.18)'; ctx.lineWidth=n%10===0?1.2:0.7; ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.stroke(); }
+  ctx.strokeStyle='#111'; ctx.lineWidth=5; ctx.strokeRect(x0,y0,x1-x0,y1-y0);
+}
+function caption(txt,x,y){ ctx.font='bold 16px '+FTEXT; const w=ctx.measureText(txt).width+20;
+  ctx.fillStyle='#ffe14d'; ctx.fillRect(x,y,w,30); ctx.strokeStyle='#111'; ctx.lineWidth=3; ctx.strokeRect(x,y,w,30);
+  ctx.fillStyle='#111'; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(txt,x+10,y+16); }
+function label(i){
+  const p=M[i], a=M[Math.max(0,i-1)], b=M[Math.min(N-1,i+1)];
+  let tx=b[0]-a[0], ty=b[1]-a[1]; const L=Math.hypot(tx,ty)||1; tx/=L; ty/=L;
+  const lx=p[0]+ty*17, ly=p[1]-tx*17;
+  ctx.fillStyle='#111'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 16px '+FTEXT; ctx.fillText('M',lx-4,ly); ctx.font='bold 11px '+FTEXT; ctx.fillText(String(i),lx+8,ly+5);
+}
+
+/* ==================== État & animation ==================== */
+let phase='idle', tPhase=0, shown=0, flashes=[], drag=null, rot=null, active=null, hover=null, verified=false, vecAlpha=0, popT=-1, zapT=-1;
+const pops=[];
+const now=()=>performance.now();
+const easeBack=t=>{ const c1=1.7, c3=c1+1; return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2); };
+const SNAPS=['CLIC !','CLAC !','FLASH !','SNAP !'];
+const STEP=240;
+
+function draw(){
+  const t=now();
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+
+  grid();
+  caption('Δt = '+DT+' ms', TOP.x0+12, TOP.y0+12);
+
+  // --- chronophotographie
+  if(phase==='chrono'){
+    const n=Math.min(N, Math.floor((t-tPhase)/STEP)+1);
+    while(shown<n){ flashes.push({i:shown,t}); if(shown%3===0) pops.push({txt:SNAPS[(shown/3|0)%SNAPS.length], x:TOP.x1-90+noise(shown,1)*20, y:TOP.y0+50+noise(shown,2)*10, t, size:30, col:'#ffe14d', rot:-0.15+noise(shown,3)*0.1}); shown++; }
+    if(shown>=N && t-tPhase>N*STEP+300) endChrono();
+  }
+  if(flashes.length && t-flashes[flashes.length-1].t<60){ ctx.fillStyle='rgba(255,255,200,.55)'; ctx.fillRect(TOP.x0,TOP.y0,TOP.x1-TOP.x0,TOP.y1-TOP.y0); }
+  flashes=flashes.filter(f=>t-f.t<450);
+  flashes.forEach(f=>{ const u=(t-f.t)/450; actionLines(M[f.i][0],M[f.i][1],8+u*10,16+u*28,10,(1-u)*0.8,f.i); });
+  if(phase!=='idle'){
+    const ip=phase==='chrono' ? Math.min(N-1,(t-tPhase)/STEP) : N-1, i0=Math.floor(ip), fr=ip-i0;
+    drawCurve(i0>=N-1 ? 1 : TPAR[i0]+fr*(TPAR[i0+1]-TPAR[i0]));
+  }
+
+  // --- réserve
+  ctx.fillStyle=HT_TRAY; ctx.fillRect(TRAY.x0,TRAY.y0,TRAY.x1-TRAY.x0,TRAY.y1-TRAY.y0);
+  ctx.strokeStyle='#111'; ctx.lineWidth=5; ctx.strokeRect(TRAY.x0,TRAY.y0,TRAY.x1-TRAY.x0,TRAY.y1-TRAY.y0);
+  caption('RÉSERVE DE VECTEURS VITESSE', TRAY.x0+12, TRAY.y0-12);
+
+  // --- points
+  const mission = phase==='mission';
+  const withVec=new Set(vecs.filter(v=>v.at>=0 && v!==drag).map(v=>v.at));
+  for(let i=0;i<shown;i++){ const hot = mission && HOT.includes(i) && !withVec.has(i);
+    aura(M[i][0],M[i][1],t,i*1.7,hot); }
+  // cible pressentie pendant le glisser
+  if(drag){ const c=nearestFree(drag); if(c>=0){ ctx.save(); ctx.strokeStyle='#e8202a'; ctx.lineWidth=3; ctx.setLineDash([6,5]);
+    ctx.beginPath(); ctx.arc(M[c][0],M[c][1],22+3*Math.sin(t/120),0,7); ctx.stroke(); ctx.restore(); } }
+
+  // --- vecteurs
+  if(mission && vecAlpha<1) vecAlpha=Math.min(1,vecAlpha+0.06);
+  if(vecAlpha>0){
+    ctx.globalAlpha=vecAlpha;
+    const sc=popT>0 && t-popT<500 ? easeBack(Math.min(1,(t-popT)/500)) : 1;
+    vecs.forEach(v=>{ if(v===drag) return;
+      const placed=v.at>=0;
+      arrow(v.x,v.y,v.ang,VL*(placed?1:sc), placed?'#ff7a00':'#1d5be0', placed?'normal':'thin', v.id*3.1+1); });
+    ctx.globalAlpha=1;
+    // aura de pointe : vecteur actif (fort) / survolé (léger)
+    if(!verified || RETRY){
+      if(hover && hover!==active && hover.at>=0 && !drag) tipAura(hover,t,false);
+      if(active && active.at>=0 && !drag) tipAura(active,t,true);
+    }
+  }
+  for(let i=0;i<shown;i++){ const hot = mission && HOT.includes(i) && !withVec.has(i);
+    ctx.fillStyle= hot ? '#e85d00' : '#111'; ctx.beginPath(); ctx.arc(M[i][0],M[i][1],4.3,0,7); ctx.fill(); label(i); }
+  if(drag){ ctx.save(); ctx.shadowColor='rgba(0,0,0,.35)'; ctx.shadowOffsetX=6; ctx.shadowOffsetY=6;
+    arrow(drag.x,drag.y,drag.ang,VL,'#ff9a2e','big',drag.id*3.1+1); ctx.restore(); }
+
+  // --- onomatopées
+  for(let j=pops.length-1;j>=0;j--){ const p=pops[j], u=(t-p.t)/650; if(u>1){ pops.splice(j,1); continue; }
+    const s=u<0.25?easeBack(u/0.25):1; ctx.globalAlpha=u>0.75?(1-u)/0.25:1; comicText(p.txt,p.x,p.y,p.size*s,p.col,p.rot); ctx.globalAlpha=1; }
+  if(zapT>0 && t-zapT<900){ const u=(t-zapT)/900, s=u<0.25?easeBack(u/0.25):1; ctx.globalAlpha=u>0.75?(1-u)/0.25:1;
+    burst(W-150,TRAY.y0+90,110*s,52*s,12,'#19a64a',9,0.1); comicText('ZAP !',W-150,TRAY.y0+90,46*s,'#ffe14d',0.1); ctx.globalAlpha=1; }
+
+  if(mission && (!verified || RETRY)){ const nb=vecs.filter(v=>v.at>=0).length;
+    comicText(nb+' / 4',TRAY.x1-50,TRAY.y0+22,26,'#ffe14d',0.05); }
+  requestAnimationFrame(draw);
+}
+function endChrono(){
+  phase='mission'; popT=now(); bCheck.classList.remove('hidden');
+  pops.push({txt:'POUF !',x:W/2,y:(TRAY.y0+TRAY.y1)/2,t:now(),size:40,col:'#ffe14d',rot:-0.08});
+}
+
+/* ==================== Interaction ==================== */
+function toCanvas(e){ const r=cv.getBoundingClientRect(); return [(e.clientX-r.left)*W/r.width, (e.clientY-r.top)*H/r.height]; }
+function distSeg(px,py,v){ const dx=Math.cos(v.ang)*VL, dy=Math.sin(v.ang)*VL, L2=dx*dx+dy*dy;
+  let u=((px-v.x)*dx+(py-v.y)*dy)/L2; u=Math.max(0,Math.min(1,u)); return Math.hypot(px-(v.x+u*dx),py-(v.y+u*dy)); }
+const canAct=()=>phase==='mission' && (!verified || RETRY);
+function tipHit(px,py){   // vecteur posé dont on attrape la pointe (le vecteur actif en priorité)
+  const list=vecs.filter(v=>v.at>=0).sort((a,b)=>(b===active)-(a===active));
+  for(const v of list){ const [tx,ty]=tipOf(v); if(Math.hypot(px-tx,py-ty)<20) return v; }
+  return null;
+}
+function bodyHit(px,py){ let best=null, bd=14; vecs.forEach(v=>{ const d=distSeg(px,py,v); if(d<bd){ bd=d; best=v; } }); return best; }
+function nearestFree(v){
+  const occ=new Set(vecs.filter(w=>w!==v && w.at>=0).map(w=>w.at)); let best=-1, bd=45;
+  HOT.forEach(i=>{ if(occ.has(i)) return; const d=Math.hypot(v.x-M[i][0], v.y-M[i][1]); if(d<bd){ bd=d; best=i; } });
+  return best;
+}
+cv.addEventListener('pointerdown',e=>{
+  if(!canAct()) return; const [px,py]=toCanvas(e);
+  const tv=tipHit(px,py);
+  if(tv){ rot=tv; active=tv; cv.setPointerCapture(e.pointerId); return; }
+  const bv=bodyHit(px,py);
+  if(bv){ drag=bv; active=bv; bv.at=-1; bv.ox=px-bv.x; bv.oy=py-bv.y; cv.setPointerCapture(e.pointerId); }
+});
+cv.addEventListener('pointermove',e=>{
+  const [px,py]=toCanvas(e);
+  if(rot){ rot.ang=Math.atan2(py-rot.y, px-rot.x); cv.style.cursor='crosshair'; return; }
+  if(drag){ drag.x=px-drag.ox; drag.y=py-drag.oy; cv.style.cursor='grabbing'; return; }
+  if(!canAct()){ hover=null; cv.style.cursor='default'; return; }
+  const tv=tipHit(px,py); hover=tv;
+  cv.style.cursor = tv ? 'crosshair' : (bodyHit(px,py) ? 'grab' : 'default');
+});
+function release(){
+  if(rot){ rot=null; cv.style.cursor='default'; invalidate(); return; }
+  if(!drag) return; const v=drag; drag=null; cv.style.cursor='default';
+  const c=nearestFree(v);
+  if(c>=0){ v.at=c; v.x=M[c][0]; v.y=M[c][1]; pops.push({txt:'CLONK !',x:v.x,y:v.y-30,t:now(),size:20,col:'#ffe14d',rot:-0.1}); }
+  else { v.at=-1; homeOf(v); }
+  bCheck.disabled = vecs.filter(w=>w.at>=0).length<4;
+  invalidate();
+}
+function invalidate(){ if(verified && RETRY) codeBox.classList.add('hidden'); }
+cv.addEventListener('pointerup',release); cv.addEventListener('pointercancel',release);
+
+/* ==================== Boutons ==================== */
+const bStart=document.getElementById('bStart'), bCheck=document.getElementById('bCheck'), bReset=document.getElementById('bReset');
+const codeBox=document.getElementById('codeBox'), codeEl=document.getElementById('code');
+bReset.onclick=()=>location.reload();
+bStart.onclick=()=>{ bStart.classList.add('hidden'); phase='chrono'; tPhase=now(); shown=0; };
+bCheck.onclick=()=>{
+  let score=0;
+  vecs.forEach(v=>{ if(v.at<0 || !HOT.includes(v.at)) return;
+    let d=v.ang-TAN[v.at]; d=Math.atan2(Math.sin(d),Math.cos(d)); if(Math.abs(d)<=TOL) score++; });
+  codeEl.textContent=makeCode(score); codeBox.classList.remove('hidden'); verified=true; zapT=now(); active=null;
+  if(!RETRY) bCheck.disabled=true;
+};
+requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
