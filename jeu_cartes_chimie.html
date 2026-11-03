@@ -127,11 +127,11 @@ function decodeP(s){
   }catch(e){ return {}; }
 }
 // r : [après ATOME, après MOLÉCULE, après CATION, après ANION]  A=atome M=molécule C=cation N=anion
-const P = { r:"M,C,N,A", show:1, expl:0, poly:0, n:5 };
+const P = { r:"M,C,N,A", show:1, expl:0, poly:0, n:5, s:-1 };   // s : seed du code de fin (-1 = aléatoire)
 const qs = new URLSearchParams(location.search);
 if(qs.get('p')) Object.assign(P, decodeP(qs.get('p')));
 for(const k of Object.keys(P)) if(qs.has(k)) P[k] = qs.get(k);   // clair prioritaire
-P.show=+P.show; P.expl=+P.expl; P.poly=+P.poly;
+P.show=+P.show; P.expl=+P.expl; P.poly=+P.poly; P.s=Math.floor(+P.s); if(isNaN(P.s)) P.s=-1;
 P.n = Math.max(3, Math.min(5, +P.n || 5));
 
 const TYPES=['A','M','C','N'];
@@ -448,16 +448,16 @@ function finPartie(){
   const titre=parfait?'Sans faute !':bien?'Bien joué !':'Peut mieux faire…';
   $('finTitre').innerHTML=[...titre].map((ch,i)=>`<span style="animation-delay:${i*.08}s">${ch===' '?'&nbsp;':ch}</span>`).join('');
   $('finTitre').style.color=parfait?'var(--vert)':bien?'var(--bleu)':'var(--rouge)';
-  $('finTxt').innerHTML=`Score : <b>${sJ} / ${P.n}</b><br>Erreurs : ${erreurs}<div class="code sk">Ton code : <b>${codeFin(sJ,erreurs)}</b></div><small>Recopie ce code dans Moodle… ou rejoue pour améliorer ton score.</small>`;
+  $('finTxt').innerHTML=`Score : <b>${sJ} / ${P.n}</b><br>Erreurs : ${erreurs}<div class="code sk">Ton code : <b>${codeFin(sJ)}</b></div><small>Recopie ce code dans Moodle… ou rejoue pour améliorer ton score.</small>`;
   $('fin').style.display='flex';
   if(parfait) confettis();
 }
 /* --- code de fin : seed aléatoire + score + erreurs, masqué et signé (miroir Python decode_code) --- */
 const ALPH="23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 function fnv(str){ let h=0x811c9dc5; for(const b of new TextEncoder().encode(str)){ h^=b; h=Math.imul(h,0x01000193)>>>0; } return h>>>0; }
-function codeFin(score, err){
-  err=Math.min(err,15);
-  const seed=Math.floor(Math.random()*65536);
+function codeFin(score){
+  const err=0;   // le code ne dépend que du score (et du seed fourni par Moodle)
+  const seed=P.s>=0 ? (P.s & 0xffff) : Math.floor(Math.random()*65536);
   const m=fnv(seed+'|'+KEY)&0xff;
   const se=(((score&15)<<4)|err)^m;
   const ck=fnv(`${seed}|${score}|${err}|${P.n}|${KEY}`)&0xff;
