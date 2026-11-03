@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jeu de cartes chimique</title>
+<style>
+  :root{ --ink:#1b1b1b; --paper:#fffdf4; --jaune:#fff07a; --vert:#3aa55d; --rouge:#e04a3f; --bleu:#2f6fd6; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#222;user-select:none;
+    font-family:"Comic Neue","Comic Sans MS","Chalkboard SE","Segoe Print",cursive;color:var(--ink)}
+  #bg{position:fixed;inset:0;width:100%;height:100%;image-rendering:pixelated;z-index:0}
+  #app{position:relative;z-index:1;display:flex;flex-direction:column;height:100%;min-height:600px;padding:8px 10px;gap:6px}
+  .sk{background:var(--paper);border:3px solid var(--ink);border-radius:255px 14px 225px 14px/14px 225px 14px 255px;box-shadow:4px 4px 0 var(--ink)}
+  /* en-tête */
+  #tete{display:flex;align-items:center;justify-content:space-between;padding:4px 14px;font-size:17px}
+  #tete .titre{font-weight:700;font-size:20px;transform:rotate(-1deg)}
+  .badge{display:inline-block;padding:1px 10px;margin:0 3px;font-weight:700}
+  #sJ{background:#c8f7c5} #sO{background:#ffd0cc}
+  /* ordi */
+  #ordiZone{display:flex;align-items:center;gap:8px;height:104px}
+  #bonhomme{width:62px;height:96px;flex:0 0 auto}
+  #bulle{position:relative;flex:0 0 330px;min-height:62px;padding:8px 12px;font-size:16px;line-height:1.25}
+  #bulle:before{content:"";position:absolute;left:-16px;top:22px;border:8px solid transparent;border-right:12px solid var(--ink)}
+  #bulle.err{background:#ffe1dd} #bulle.ok{background:#dcf7e2}
+  #ordiMain{position:relative;flex:1;height:100px}
+  /* table */
+  #table{flex:1;display:flex;align-items:center;justify-content:center;gap:40px;min-height:200px}
+  #defausse{position:relative;width:130px;height:180px}
+  #defausse .vide{position:absolute;inset:0;border:3px dashed rgba(255,255,255,.6);border-radius:16px}
+  #regle{background:var(--jaune);padding:10px 14px;font-size:15px;max-width:300px;transform:rotate(2deg);
+    border:2px solid var(--ink);box-shadow:5px 5px 0 rgba(0,0,0,.6);border-radius:3px 12px 4px 10px}
+  #regle h3{margin:0 0 4px;font-size:17px;text-decoration:underline wavy}
+  #regle div{margin:2px 0}
+  /* main */
+  #main{position:relative;height:172px}
+  /* cartes */
+  .slot{position:absolute;left:0;top:0;width:86px;height:122px;will-change:transform}
+  .carte{position:relative;width:100%;height:100%;border:3px solid var(--ink);box-shadow:3px 4px 0 var(--ink);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:25px;overflow:hidden;cursor:pointer}
+  .carte sub,.carte sup{font-size:.58em}
+  .carte .coin{position:absolute;font-size:11px;line-height:1}
+  .carte .deco{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .carte .formule{position:relative;padding:0 4px;text-shadow:-2px -2px 0 rgba(255,255,255,.7),2px 2px 0 rgba(255,255,255,.7),2px -2px 0 rgba(255,255,255,.7),-2px 2px 0 rgba(255,255,255,.7)}
+  .carte .c1{left:5px;top:5px} .carte .c2{right:5px;bottom:5px;transform:rotate(180deg)}
+  .carte:after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(circle at var(--sx,30%) var(--sy,20%),rgba(255,255,255,.75),rgba(255,255,255,0) 45%)}
+  .carte.grande{font-size:36px;cursor:default}
+  .carte.grande .coin{font-size:14px}
+  .dos{background:#d8423a;cursor:default}
+  .dos:before{content:"";position:absolute;inset:6px;border:2px dashed #fff;border-radius:8px;
+    background:radial-gradient(circle,rgba(255,255,255,.35) 2px,transparent 2.5px) 0 0/12px 12px}
+  .dos span{position:relative;color:#fff;font-size:30px;text-shadow:2px 2px 0 var(--ink)}
+  .tampon{position:absolute;right:-4px;top:30px;transform:rotate(14deg);font-size:15px;font-weight:700;padding:1px 7px;
+    border:2.5px solid currentColor;border-radius:6px;background:rgba(255,255,255,.85);z-index:2}
+  .tampon.libre{color:#666} .tampon.faute{color:var(--rouge)}
+  body.attente #main .carte{cursor:wait}
+  /* effets */
+  #fx{position:fixed;inset:0;pointer-events:none;z-index:50}
+  .vol{position:fixed;left:0;top:0;perspective:700px}
+  .flip{position:relative;width:100%;height:100%;transform-style:preserve-3d}
+  .flip>.carte{position:absolute;inset:0;backface-visibility:hidden}
+  .flip>.dos{transform:rotateY(180deg)}
+  .pop{position:fixed;font-size:34px;font-weight:700;color:#fff;-webkit-text-stroke:2px var(--ink);text-shadow:3px 3px 0 var(--ink);white-space:nowrap}
+  #fin{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:60}
+  #fin .boite{padding:22px 40px;text-align:center;transform:rotate(-1.5deg)}
+  #fin h2{margin:0 0 6px;font-size:40px}
+  #fin h2 span{display:inline-block;animation:saut 1s infinite ease-in-out}
+  @keyframes saut{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-12px) rotate(-4deg)}}
+  #fin p{font-size:19px;margin:6px 0 14px}
+  #fin .code{margin:10px auto 4px;padding:6px 14px;background:var(--jaune);font-size:22px;user-select:text;display:inline-block}
+  #fin .code b{letter-spacing:3px;font-family:Consolas,monospace;user-select:all}
+  #fin small{display:block;font-size:14px;color:#555}
+  button{font:inherit;font-weight:700;font-size:18px;padding:6px 22px;cursor:pointer;background:var(--jaune)}
+  button:hover{transform:rotate(-2deg) scale(1.05)}
+  .confetti{position:fixed;width:10px;height:14px;border:1.5px solid var(--ink);z-index:61}
+</style>
+</head>
+<body>
+<canvas id="bg" width="128" height="80"></canvas>
+
+<div id="app">
+  <div id="tete" class="sk">
+    <span class="titre">⚗ Chimie-Cartes</span>
+    <span>Score <span class="badge sk" id="sJ">0</span> / <span id="sMax"></span></span>
+    <span id="info"></span>
+  </div>
+
+  <div id="ordiZone">
+    <svg id="bonhomme" viewBox="0 0 62 96" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round">
+      <rect x="14" y="4" width="34" height="26" rx="4" fill="#fffdf4" stroke="#1b1b1b"/>
+      <circle cx="25" cy="16" r="3" fill="#1b1b1b" stroke="none"/><circle cx="38" cy="16" r="3" fill="#1b1b1b" stroke="none"/>
+      <path d="M24 24 q7 4 14 0" stroke="#1b1b1b"/>
+      <line x1="31" y1="4" x2="31" y2="0" stroke="#fffdf4"/>
+      <line x1="31" y1="30" x2="31" y2="64"/>
+      <line x1="31" y1="40" x2="12" y2="52"/><line x1="31" y1="40" x2="52" y2="34"/>
+      <line x1="31" y1="64" x2="18" y2="92"/><line x1="31" y1="64" x2="44" y2="92"/>
+    </svg>
+    <div id="bulle" class="sk"></div>
+    <div id="ordiMain"></div>
+  </div>
+
+  <div id="table">
+    <div id="defausse"><div class="vide"></div></div>
+    <div id="regle"></div>
+  </div>
+
+  <div id="main"></div>
+</div>
+
+<div id="fx"></div>
+<div id="fin"><div class="boite sk"><h2 id="finTitre"></h2><p id="finTxt"></p><button class="sk" id="bRejouer">Rejouer</button></div></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ================= PARAMÈTRES (XOR + base64url) ================= */
+// Clé propre à cette animation — miroir exact de cartes_chimie_iframe.py
+const KEY = "PBayle-CartesChimie#4f";
+function decodeP(s){
+  try{
+    s = s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='=';
+    const bin = atob(s), kb = new TextEncoder().encode(KEY), b = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) b[i] = bin.charCodeAt(i) ^ kb[i%kb.length];
+    return JSON.parse(new TextDecoder().decode(b));
+  }catch(e){ return {}; }
+}
+// r : [après ATOME, après MOLÉCULE, après CATION, après ANION]  A=atome M=molécule C=cation N=anion
+const P = { r:"M,C,N,A", show:1, expl:0, poly:0, n:5 };
+const qs = new URLSearchParams(location.search);
+if(qs.get('p')) Object.assign(P, decodeP(qs.get('p')));
+for(const k of Object.keys(P)) if(qs.has(k)) P[k] = qs.get(k);   // clair prioritaire
+P.show=+P.show; P.expl=+P.expl; P.poly=+P.poly;
+P.n = Math.max(3, Math.min(5, +P.n || 5));
+
+const TYPES=['A','M','C','N'];
+const NOM={A:'atome',M:'molécule',C:'cation',N:'anion'};
+const ART={A:'un atome',M:'une molécule',C:'un cation',N:'un anion'};
+const RAISON={A:"un seul symbole, aucune charge",M:"plusieurs atomes liés, aucune charge",C:"charge positive",N:"charge négative"};
+const REGLE={};
+(function(){
+  const g=String(P.r).toUpperCase().split(','), def="M,C,N,A".split(',');
+  TYPES.forEach((t,i)=>{ let s=(g[i]||'').replace(/[^AMCN]/g,''); if(!s) s=def[i]; REGLE[t]=[...new Set(s.split(''))]; });
+})();
+const ok = (t, tTop) => REGLE[tTop].includes(t);
+
+/* ================= CARTES ================= */
+const BASE={
+  A:["H","He","C","N","O","Ne","Na","Mg","Al","S","Cl","Ar","K","Ca","Fe","Cu","Zn"],
+  M:["H2","O2","N2","Cl2","H2O","CO2","CO","CH4","NH3","HCl","O3","C6H12O6","C2H6O","H2O2"],
+  C:["H^+","Li^+","Na^+","K^+","Ag^+","Mg^2+","Ca^2+","Fe^2+","Fe^3+","Cu^2+","Zn^2+","Al^3+"],
+  N:["F^-","Cl^-","Br^-","I^-","O^2-","S^2-"]
+};
+const POLY={ C:["NH4^+","H3O^+"], N:["OH^-","NO3^-","SO4^2-","CO3^2-","PO4^3-","HCO3^-"] };
+const COULEURS=["#ffd6e0","#fff3b0","#c8f7c5","#cde7ff","#e6d4ff","#ffe0c2","#d4f4f4"];
+
+function formuleHTML(f){
+  let [c,q]=f.split('^'); let h=c.replace(/(\d+)/g,'<sub>$1</sub>');
+  if(q) h+='<sup>'+q.replace('-','−')+'</sup>'; return h;
+}
+function melange(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+function paquet(){
+  const p=[]; let id=0;
+  const aj=(t,f,n)=>{ for(let i=0;i<n;i++) p.push({id:id++,t,f}); };
+  BASE.A.forEach(f=>aj('A',f,1)); BASE.M.forEach(f=>aj('M',f,1));
+  BASE.C.forEach(f=>aj('C',f,1)); BASE.N.forEach(f=>aj('N',f,P.poly?1:2));
+  if(P.poly){ POLY.C.forEach(f=>aj('C',f,1)); POLY.N.forEach(f=>aj('N',f,1)); }
+  return melange(p);
+}
+
+/* ===== Distribution : un sans-faute (5/5) est toujours possible =====
+   matchable : chaque carte de l'ordi peut recevoir une bonne réponse distincte de l'élève.
+   L'ordi pose toujours une carte qui laisse le sans-faute possible (s'il l'est encore). */
+function matchable(O,J){
+  if(!O.length) return true;
+  const o=O[0];
+  for(const j of J) if(ok(j.t,o.t) && matchable(O.slice(1), J.filter(x=>x!==j))) return true;
+  return false;
+}
+function ordiChoix(O,J){
+  const a=O.filter(o=>J.some(j=>ok(j.t,o.t) && matchable(O.filter(x=>x!==o), J.filter(x=>x!==j))));
+  const b=O.filter(o=>J.some(j=>ok(j.t,o.t)));
+  const l=a.length?a:(b.length?b:O);
+  return l[Math.floor(Math.random()*l.length)];
+}
+function distribuer(){
+  let secours=null;
+  for(let essai=0; essai<800; essai++){
+    const D=paquet().slice(0,2*P.n), J=D.slice(0,P.n), O=D.slice(P.n);
+    const toutes=M=>TYPES.every(t=>M.some(c=>c.t===t));   // au moins une carte de chaque famille
+    if(!toutes(J) || !toutes(O) || !matchable(O,J)) continue;
+    // on préfère une donne où l'élève doit parfois choisir entre plusieurs bonnes cartes
+    const choix=O.some(o=>J.filter(j=>ok(j.t,o.t)).length>1);
+    if(choix){ secours={J,O}; break; }
+    if(!secours) secours={J,O};
+  }
+  if(!secours){ const D=paquet().slice(0,2*P.n); secours={J:D.slice(0,P.n),O:D.slice(P.n)}; }
+  [...secours.J,...secours.O].forEach(c=>{ c.col=COULEURS[Math.floor(Math.random()*COULEURS.length)]; c.rot=(Math.random()-.5)*24; c.svg=decor(); });
+  return secours;
+}
+
+/* ===== Décors xkcd (tirés au hasard, indépendants de la famille de la carte) ===== */
+const jit=(v,a)=>(v+(Math.random()-.5)*2*(a||.7)).toFixed(1);
+function trait(pts,a){ return 'M'+pts.map(p=>jit(p[0],a)+' '+jit(p[1],a)).join(' L'); }
+function courbe(fn,n){ const p=[]; for(let i=0;i<=n;i++) p.push(fn(i/n)); return trait(p,.35); }
+const DOODLES={
+  spirale:()=>courbe(t=>{const a=t*4.2*Math.PI,r=1+t*10;return[12+r*Math.cos(a),12+r*Math.sin(a)];},60),
+  etoile:()=>{const p=[];for(let i=0;i<=10;i++){const a=-Math.PI/2+i*Math.PI/5,r=i%2?4.5:11;p.push([12+r*Math.cos(a),12+r*Math.sin(a)]);}return trait(p);},
+  nuage:()=>courbe(t=>{const a=t*2*Math.PI,r=7+2.5*Math.abs(Math.sin(a*3));return[12+r*1.3*Math.cos(a),12+r*.8*Math.sin(a)];},50),
+  fiole:()=>trait([[9,2],[15,2],[15,9],[22,22],[2,22],[9,9],[9,2]])+' '+trait([[5,16],[19,16]])+' '+courbe(t=>[8+t*3,-1-6*t+Math.sin(t*9)],10),
+  soleil:()=>{let d=courbe(t=>[12+5*Math.cos(t*2*Math.PI),12+5*Math.sin(t*2*Math.PI)],24);for(let i=0;i<8;i++){const a=i*Math.PI/4;d+=' '+trait([[12+8*Math.cos(a),12+8*Math.sin(a)],[12+12*Math.cos(a),12+12*Math.sin(a)]]);}return d;},
+  vagues:()=>[6,12,18].map(y=>courbe(t=>[t*24,y+2*Math.sin(t*4*Math.PI)],20)).join(' '),
+  bonhomme:()=>{const bras=Math.random()<.5?[[4,6],[12,10],[20,6]]:[[5,14],[12,10],[21,4]];
+    return courbe(t=>[12+3*Math.cos(t*2*Math.PI),4+3*Math.sin(t*2*Math.PI)],14)+' '+trait([[12,7],[12,16]])+' '+trait(bras)+' '+trait([[7,24],[12,16],[17,24]]);},
+  eclair:()=>trait([[14,1],[6,13],[12,13],[8,23],[19,9],[13,9],[16,1]]),
+  coeur:()=>courbe(t=>{const a=t*2*Math.PI,x=16*Math.pow(Math.sin(a),3),y=13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a);return[12+x*.6,11-y*.6];},40),
+  loupe:()=>courbe(t=>[10+6*Math.cos(t*2*Math.PI),10+6*Math.sin(t*2*Math.PI)],24)+' '+trait([[14.5,14.5],[22,22]]),
+  bulles:()=>[[6,18,3],[14,10,4.5],[19,19,2.5],[8,5,2]].map(([x,y,r])=>courbe(t=>[x+r*Math.cos(t*2*Math.PI),y+r*Math.sin(t*2*Math.PI)],14)).join(' ')
+};
+function decor(){
+  const noms=melange(Object.keys(DOODLES)), sc=.8+Math.random()*.4;
+  const g=(nom,x,y,s,r)=>`<path transform="translate(${x} ${y}) rotate(${r} 12 12) scale(${s})" d="${DOODLES[nom]()}"/>`;
+  // cadre intérieur tremblotant
+  const cadre=trait([[6,6],[80,6],[80,116],[6,116],[6,6]],.9);
+  // hachures dans un coin (ombrage façon xkcd)
+  let hach=''; const hx=Math.random()<.5;
+  for(let i=0;i<6;i++){ const o=i*4; hach+=' '+(hx?trait([[62+o,116],[80,98+o]],.5):trait([[6,24+o],[24-o,6]],.5)); }
+  return `<svg class="deco" viewBox="0 0 86 122" preserveAspectRatio="none">
+    <g fill="none" stroke="#1b1b1b" stroke-linecap="round" stroke-linejoin="round">
+      <path d="${cadre}" stroke-width="1.2" opacity=".5"/>
+      <path d="${hach}" stroke-width="1" opacity=".3"/>
+      <g stroke-width="1.6" opacity=".42">${g(noms[0],56,10,sc*.95,(Math.random()-.5)*30)}${g(noms[1],9,84,sc,(Math.random()-.5)*30)}</g>
+      <g stroke-width="1.2" opacity=".25">${g(noms[2],60,88,.6,(Math.random()-.5)*40)}</g>
+    </g></svg>`;
+}
+
+/* ================= ÉTAT ================= */
+let mainJ, mainO, pile, sJ, sO, erreurs, fini, busy, tourNo;
+const $=id=>document.getElementById(id);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const now=()=>performance.now()/1000;
+
+/* ================= ÉLÉMENTS VISUELS ================= */
+function rr(){ const r=()=>8+Math.floor(Math.random()*12); return `${r()}px ${r()}px ${r()}px ${r()}px / ${r()}px ${r()}px ${r()}px ${r()}px`; }
+function face(c, grande){
+  const d=document.createElement('div'); d.className='carte'+(grande?' grande':'');
+  d.style.background=c.col; d.style.borderRadius=c.br||(c.br=rr());
+  const f=formuleHTML(c.f);
+  d.innerHTML=(c.svg||'')+`<span class="coin c1">${f}</span><span class="formule">${f}</span><span class="coin c2">${f}</span>`;
+  return d;
+}
+function dos(){ const d=document.createElement('div'); d.className='carte dos'; d.style.borderRadius=rr(); d.innerHTML='<span>?</span>'; return d; }
+
+/* --- main du joueur --- */
+let H=[];  // {c, el, inner, x,y,a, lift, sc, rx, ry, mx,my, hover, phase, shakeT}
+function handPos(n,i,W){
+  const cw=86, sp=n>1?Math.min(cw*0.98,(W-cw-30)/(n-1)):0, off=i-(n-1)/2;
+  return { x:W/2-cw/2+off*sp, y:26+off*off*2.2, a:off*Math.min(4,28/n) };
+}
+function syncHand(){
+  H=H.filter(h=>{ if(mainJ.includes(h.c)) return true; h.el.remove(); return false; });
+  const W=$('main').clientWidth;
+  mainJ.forEach((c,i)=>{
+    if(H.find(h=>h.c===c)) return;
+    const el=document.createElement('div'); el.className='slot';
+    const inner=face(c,false); el.appendChild(inner); $('main').appendChild(el);
+    const p=handPos(mainJ.length,i,W);
+    const h={c,el,inner,x:p.x,y:p.y,a:p.a,lift:0,sc:1,rx:0,ry:0,mx:0,my:0,hover:false,phase:Math.random()*6,shakeT:-9};
+    el.onpointerenter=()=>h.hover=true;
+    el.onpointerleave=()=>{h.hover=false;h.mx=h.my=0;};
+    el.onpointermove=e=>{ const r=inner.getBoundingClientRect(); h.mx=(e.clientX-r.left)/r.width*2-1; h.my=(e.clientY-r.top)/r.height*2-1; };
+    el.onclick=()=>jouer(h);
+    H.push(h);
+  });
+  H.sort((a,b)=>mainJ.indexOf(a.c)-mainJ.indexOf(b.c));
+}
+/* --- main de l'ordi --- */
+let OH=[];
+function syncOrdi(){
+  while(OH.length>mainO.length) OH.pop().el.remove();
+  while(OH.length<mainO.length){
+    const el=document.createElement('div'); el.className='slot'; el.style.width='56px'; el.style.height='80px';
+    el.appendChild(dos()); $('ordiMain').appendChild(el);
+    OH.push({el,x:0,y:0,a:0,phase:Math.random()*6});
+  }
+}
+/* --- pile centrale --- */
+let topWrap=null;
+function renderPile(pop){
+  const d=$('defausse'); d.querySelectorAll('.slot').forEach(e=>e.remove()); topWrap=null;
+  pile.slice(-4).forEach((c,i,arr)=>{
+    const el=document.createElement('div'); el.className='slot'; el.style.width='120px'; el.style.height='170px'; el.style.left='5px'; el.style.top='5px';
+    const f=face(c,true);
+    if(c.faute||c.libre){ const tp=document.createElement('span'); tp.className='tampon '+(c.faute?'faute':'libre'); tp.textContent=c.faute?'faute':'libre · 0 pt'; f.appendChild(tp); }
+    el.appendChild(f);
+    el.style.transform=`rotate(${c.rot}deg)`; d.appendChild(el);
+    if(i===arr.length-1){ topWrap={el,c}; if(pop) f.animate([{transform:'scale(1.35) rotate(10deg)'},{transform:'scale(.9) rotate(-3deg)'},{transform:'scale(1)'}],{duration:420,easing:'ease-out'}); }
+  });
+}
+
+/* --- boucle d'animation --- */
+function boucle(){
+  const t=now();
+  const W=$('main').clientWidth, n=H.length;
+  H.forEach((h,i)=>{
+    const p=handPos(n,i,W);
+    h.x+=(p.x-h.x)*.18; h.y+=(p.y-h.y)*.18; h.a+=(p.a-h.a)*.18;
+    const act=h.hover && !busy && !fini;
+    h.lift+=((act?-30:0)-h.lift)*.2; h.sc+=((act?1.14:1)-h.sc)*.2;
+    h.rx+=((act?-h.my*16:0)-h.rx)*.2; h.ry+=((act?h.mx*16:0)-h.ry)*.2;
+    const s=Math.max(0,1-(t-h.shakeT)/.5), dx=Math.sin(t*55)*12*s;
+    const bob=Math.sin(t*1.7+h.phase)*3.5, sway=act?0:Math.sin(t*.9+h.phase)*1.4;
+    h.el.style.transform=`translate(${h.x+dx}px,${h.y+bob+h.lift}px) rotate(${h.a+sway}deg) perspective(500px) rotateX(${h.rx}deg) rotateY(${h.ry}deg) scale(${h.sc})`;
+    h.el.style.zIndex=act?100:i;
+    h.inner.style.setProperty('--sx',(50+h.mx*45)+'%'); h.inner.style.setProperty('--sy',(50+h.my*45)+'%');
+  });
+  const W2=$('ordiMain').clientWidth, m=OH.length;
+  OH.forEach((o,i)=>{
+    const sp=m>1?Math.min(40,(W2-80)/(m-1)):0, off=i-(m-1)/2;
+    const x=W2/2-28+off*sp, y=10-off*off*1.2, a=-off*3;
+    o.x+=(x-o.x)*.15; o.y+=(y-o.y)*.15; o.a+=(a-o.a)*.15;
+    o.el.style.transform=`translate(${o.x}px,${o.y+Math.sin(t*1.5+o.phase)*2.5}px) rotate(${o.a+Math.sin(t+o.phase)}deg)`;
+  });
+  if(topWrap) topWrap.el.style.transform=`translateY(${Math.sin(t*1.6)*3}px) rotate(${topWrap.c.rot+Math.sin(t*1.1)*2}deg)`;
+  fond(t);
+  requestAnimationFrame(boucle);
+}
+
+/* --- fond tourbillon (façon Balatro) --- */
+const bg=$('bg'), bctx=bg.getContext('2d'), img=bctx.createImageData(128,80); let tFond=0;
+function fond(t){
+  if(t-tFond<1/30) return; tFond=t;
+  const d=img.data, c1=[38,84,124], c2=[176,62,56], c3=[30,118,110];
+  for(let y=0;y<80;y++) for(let x=0;x<128;x++){
+    const u=(x-64)/64, v=(y-40)/64, r=Math.hypot(u,v), a=Math.atan2(v,u);
+    const w=Math.sin(a*2+r*9-t*.8+Math.sin(r*5-t*.5)*2.2);
+    const w2=Math.sin(u*4+t*.3+Math.cos(v*5-t*.4));
+    const k=(w+1)/2, k2=(w2+1)/2*.45;
+    const i=(y*128+x)*4;
+    for(let j=0;j<3;j++){ const base=c1[j]*(1-k)+c2[j]*k; d[i+j]=(base*(1-k2)+c3[j]*k2)*(.85+.15*Math.sin(r*14-t*1.2)); }
+    d[i+3]=255;
+  }
+  bctx.putImageData(img,0,0);
+}
+
+/* --- vols de cartes --- */
+function centre(el){ const r=el.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; }
+function vol(from, to, opt){
+  // from/to : {x,y} centres ; opt : {c, w,h, w2, flip, rot0, rot1, dur}
+  return new Promise(res=>{
+    const w=opt.w, h=opt.h, s=opt.w2/w;
+    const box=document.createElement('div'); box.className='vol'; box.style.width=w+'px'; box.style.height=h+'px';
+    const fl=document.createElement('div'); fl.className='flip';
+    if(opt.back){ const b=dos(); b.style.position='absolute'; b.style.inset='0'; fl.appendChild(b); }
+    else{ const fc=face(opt.c,false); fc.style.fontSize='25px'; fl.appendChild(fc); if(opt.flip) fl.appendChild(dos()); }
+    box.appendChild(fl); $('fx').appendChild(box);
+    const mx=(from.x+to.x)/2+(Math.random()-.5)*60, my=Math.min(from.y,to.y)-50;
+    box.animate([
+      {transform:`translate(${from.x-w/2}px,${from.y-h/2}px) rotate(${opt.rot0||0}deg) scale(1)`},
+      {offset:.5,transform:`translate(${mx-w/2}px,${my-h/2}px) rotate(${(opt.rot1||0)+(Math.random()<.5?-25:25)}deg) scale(${s*1.25})`},
+      {transform:`translate(${to.x-w/2}px,${to.y-h/2}px) rotate(${opt.rot1||0}deg) scale(${s})`}
+    ],{duration:opt.dur||520,easing:'cubic-bezier(.3,.7,.3,1)'}).onfinish=()=>{ box.remove(); res(); };
+    if(opt.flip && !opt.back) fl.animate([{transform:'rotateY(180deg)'},{offset:.35,transform:'rotateY(180deg)'},{transform:'rotateY(0deg)'}],{duration:opt.dur||520,fill:'forwards'});
+  });
+}
+function popup(txt, p, col, big){
+  const d=document.createElement('div'); d.className='pop'; d.textContent=txt; d.style.color=col; d.style.left=p.x+'px'; d.style.top=p.y+'px';
+  if(big) d.style.fontSize='46px';
+  $('fx').appendChild(d);
+  const r=(Math.random()-.5)*20;
+  d.animate([
+    {transform:`translate(-50%,-50%) scale(.2) rotate(${-r}deg)`,opacity:0},
+    {offset:.2,transform:`translate(-50%,-90%) scale(1.45) rotate(${r}deg)`,opacity:1},
+    {offset:.7,transform:`translate(-50%,-130%) scale(1) rotate(0)`,opacity:1},
+    {transform:`translate(-50%,-190%) scale(.9)`,opacity:0}
+  ],{duration:1300,easing:'ease-out'}).onfinish=()=>d.remove();
+}
+function bump(el){ el.animate([{transform:'scale(1.6) rotate(-8deg)'},{transform:'scale(1)'}],{duration:400,easing:'ease-out'}); }
+
+/* --- bulle / bonhomme --- */
+function dit(html, cls){
+  const b=$('bulle'); b.innerHTML=html; b.className='sk '+(cls||'');
+  b.animate([{transform:'scale(.9) rotate(-2deg)'},{transform:'scale(1.04) rotate(1deg)'},{transform:'scale(1)'}],{duration:300});
+  $('bonhomme').animate([{transform:'translateY(0)'},{transform:'translateY(-8px) rotate(-4deg)'},{transform:'translateY(0)'}],{duration:350});
+}
+function maj(){
+  $('sJ').textContent=sJ; $('sMax').textContent=P.n;
+  $('info').textContent=`Tour ${Math.min(tourNo,P.n)} / ${P.n}  ·  Erreurs : ${erreurs}`;
+  document.body.classList.toggle('attente', busy);
+}
+function afficheRegle(){
+  const R=$('regle');
+  if(!P.show){ R.innerHTML='<h3>Règle secrète !</h3>Quelle famille poser après quelle famille ?<br><b>À toi de la découvrir…</b><div style="margin-top:6px">Si tu n\'as aucune carte qui va : pose n\'importe laquelle (0 point).</div>'; return; }
+  let h='<h3>La règle</h3>';
+  TYPES.forEach(t=> h+=`<div>Après ${ART[t]} → <b>${REGLE[t].map(x=>NOM[x]).join(' ou ')}</b></div>`);
+  h+='<div style="margin-top:6px">Sinon : pose <b>n\'importe quoi</b> (0 point).</div><div>Bonne famille = <b>+1 point</b> (sur '+P.n+')</div>';
+  R.innerHTML=h;
+}
+
+/* ================= DÉROULEMENT =================
+   Chaque tour : l'ordi pose une carte, l'élève répond. Seul l'élève marque. */
+async function ordiPose(){
+  busy=true; maj();
+  dit('Hmm… je choisis une carte…'); await sleep(650);
+  const c=ordiChoix(mainO,mainJ), o=OH[mainO.indexOf(c)]||OH[0];
+  const from=centre(o.el), to=centre($('defausse'));
+  mainO.splice(mainO.indexOf(c),1); syncOrdi();
+  await vol(from,to,{c,w:56,h:80,w2:120,flip:true,rot0:o.a,rot1:c.rot,dur:600});
+  c.libre=false; c.faute=false; pile.push(c); renderPile(true);
+  dit(`Tour ${tourNo} / ${P.n} : je pose <b>${formuleHTML(c.f)}</b>. À toi !`);
+  busy=false; maj();
+}
+
+async function jouer(h){
+  if(busy||fini) return;
+  const c=h.c, top=pile[pile.length-1];
+  const bon=ok(c.t,top.t), aBonne=mainJ.some(x=>ok(x.t,top.t)), faute=!bon&&aBonne;
+  busy=true; maj();
+  const from=centre(h.inner), to=centre($('defausse'));
+  if(faute){ h.shakeT=now(); await sleep(450); }
+  mainJ.splice(mainJ.indexOf(c),1); syncHand();
+  await vol(from,to,{c,w:86,h:122,w2:120,rot0:h.a,rot1:c.rot});
+  c.libre=!bon; c.faute=faute; pile.push(c); renderPile(true);
+  if(bon){ sJ++; popup('+1', to, 'var(--vert)', true); bump($('sJ')); dit('Bonne carte ! <b>+1 point.</b>','ok'); }
+  else if(faute){
+    erreurs++;
+    popup('✗ tour perdu', to, 'var(--rouge)', true);
+    let t='Mauvaise carte ! Tu avais une carte qui convenait. <b>Tour perdu, 0 point.</b>';
+    if(P.expl){
+      t=`Mauvaise carte : <b>${formuleHTML(c.f)}</b> est ${ART[c.t]} (${RAISON[c.t]}).`;
+      if(P.show) t+=` Après ${ART[top.t]}, il fallait ${REGLE[top.t].map(x=>ART[x]).join(' ou ')}.`;
+      t+=' <b>Tour perdu.</b>';
+    }
+    dit(t,'err');
+  }
+  else { popup('0', to, '#bbb'); dit('Tu n\'avais aucune carte qui convenait : carte libre, 0 point.'); }
+  maj();
+  await sleep(faute?1700:1100);
+  if(!mainJ.length) return finPartie();
+  tourNo++;
+  await ordiPose();
+}
+
+function finPartie(){
+  fini=true; busy=false; maj();
+  const parfait=sJ===P.n, bien=sJ>=P.n-1;
+  const titre=parfait?'Sans faute !':bien?'Bien joué !':'Peut mieux faire…';
+  $('finTitre').innerHTML=[...titre].map((ch,i)=>`<span style="animation-delay:${i*.08}s">${ch===' '?'&nbsp;':ch}</span>`).join('');
+  $('finTitre').style.color=parfait?'var(--vert)':bien?'var(--bleu)':'var(--rouge)';
+  $('finTxt').innerHTML=`Score : <b>${sJ} / ${P.n}</b><br>Erreurs : ${erreurs}<div class="code sk">Ton code : <b>${codeFin(sJ,erreurs)}</b></div><small>Recopie ce code dans Moodle… ou rejoue pour améliorer ton score.</small>`;
+  $('fin').style.display='flex';
+  if(parfait) confettis();
+}
+/* --- code de fin : seed aléatoire + score + erreurs, masqué et signé (miroir Python decode_code) --- */
+const ALPH="23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+function fnv(str){ let h=0x811c9dc5; for(const b of new TextEncoder().encode(str)){ h^=b; h=Math.imul(h,0x01000193)>>>0; } return h>>>0; }
+function codeFin(score, err){
+  err=Math.min(err,15);
+  const seed=Math.floor(Math.random()*65536);
+  const m=fnv(seed+'|'+KEY)&0xff;
+  const se=(((score&15)<<4)|err)^m;
+  const ck=fnv(`${seed}|${score}|${err}|${P.n}|${KEY}`)&0xff;
+  let v=seed*65536+se*256+ck, out='';
+  for(let i=0;i<7;i++){ out=ALPH[v%32]+out; v=Math.floor(v/32); }
+  return out.slice(0,4)+'-'+out.slice(4);
+}
+function confettis(){
+  for(let i=0;i<90;i++){
+    const d=document.createElement('div'); d.className='confetti'; d.style.left=Math.random()*100+'vw'; d.style.top='-20px';
+    d.style.background=COULEURS[i%COULEURS.length]; document.body.appendChild(d);
+    d.animate([{transform:'translateY(0) rotate(0)'},{transform:`translate(${(Math.random()-.5)*200}px,110vh) rotate(${Math.random()*1080}deg)`}],
+      {duration:1800+Math.random()*1800,delay:Math.random()*600,easing:'cubic-bezier(.3,.1,.6,1)'}).onfinish=()=>d.remove();
+  }
+}
+
+async function nouvellePartie(){
+  $('fin').style.display='none';
+  H.forEach(h=>h.el.remove()); H=[]; OH.forEach(o=>o.el.remove()); OH=[];
+  const d=distribuer();
+  mainJ=[]; mainO=[]; pile=[]; sJ=0; erreurs=0; fini=false; busy=true; tourNo=1;
+  renderPile(false); afficheRegle(); maj();
+  dit('Je distribue les cartes…');
+  const src=centre($('defausse'));
+  for(let i=0;i<P.n;i++){
+    const W=$('main').clientWidth, p=handPos(i+1,i,W), mr=$('main').getBoundingClientRect();
+    await vol(src,{x:mr.left+p.x+43,y:mr.top+p.y+61},{c:d.J[i],w:86,h:122,w2:86,flip:true,rot1:p.a,dur:230});
+    mainJ.push(d.J[i]); syncHand();
+    const om=$('ordiMain').getBoundingClientRect();
+    await vol(src,{x:om.left+om.width/2,y:om.top+50},{c:d.O[i],w:56,h:80,w2:56,dur:200,back:true});
+    mainO.push(d.O[i]); syncOrdi();
+  }
+  await sleep(400);
+  await ordiPose();
+}
+$('bRejouer').onclick=nouvellePartie;
+
+requestAnimationFrame(boucle);
+nouvellePartie();
+})();
+</script>
+</body>
+</html>
