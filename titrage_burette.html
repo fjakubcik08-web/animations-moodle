@@ -3,21 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Titrage — burette</title>
+<title>Titrage — burette (xkcd)</title>
 <style>
-  :root{ --bleu:#1f4e79; --bleu2:#2e75b6; --gris:#eef2f6; --txt:#22313f; }
-  html,body{ margin:0; padding:0; background:#fff; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--txt); }
+  :root{ --ink:#222; --papier:#fff; }
+  html,body{ margin:0; padding:0; background:#fff; font-family:'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive; color:var(--ink); }
   #wrap{ max-width:900px; margin:0 auto; padding:6px; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
-  canvas{ width:100%; height:auto; display:block; background:#f7f9fb; border:1px solid #d5dde5; border-radius:8px; touch-action:none; }
-  #bar{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:8px; }
-  button{ font:inherit; font-size:15px; padding:10px 18px; border-radius:8px; border:1px solid #b9c6d3; background:var(--gris); color:var(--txt); cursor:pointer; touch-action:none; }
-  button:hover{ background:#e2e9f0; }
-  #bBur{ background:var(--bleu2); color:#fff; border-color:var(--bleu); min-width:220px; font-weight:600; }
-  #bBur.on{ background:var(--bleu); }
-  #bAgit.on{ background:#2e9d5b; color:#fff; border-color:#23784a; }
+  canvas{ width:100%; height:auto; display:block; background:#fff; border:2.5px solid var(--ink);
+          border-radius:14px 6px 16px 5px / 6px 14px 5px 16px; touch-action:none; filter:url(#xkcd); }
+  #bar{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
+  button{ font:inherit; font-size:16px; padding:9px 18px; background:#fff; color:var(--ink); cursor:pointer; touch-action:none;
+          border:2.5px solid var(--ink); border-radius:255px 15px 225px 15px / 15px 225px 15px 255px;
+          box-shadow:2px 3px 0 var(--ink); }
+  button:hover{ background:#f3f3f3; }
+  button:active{ transform:translate(1px,2px); box-shadow:1px 1px 0 var(--ink); }
+  #bBur{ min-width:220px; font-weight:bold; }
+  #bBur.on{ background:#ffe9a8; }
+  #bAgit.on{ background:#c9f2c9; }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute">
+  <filter id="xkcd" x="-2%" y="-2%" width="104%" height="104%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
 <div id="wrap">
   <canvas id="cv" width="900" height="620"></canvas>
   <div id="bar">
@@ -39,6 +49,7 @@
           cb  couleur avant équivalence (hex)
           ca  couleur après équivalence (hex)
           ct  couleur de la solution titrante dans la burette (hex)
+          bg  1 = decor cartoon anime en fond (defaut), 0 = sans decor
    Les paramètres en clair (?ve=12.4&cb=ffcc00 ...) prennent le dessus sur p.
    ===================================================================== */
 const KEY = "TitrageBurette#PB26";
@@ -56,7 +67,7 @@ function xorDecode(p){
 }
 
 const DEF = { tn:"(K^+ + MnO_4^-)", c:"2.00e-2", td:"(Fe^{2+} + SO_4^{2-})", vt:"20.0",
-              ve:12.4, cb:"#dfeccb", ca:"#e7a3d3", ct:"#7b2a8e" };
+              ve:12.4, cb:"#dfeccb", ca:"#e7a3d3", ct:"#7b2a8e", bg:1 };
 const P = Object.assign({}, DEF);
 (function(){
   const q = new URLSearchParams(location.search);
@@ -117,12 +128,12 @@ function drawChem(ctx,s,x,y,size,measureOnly){
   for(let k=0;k<segs.length;k++){
     const g=segs[k];
     if(g.m===0){
-      ctx.font=`${size}px system-ui,sans-serif`;
+      ctx.font=`${size}px system-ui,-apple-system,'Segoe UI',Roboto,sans-serif`;
       if(!measureOnly) ctx.fillText(g.t,cx,y);
       cx+=ctx.measureText(g.t).width; lastSubStart=null;
     }else{
       const sz=Math.round(size*0.68);
-      ctx.font=`${sz}px system-ui,sans-serif`;
+      ctx.font=`${sz}px system-ui,-apple-system,'Segoe UI',Roboto,sans-serif`;
       const w=ctx.measureText(g.t).width;
       if(g.m===1){
         if(!measureOnly) ctx.fillText(g.t,cx,y+size*0.28);
@@ -140,6 +151,7 @@ function drawChem(ctx,s,x,y,size,measureOnly){
 }
 
 /* ---------- canvas / HiDPI ---------- */
+const INK="#222";
 const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
 const W=900, H=620;
 (function(){ const d=Math.max(1,Math.min(3,window.devicePixelRatio||1)); cv.width=W*d; cv.height=H*d; ctx.setTransform(d,0,0,d,0,0); })();
@@ -171,7 +183,9 @@ let zc=0;         // centre du zoom (mL), lissé
 let plumeAge=0;
 let msgT=0;       // durée restante du message « agitateur »
 
+let tDrop=-1e9, tAgit=-1e9, tAct=0;
 function reset(){
+  tAct=performance.now();
   Vout=0; Vin=0; Vmix=0; drops=[]; ripples=[]; holding=false; flowing=false; zc=0; plumeAge=0;
   agitOn=false; agitSpeed=0; updAgitBtn();
 }
@@ -186,7 +200,7 @@ function release(withDrop){
 function addDrop(){
   if(Vout >= VMAX-1e-9) return;
   const dv=Math.min(DROP, VMAX-Vout);
-  Vout=+(Vout+dv).toFixed(6);
+  Vout=+(Vout+dv).toFixed(6); tDrop=tAct=performance.now();
   drops.push({y:TIP_Y+2, vy:40, v:dv});
 }
 bBur.addEventListener("pointerdown",e=>{ e.preventDefault();
@@ -196,7 +210,7 @@ bBur.addEventListener("pointerup",e=>{ e.preventDefault(); release(true); });
 bBur.addEventListener("pointercancel",()=>release(false));
 bBur.addEventListener("contextmenu",e=>e.preventDefault());
 function updAgitBtn(){ bAgit.textContent="Agitateur : "+(agitOn?"ON":"OFF"); bAgit.classList.toggle("on",agitOn); }
-bAgit.addEventListener("click",()=>{ agitOn=!agitOn; if(!agitOn) release(false); else msgT=0; updAgitBtn(); });
+bAgit.addEventListener("click",()=>{ agitOn=!agitOn; tAgit=tAct=performance.now(); if(!agitOn) release(false); else msgT=0; updAgitBtn(); });
 document.getElementById("bReset").addEventListener("click",reset);
 
 /* ---------- simulation ---------- */
@@ -233,18 +247,16 @@ function step(dt){
 function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 
 function drawStand(){
-  // tige de potence
-  const g=ctx.createLinearGradient(178,0,192,0);
-  g.addColorStop(0,"#8a96a3"); g.addColorStop(.5,"#c9d2db"); g.addColorStop(1,"#7d8996");
-  ctx.fillStyle=g; ctx.fillRect(178,14,13,500);
-  ctx.fillStyle="#b6c0ca"; ctx.beginPath(); ctx.ellipse(184.5,14,6.5,2.5,0,0,7); ctx.fill();
+  // socle + tige de potence
+  ctx.lineWidth=2.2; ctx.strokeStyle=INK; ctx.fillStyle="#fff";
+  ctx.fillRect(178,14,13,500); ctx.strokeRect(178,14,13,500);
   // noix + pince
   const cy=BUR.y0+70;
-  ctx.fillStyle="#9aa6b2"; rr(172,cy-12,26,24,4); ctx.fill();
-  ctx.fillStyle="#555"; ctx.beginPath(); ctx.arc(162,cy,7,0,7); ctx.fill();
-  ctx.fillStyle="#666"; ctx.fillRect(162,cy-2,12,4);
-  ctx.strokeStyle="#7d8996"; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(196,cy); ctx.lineTo(BX-14,cy); ctx.stroke();
-  ctx.fillStyle="#d23a3a"; rr(BX-16,cy-9,7,18,3); ctx.fill(); rr(BX+9,cy-9,7,18,3); ctx.fill();
+  rr(172,cy-12,26,24,4); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(162,cy,7,0,7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(169,cy); ctx.lineTo(172,cy); ctx.stroke();
+  ctx.lineWidth=2.2; ctx.beginPath(); ctx.moveTo(198,cy-3); ctx.lineTo(BX-14,cy-3); ctx.moveTo(198,cy+3); ctx.lineTo(BX-14,cy+3); ctx.stroke();
+  ctx.fillStyle="#f4a6a6"; rr(BX-16,cy-9,7,18,3); ctx.fill(); ctx.stroke(); rr(BX+9,cy-9,7,18,3); ctx.fill(); ctx.stroke();
 }
 
 function drawBurette(){
@@ -257,60 +269,58 @@ function drawBurette(){
   ctx.beginPath(); ctx.moveTo(x+2,BUR_END); ctx.lineTo(BX+w/2-2,BUR_END); ctx.lineTo(BX+3,COCK_Y-6); ctx.lineTo(BX-3,COCK_Y-6); ctx.closePath(); ctx.fill();
   ctx.fillRect(BX-2,COCK_Y-6,4,TIP_Y-COCK_Y+6);
   // verre
-  ctx.strokeStyle="#8fa4b8"; ctx.lineWidth=1.4;
+  ctx.strokeStyle=INK; ctx.lineWidth=2.2;
   ctx.beginPath();
   ctx.moveTo(x,BUR.top); ctx.lineTo(x,BUR_END); ctx.lineTo(BX-4,COCK_Y-6); ctx.lineTo(BX-4,COCK_Y+8);
   ctx.moveTo(x+w,BUR.top); ctx.lineTo(x+w,BUR_END); ctx.lineTo(BX+4,COCK_Y-6); ctx.lineTo(BX+4,COCK_Y+8);
   ctx.moveTo(BX-3,COCK_Y+8); ctx.lineTo(BX-2.5,TIP_Y); ctx.lineTo(BX+2.5,TIP_Y); ctx.lineTo(BX+3,COCK_Y+8);
   ctx.stroke();
   ctx.beginPath(); ctx.ellipse(BX,BUR.top,w/2+2,3,0,0,7); ctx.stroke();
-  ctx.fillStyle="rgba(255,255,255,.35)"; ctx.fillRect(x+3,BUR.top+4,3,BUR_END-BUR.top-8);
+  
   // graduations (vue d'ensemble)
-  ctx.strokeStyle="rgba(40,50,60,.55)"; ctx.lineWidth=0.8; ctx.fillStyle="rgba(40,50,60,.7)"; ctx.font="8px system-ui";
+  ctx.strokeStyle=INK; ctx.lineWidth=0.8; ctx.fillStyle=INK; ctx.font="8px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive";
   for(let v=0; v<=VMAX; v++){
     const y=yBur(v), L=(v%5===0)?8:4;
     ctx.beginPath(); ctx.moveTo(x+1,y); ctx.lineTo(x+1+L,y); ctx.stroke();
     if(v%5===0) ctx.fillText(String(v), x-15, y+3);
   }
   // robinet
-  ctx.fillStyle="#1f6f6a"; ctx.beginPath(); ctx.arc(BX-14,COCK_Y,7,0,7); ctx.fill();
-  ctx.fillStyle="#e9eef2"; ctx.strokeStyle="#9aa"; ctx.lineWidth=1;
+  ctx.fillStyle="#fff"; ctx.strokeStyle=INK; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(BX-14,COCK_Y,7,0,7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#fff"; ctx.strokeStyle=INK; ctx.lineWidth=2;
   rr(BX-8,COCK_Y-6,16,12,3); ctx.fill(); ctx.stroke();
   ctx.save(); ctx.translate(BX+12,COCK_Y); ctx.rotate(holding?-Math.PI/2:0);
-  ctx.fillStyle="#dfe5ea"; rr(-2,-4,22,8,3); ctx.fill(); ctx.strokeStyle="#9aa"; ctx.stroke(); ctx.restore();
+  ctx.fillStyle="#fff"; rr(-2,-4,22,8,3); ctx.fill(); ctx.strokeStyle=INK; ctx.stroke(); ctx.restore();
   // cadre zone zoomée
   const a=yBur(zc-(ZM.cy-ZM.y)/ZM.px), b=yBur(zc+(ZM.y+ZM.h-ZM.cy)/ZM.px);
-  ctx.strokeStyle="rgba(46,117,182,.9)"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+  ctx.strokeStyle=INK; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
   ctx.strokeRect(x-5,a,w+10,b-a); ctx.setLineDash([]);
 }
 
 function drawLabelBurette(){
   const tx=BX+34, ty=BUR.y0+120;
-  ctx.font="15px system-ui"; const w1=chemWidth(ctx,P.tn,15);
-  const l2="C = "+fmtNum(P.c)+" mol·L⁻¹"; ctx.font="13px system-ui"; const w2=ctx.measureText(l2).width;
+  ctx.font="15px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; const w1=chemWidth(ctx,P.tn,15);
+  const l2="C = "+fmtNum(P.c)+" mol·L⁻¹"; ctx.font="13px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; const w2=ctx.measureText(l2).width;
   const w=Math.max(w1,w2)+18;
-  ctx.fillStyle="#fff"; ctx.strokeStyle="#9fb2c4"; ctx.lineWidth=1; rr(tx,ty,w,46,6); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle="#9fb2c4"; ctx.beginPath(); ctx.moveTo(BX+BUR.w/2,ty+23); ctx.lineTo(tx,ty+23); ctx.stroke();
-  ctx.fillStyle="#1f2d3a"; drawChem(ctx,P.tn,tx+9,ty+19,15);
-  ctx.font="13px system-ui"; ctx.fillText(l2,tx+9,ty+38);
+  ctx.fillStyle="#fff"; ctx.strokeStyle=INK; ctx.lineWidth=2; rr(tx,ty,w,46,6); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle=INK; ctx.beginPath(); ctx.moveTo(BX+BUR.w/2,ty+23); ctx.lineTo(tx,ty+23); ctx.stroke();
+  ctx.fillStyle=INK; drawChem(ctx,P.tn,tx+9,ty+19,15);
+  ctx.font="13px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; ctx.fillText(l2,tx+9,ty+38);
 }
 
 function drawAgitator(){
-  // plateau
-  ctx.fillStyle="#cfd6dc"; ctx.beginPath(); ctx.ellipse(BX,BK.bot+6,120,14,0,0,7); ctx.fill();
-  ctx.fillStyle="#e7ecf0"; ctx.beginPath(); ctx.ellipse(BX,BK.bot+2,112,11,0,0,7); ctx.fill();
-  // boîtier
-  ctx.fillStyle="#37474f"; ctx.beginPath(); ctx.moveTo(140,BK.bot+8); ctx.lineTo(470,BK.bot+8); ctx.lineTo(470,600); ctx.lineTo(140,600); ctx.closePath(); ctx.fill();
-  ctx.fillStyle="#4b5d67"; ctx.fillRect(140,BK.bot+8,330,8);
+  ctx.strokeStyle=INK; ctx.lineWidth=2.4; ctx.fillStyle="#fff";
+  // boitier
+  ctx.beginPath(); ctx.moveTo(140,BK.bot+8); ctx.lineTo(470,BK.bot+8); ctx.lineTo(470,600); ctx.lineTo(140,600); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(140,BK.bot+18); ctx.lineTo(470,BK.bot+18); ctx.stroke();
   // ON/OFF + LED
-  ctx.strokeStyle="#22303a"; ctx.lineWidth=2; rr(170,548,110,36,4); ctx.stroke();
-  ctx.fillStyle="#e8eef2"; ctx.font="bold 12px system-ui"; ctx.fillText("ON / OFF",182,571);
-  ctx.fillStyle= agitOn ? "#3dff7a" : "#2b5a3a"; ctx.beginPath(); ctx.arc(260,566,5,0,7); ctx.fill();
-  if(agitOn){ ctx.fillStyle="rgba(61,255,122,.25)"; ctx.beginPath(); ctx.arc(260,566,10,0,7); ctx.fill(); }
+  ctx.lineWidth=2; rr(170,548,110,36,6); ctx.stroke();
+  ctx.fillStyle=INK; ctx.font="bold 14px "+"'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; ctx.fillText("ON / OFF",184,571);
+  ctx.fillStyle= agitOn ? "#3ccf5a" : "#fff"; ctx.beginPath(); ctx.arc(262,566,6,0,7); ctx.fill(); ctx.stroke();
+  if(agitOn){ ctx.beginPath(); for(let k=0;k<6;k++){ const a=k*Math.PI/3; ctx.moveTo(262+Math.cos(a)*10,566+Math.sin(a)*10); ctx.lineTo(262+Math.cos(a)*14,566+Math.sin(a)*14);} ctx.stroke(); }
   // bouton rotatif
-  ctx.strokeStyle="#cfd6dc"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(400,566,22,Math.PI*0.75,Math.PI*2.25); ctx.stroke();
-  ctx.fillStyle="#d32f2f"; ctx.beginPath(); ctx.arc(400,566,16,0,7); ctx.fill();
-  ctx.fillStyle="#b71c1c"; ctx.beginPath(); ctx.arc(400,566,9,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(400,566,22,Math.PI*0.75,Math.PI*2.25); ctx.stroke();
+  ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(400,566,15,0,7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(400,566); ctx.lineTo(400+11*Math.cos(-2.2+theta*0.02),566+11*Math.sin(-2.2+theta*0.02)); ctx.stroke();
 }
 
 function liquidColor(){
@@ -353,35 +363,35 @@ function drawBecher(){
     const th = theta - g*0.18*agitSpeed;
     const c=Math.cos(th), s=Math.sin(th);
     ctx.lineCap="round";
-    if(g===0){ ctx.strokeStyle="rgba(90,100,110,.9)"; ctx.lineWidth=9; ctx.beginPath(); ctx.moveTo(cx-Rx*c,by-Ry*s); ctx.lineTo(cx+Rx*c,by+Ry*s); ctx.stroke(); }
-    ctx.strokeStyle = g===0 ? "rgba(248,248,248,1)" : `rgba(150,160,170,${0.25*agitSpeed})`;
+    if(g===0){ ctx.strokeStyle=INK; ctx.lineWidth=10; ctx.beginPath(); ctx.moveTo(cx-Rx*c,by-Ry*s); ctx.lineTo(cx+Rx*c,by+Ry*s); ctx.stroke(); }
+    ctx.strokeStyle = g===0 ? "#fff" : `rgba(34,34,34,${0.18*agitSpeed})`;
     ctx.lineWidth=7;
     ctx.beginPath(); ctx.moveTo(cx-Rx*c,by-Ry*s); ctx.lineTo(cx+Rx*c,by+Ry*s); ctx.stroke();
   }
-  ctx.strokeStyle="rgba(120,120,120,.6)"; ctx.lineWidth=1;
+  ctx.strokeStyle="rgba(0,0,0,0)"; ctx.lineWidth=1;
   { const c=Math.cos(theta), s=Math.sin(theta);
     ctx.beginPath(); ctx.moveTo(cx-Rx*c,by-Ry*s-3.5); ctx.lineTo(cx+Rx*c,by+Ry*s-3.5); ctx.stroke(); }
   ctx.lineCap="butt";
   // verre
-  ctx.strokeStyle="#8fa4b8"; ctx.lineWidth=1.6;
+  ctx.strokeStyle=INK; ctx.lineWidth=2.4;
   ctx.beginPath(); ctx.moveTo(L-6,top-4); ctx.quadraticCurveTo(L-2,top,L,top+6); ctx.lineTo(L,bot-6);
   ctx.quadraticCurveTo(L,bot,L+8,bot); ctx.lineTo(R-8,bot); ctx.quadraticCurveTo(R,bot,R,bot-6); ctx.lineTo(R,top); ctx.stroke();
   ctx.beginPath(); ctx.ellipse(cx,top,w/2,5,0,0,7); ctx.stroke();
-  ctx.fillStyle="rgba(255,255,255,.25)"; ctx.fillRect(L+4,top+8,5,bot-top-20);
+  
   // graduations bécher
-  ctx.strokeStyle="rgba(60,70,80,.6)"; ctx.fillStyle="rgba(60,70,80,.7)"; ctx.font="9px system-ui"; ctx.lineWidth=1;
+  ctx.strokeStyle=INK; ctx.fillStyle=INK; ctx.font="9px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; ctx.lineWidth=1;
   const st = BK_CAP===100?10:25;
   for(let v=st; v<=BK_CAP*0.9+1e-9; v+=st){
     const y=yBk(v); ctx.beginPath(); ctx.moveTo(R-30,y); ctx.lineTo(R-8,y); ctx.stroke();
     if(v%(st*2)===0) ctx.fillText(String(v),R-30,y-3);
   }
   // étiquette titré
-  ctx.font="14px system-ui"; const w1=chemWidth(ctx,P.td,14);
-  const l2="V = "+fmtNum(P.vt)+" mL"; ctx.font="13px system-ui"; const w2=ctx.measureText(l2).width;
+  ctx.font="14px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; const w1=chemWidth(ctx,P.td,14);
+  const l2="V = "+fmtNum(P.vt)+" mL"; ctx.font="13px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; const w2=ctx.measureText(l2).width;
   const lw=Math.max(w1,w2)+16, lx=L+14, ly=top+30;
-  ctx.fillStyle="rgba(255,255,255,.92)"; ctx.strokeStyle="#9fb2c4"; rr(lx,ly,lw,42,5); ctx.fill(); ctx.stroke();
-  ctx.fillStyle="#1f2d3a"; drawChem(ctx,P.td,lx+8,ly+17,14);
-  ctx.font="13px system-ui"; ctx.fillText(l2,lx+8,ly+35);
+  ctx.fillStyle="rgba(255,255,255,.95)"; ctx.strokeStyle=INK; ctx.lineWidth=2; rr(lx,ly,lw,42,5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=INK; drawChem(ctx,P.td,lx+8,ly+17,14);
+  ctx.font="13px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; ctx.fillText(l2,lx+8,ly+35);
 }
 
 function drawFlow(){
@@ -397,13 +407,13 @@ function drawFlow(){
 function drawZoom(){
   const {x,y,w,h,cy,px,tx,tw}=ZM;
   const yz = v => cy + (v-zc)*px;
-  ctx.fillStyle="#ffffff"; ctx.strokeStyle="#2e75b6"; ctx.lineWidth=2; rr(x,y,w,h,10); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#ffffff"; ctx.strokeStyle=INK; ctx.lineWidth=2.6; rr(x,y,w,h,10); ctx.fill(); ctx.stroke();
   ctx.save(); rr(x+1,y+1,w-2,h-2,9); ctx.clip();
-  ctx.fillStyle="#eef3f8"; ctx.fillRect(x,y,w,h);
+  ctx.fillStyle="#fff"; ctx.fillRect(x,y,w,h);
   // tube
   const topV=-3, botV=VMAX+1.2;
   const t0=Math.max(y,yz(topV)), t1=Math.min(y+h,yz(botV));
-  ctx.fillStyle="rgba(220,232,242,.9)"; ctx.fillRect(tx,t0,tw,t1-t0);
+  ctx.fillStyle="#f7f7f7"; ctx.fillRect(tx,t0,tw,t1-t0);
   // liquide + ménisque
   const yl=yz(Vout), md=14;
   ctx.fillStyle=rgba(CTV,0.55);
@@ -413,37 +423,133 @@ function drawZoom(){
   ctx.strokeStyle=rgba(mix(CTV,[20,30,40],0.55),0.95); ctx.lineWidth=2.4;
   ctx.beginPath(); ctx.moveTo(tx,yl-md); ctx.bezierCurveTo(tx+tw*0.12,yl+md/3, tx+tw*0.88,yl+md/3, tx+tw,yl-md); ctx.stroke();
   // graduations
-  ctx.strokeStyle="#1b2733"; ctx.fillStyle="#1b2733";
+  ctx.strokeStyle=INK; ctx.fillStyle=INK;
   const kmin=Math.max(0,Math.floor((zc-(cy-y)/px)*10)-1), kmax=Math.min(VMAX*10,Math.ceil((zc+(y+h-cy)/px)*10)+1);
   for(let k=kmin;k<=kmax;k++){
     const yy=yz(k/10);
     let L=22, lw=1.1;
     if(k%10===0){ L=78; lw=1.8; } else if(k%5===0){ L=48; lw=1.4; }
     ctx.lineWidth=lw; ctx.beginPath(); ctx.moveTo(tx,yy); ctx.lineTo(tx+L,yy); ctx.stroke();
-    if(k%10===0){ ctx.font="bold 17px system-ui"; ctx.fillText(String(k/10),tx+84,yy+6); }
+    if(k%10===0){ ctx.font="bold 17px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; ctx.fillText(String(k/10),tx+84,yy+6); }
   }
   // parois
-  ctx.strokeStyle="#8fa4b8"; ctx.lineWidth=2.5;
+  ctx.strokeStyle=INK; ctx.lineWidth=3;
   ctx.beginPath(); ctx.moveTo(tx,t0); ctx.lineTo(tx,t1); ctx.moveTo(tx+tw,t0); ctx.lineTo(tx+tw,t1); ctx.stroke();
-  ctx.fillStyle="rgba(255,255,255,.35)"; ctx.fillRect(tx+tw-14,t0,6,t1-t0);
+  
   ctx.restore();
-  ctx.fillStyle="#2e75b6"; ctx.font="bold 13px system-ui"; ctx.fillText("Zoom burette (mL)",x+12,y+h+18);
+  ctx.fillStyle=INK; ctx.font="bold 15px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; ctx.fillText("Zoom burette (mL)",x+12,y+h+18);
 }
 
 function drawMsg(){
   if(msgT<=0) return;
   const a=Math.min(1,msgT/0.4);
-  const txt="⚠ Mettre l'agitateur en marche avant de verser";
-  ctx.font="bold 16px system-ui"; const w=ctx.measureText(txt).width+32;
+  const txt="Hé ! Mets l'agitateur en marche avant de verser !";
+  ctx.font="bold 16px 'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; const w=ctx.measureText(txt).width+32;
   const x=BX-w/2+20, y=BK.top-58;
   ctx.globalAlpha=a;
-  ctx.fillStyle="#fff4e5"; ctx.strokeStyle="#e08a00"; ctx.lineWidth=2; rr(x,y,w,38,8); ctx.fill(); ctx.stroke();
-  ctx.fillStyle="#8a4b00"; ctx.fillText(txt,x+16,y+25);
+  ctx.fillStyle="#fff"; ctx.strokeStyle=INK; ctx.lineWidth=2.4; rr(x,y,w,38,8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=INK; ctx.fillText(txt,x+16,y+25);
   ctx.globalAlpha=1;
+}
+
+
+/* ---------- decor cartoon (fond, ne depend jamais de l'equivalence) ---------- */
+const BGI="#8a8a8a";
+function bubble(x,y,txt){
+  ctx.font="15px "+"'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; const w=ctx.measureText(txt).width+20;
+  ctx.fillStyle="#fff"; ctx.strokeStyle=BGI; ctx.lineWidth=1.8;
+  rr(x,y,w,30,12); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x+18,y+30); ctx.lineTo(x+14,y+44); ctx.lineTo(x+30,y+30); ctx.fillStyle="#fff"; ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#555"; ctx.fillText(txt,x+10,y+20);
+}
+function drawBonhomme(t,now){
+  const x=72, bob=Math.sin(t*1.6)*1.5, hy=420+bob;
+  ctx.strokeStyle=BGI; ctx.lineWidth=2.2; ctx.lineCap="round"; ctx.fillStyle="#fff";
+  // corps
+  ctx.beginPath(); ctx.arc(x,hy,15,0,7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x,hy+15); ctx.lineTo(x,hy+85);
+  ctx.moveTo(x,hy+85); ctx.lineTo(x-18,hy+170); ctx.moveTo(x,hy+85); ctx.lineTo(x+18,hy+170);
+  // bras gauche (le long du corps, se balance un peu)
+  const ag=Math.sin(t*1.6)*0.08;
+  ctx.moveTo(x,hy+32); ctx.lineTo(x-22-ag*40,hy+78);
+  // bras droit : mug, ou pointe la burette quand ca coule
+  const pointe = flowing || (now-tDrop<700);
+  if(pointe){ ctx.moveTo(x,hy+32); ctx.lineTo(x+34,hy+10); }
+  else { ctx.moveTo(x,hy+32); ctx.lineTo(x+20,hy+52); ctx.lineTo(x+30,hy+40); }
+  ctx.stroke();
+  // lunettes de protection
+  ctx.lineWidth=1.6; rr(x-12,hy-6,24,9,4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x-15,hy-2); ctx.lineTo(x-12,hy-2); ctx.moveTo(x+12,hy-2); ctx.lineTo(x+15,hy-2); ctx.stroke();
+  // yeux (clignent)
+  const blink = (t%3.7)<0.13;
+  ctx.fillStyle="#666";
+  if(blink){ ctx.beginPath(); ctx.moveTo(x-7,hy-1.5); ctx.lineTo(x-3,hy-1.5); ctx.moveTo(x+3,hy-1.5); ctx.lineTo(x+7,hy-1.5); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.arc(x-5,hy-1.5,1.6,0,7); ctx.arc(x+5,hy-1.5,1.6,0,7); ctx.fill(); }
+  // bouche
+  ctx.beginPath(); ctx.arc(x,hy+6,4,0.2*Math.PI,0.8*Math.PI); ctx.stroke();
+  // mug + vapeur
+  if(!pointe){
+    ctx.lineWidth=1.8; ctx.fillStyle="#fff"; rr(x+26,hy+30,12,14,2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x+40,hy+37,4,-Math.PI/2,Math.PI/2); ctx.stroke();
+    for(let k=0;k<2;k++){
+      const ph=(t*0.8+k*0.5)%1, vy=hy+26-ph*22, a=1-ph;
+      ctx.strokeStyle=`rgba(138,138,138,${a})`; ctx.beginPath();
+      ctx.moveTo(x+29+k*5,vy); ctx.quadraticCurveTo(x+25+k*5,vy-5,x+29+k*5,vy-10); ctx.stroke();
+    }
+    ctx.strokeStyle=BGI;
+  }
+  ctx.lineCap="butt";
+  // bulle de dialogue (reagit seulement aux gestes de l'eleve)
+  let txt=null;
+  if(flowing) txt="glou glou...";
+  else if(now-tDrop<700) txt="ploc !";
+  else if(now-tAgit<1500) txt= agitOn ? "vroum !" : "pfff...";
+  else if(now-tAct>20000) txt="zzz...";
+  if(txt) bubble(x-50,hy-82,txt);
+}
+function drawHorloge(){
+  const cx=470, cy=72, r=30, d=new Date();
+  ctx.strokeStyle=BGI; ctx.fillStyle="#fff"; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.fill(); ctx.stroke();
+  for(let k=0;k<12;k++){ const a=k*Math.PI/6; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*(r-6),cy+Math.sin(a)*(r-6)); ctx.lineTo(cx+Math.cos(a)*(r-2),cy+Math.sin(a)*(r-2)); ctx.stroke(); }
+  const s=d.getSeconds()+d.getMilliseconds()/1000, m=d.getMinutes()+s/60, h=(d.getHours()%12)+m/60;
+  const hand=(v,len,lw)=>{ const a=v*2*Math.PI-Math.PI/2; ctx.lineWidth=lw; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(a)*len,cy+Math.sin(a)*len); ctx.stroke(); };
+  hand(h/12,15,3); hand(m/60,22,2); ctx.strokeStyle="#d98080"; hand(Math.floor(s)/60,24,1.2); ctx.strokeStyle=BGI;
+}
+function drawMouche(t){
+  const x=470+95*Math.sin(t*0.53)+18*Math.sin(t*2.1), y=88+52*Math.sin(t*0.81+1)+10*Math.cos(t*2.7);
+  ctx.fillStyle="#777"; ctx.beginPath(); ctx.arc(x,y,2.6,0,7); ctx.fill();
+  const f=Math.abs(Math.sin(t*40))*3+1.5;
+  ctx.strokeStyle="#999"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.ellipse(x-2.5,y-3,2.2,f,-0.5,0,7); ctx.ellipse(x+2.5,y-3,2.2,f,0.5,0,7); ctx.stroke();
+  // petit trajet en pointilles
+  ctx.setLineDash([1.5,4]); ctx.strokeStyle="rgba(150,150,150,.6)"; ctx.beginPath();
+  for(let k=1;k<=14;k++){ const tt=t-k*0.06; const xx=470+95*Math.sin(tt*0.53)+18*Math.sin(tt*2.1), yy=88+52*Math.sin(tt*0.81+1)+10*Math.cos(tt*2.7); k===1?ctx.moveTo(xx,yy):ctx.lineTo(xx,yy); }
+  ctx.stroke(); ctx.setLineDash([]);
+}
+function drawErlen(t){
+  // etagere + erlenmeyer qui bouillonne
+  ctx.strokeStyle=BGI; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(486,520); ctx.lineTo(592,520); ctx.moveTo(494,520); ctx.lineTo(500,532); ctx.moveTo(584,520); ctx.lineTo(578,532); ctx.stroke();
+  const cx=538, by=518;
+  ctx.fillStyle="#e4f3dc"; ctx.beginPath(); ctx.moveTo(cx-26,by); ctx.lineTo(cx-6,by-40); ctx.lineTo(cx+6,by-40); ctx.lineTo(cx+26,by); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cx-7,by-74); ctx.lineTo(cx-7,by-46); ctx.lineTo(cx-28,by); ctx.lineTo(cx+28,by); ctx.lineTo(cx+7,by-46); ctx.lineTo(cx+7,by-74); ctx.stroke();
+  for(let k=0;k<5;k++){
+    const ph=(t*0.45+k*0.21)%1, yy=by-6-ph*78, xx=cx+Math.sin(ph*9+k*2)*(ph<0.5?10:3), rB=1.5+ph*2.5;
+    if(yy<by-80) continue;
+    ctx.strokeStyle=`rgba(138,138,138,${1-ph*0.7})`; ctx.lineWidth=1.3; ctx.beginPath(); ctx.arc(xx,yy,rB,0,7); ctx.stroke();
+  }
+  const pf=(t*0.45)%1; if(pf>0.85){ ctx.strokeStyle=BGI; ctx.font="12px "+"'Humor Sans','xkcd Script','Comic Neue','Comic Sans MS',cursive"; ctx.fillStyle="#999"; ctx.fillText("pop",cx+10,by-82); }
+}
+function drawBackground(now){
+  if(String(P.bg)==="0") return;
+  const t=now/1000;
+  drawHorloge(); drawMouche(t); drawErlen(t); drawBonhomme(t,now);
 }
 
 function draw(){
   ctx.clearRect(0,0,W,H);
+  drawBackground(performance.now());
   drawStand();
   drawAgitator();
   drawBecher();
