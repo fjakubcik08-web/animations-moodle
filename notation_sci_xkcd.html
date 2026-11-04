@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>L'échelle de Cueball – notation scientifique</title>
+<style>
+  html,body{margin:0;padding:0;background:#fff;font-family:"Comic Sans MS","Comic Neue","Chalkboard SE","Segoe Print",cursive;color:#111}
+  #wrap{max-width:960px;margin:0 auto;padding:6px;box-sizing:border-box}
+  canvas{display:block;width:100%;height:auto;touch-action:none;border:2px solid #111;border-radius:6px;background:#fff;cursor:default}
+  #bar{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+  #bar label{font-size:14px}
+  #zoom{flex:1;min-width:200px;accent-color:#111}
+  button{font-family:inherit;font-size:15px;padding:6px 16px;border:2px solid #111;border-radius:8px;background:#7bd389;cursor:pointer}
+  button:hover{background:#5fc470}
+  button:disabled{opacity:.4;cursor:default}
+  #code{font-size:18px;letter-spacing:2px;padding:4px 12px;border:2px dashed #111;border-radius:8px;min-width:130px;text-align:center;user-select:all;background:#fff3b0}
+  #zoom{accent-color:#e8743b}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv" width="960" height="560"></canvas>
+  <div id="bar">
+    <label for="zoom">Zoom :</label>
+    <input id="zoom" type="range" min="-15" max="27" step="0.05" value="0">
+    <button id="btnVal">Valider</button>
+    <button id="btnRec" style="background:#ffd1dc">Recommencer</button>
+    <span id="code">—</span>
+  </div>
+</div>
+<script>
+(function(){
+"use strict";
+/* ---------- Catalogue : id -> [nom, mantisse (chaine), exposant] ---------- */
+const CAT = {
+  pro:["Proton","1,7",-15],
+  ato:["Atome d'hydrogène","1,06",-10],
+  vir:["Virus de la grippe","1,2",-7],
+  glo:["Globule rouge","7,5",-6],
+  che:["Épaisseur d'un cheveu","8",-5],
+  fou:["Fourmi","4",-3],
+  cue:["Cueball","1,75",0],
+  eif:["Tour Eiffel","3,3",2],
+  eve:["Mont Everest","8,849",3],
+  ter:["Diamètre de la Terre","1,2742",7],
+  sol:["Diamètre du Soleil","1,3927",9],
+  tso:["Distance Terre-Soleil","1,496",11],
+  al:["Année-lumière","9,46",15],
+  vla:["Voie lactée","9,5",20],
+  uni:["Univers observable","8,8",26],
+  noy:["Noyau d'un atome d'or","1,4",-14],
+  rx:["Longueur d'onde d'un rayon X","2,5",-11],
+  adn:["Largeur d'une molécule d'ADN","2",-9],
+  plo:["Virus de la polio","3",-8],
+  bac:["Bactérie E. coli","2",-6],
+  pap:["Épaisseur d'une feuille de papier","1",-4],
+  eur:["Pièce de 1 euro","2,325",-2],
+  tel:["Smartphone","1,5",-1],
+  gir:["Girafe","5,5",0],
+  foo:["Terrain de football","1,05",2],
+  mil:["Viaduc de Millau","2,46",3],
+  mar:["Marathon","4,2195",4],
+  ply:["Paris-Lyon à vol d'oiseau","3,9",5],
+  lun:["Diamètre de la Lune","3,474",6],
+  tlu:["Distance Terre-Lune","3,84",8],
+  ven:["Distance minimale Terre-Vénus","4,2",10],
+  nep:["Distance Soleil-Neptune","4,5",12],
+  voy:["Distance de la sonde Voyager 1","2,5",13],
+  oor:["Bord du nuage d'Oort","3",14],
+  sir:["Distance de l'étoile Sirius","8,1",16],
+  plr:["Distance de l'étoile Polaire","4,1",18],
+  cga:["Distance au centre de la Voie lactée","2,5",20],
+  and:["Distance de la galaxie d'Andromède","2,4",22],
+  com:["Distance de l'amas de Coma","3",24],
+  qua:["Distance du quasar 3C 273","2,3",25]
+};
+const KEY = "PBayle-NotSci#xkcd";
+const ALPH = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+/* ---------- Paramètres ---------- */
+function decodeP(s){
+  try{
+    s = s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="=";
+    const bin = atob(s), k = new TextEncoder().encode(KEY), b = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) b[i] = bin.charCodeAt(i) ^ k[i%k.length];
+    return JSON.parse(new TextDecoder().decode(b));
+  }catch(e){ return {}; }
+}
+const qs = new URLSearchParams(location.search);
+let P = qs.get("p") ? decodeP(qs.get("p")) : {};
+const D = {o:["glo","fou","eif","ter"], g:1, s:-1, c:0, rec:1};
+P = Object.assign({}, D, P);
+if(qs.get("o")) P.o = qs.get("o").split(",");
+if(qs.get("g")!==null) P.g = +qs.get("g");
+if(qs.get("s")!==null) P.s = +qs.get("s");
+if(qs.get("rec")!==null) P.rec = +qs.get("rec");
+P.o = P.o.filter(id => CAT[id]).slice(0,6);
+if(P.s < 0) P.s = Math.floor(Math.random()*65536);
+
+/* ---------- Outils numériques ---------- */
+function decimalFR(m, e){
+  const [ip, fp=""] = m.split(",");
+  let digits = ip + fp, point = ip.length + e;   // position de la virgule
+  let intPart, fracPart;
+  if(point <= 0){ intPart = "0"; fracPart = "0".repeat(-point) + digits; }
+  else if(point >= digits.length){ intPart = digits + "0".repeat(point - digits.length); fracPart = ""; }
+  else { intPart = digits.slice(0,point); fracPart = digits.slice(point); }
+  intPart = intPart.replace(/^0+(?=\d)/,"");
+  const gi = intPart.replace(/\B(?=(\d{3})+(?!\d))/g," ");
+  const gf = fracPart.replace(/(\d{3})(?=\d)/g,"$1 ");
+  return (gf ? gi + "," + gf : gi) + " m";
+}
+function fnv(str){
+  let h = 0x811c9dc5;
+  const b = new TextEncoder().encode(str);
+  for(const x of b){ h ^= x; h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+function makeCode(seed, score, n){
+  let h = fnv(seed + "|" + score + "|" + n), s = "";
+  for(let i=0;i<7;i++){ s += ALPH[h % 32]; h = Math.floor(h/32); }
+  return s.slice(0,4) + "-" + s.slice(4);
+}
+
+/* ---------- Canvas & trait à main levée ---------- */
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height;
+const FONT = '"Comic Sans MS","Comic Neue","Chalkboard SE","Segoe Print",cursive';
+let rs = 1;
+function seed(n){ rs = (n*2654435761 >>> 0) || 1; }
+function rnd(){ rs ^= rs << 13; rs >>>= 0; rs ^= rs >> 17; rs ^= rs << 5; rs >>>= 0; return rs / 4294967296; }
+function rr(a){ return (rnd()*2-1)*a; }
+
+function hline(x1,y1,x2,y2){
+  const dx=x2-x1, dy=y2-y1, L=Math.hypot(dx,dy)||1, nx=-dy/L, ny=dx/L;
+  const a = Math.min(2.2, L*0.02);
+  const o1 = rr(a), o2 = rr(a);
+  ctx.beginPath();
+  ctx.moveTo(x1+rr(.6), y1+rr(.6));
+  ctx.bezierCurveTo(x1+dx/3+nx*o1, y1+dy/3+ny*o1, x1+2*dx/3+nx*o2, y1+2*dy/3+ny*o2, x2+rr(.6), y2+rr(.6));
+  ctx.stroke();
+}
+function hpath(pts, close){
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for(let i=1;i<pts.length;i++){
+    const p=pts[i-1], q=pts[i];
+    ctx.quadraticCurveTo(p[0]+rr(.5), p[1]+rr(.5), (p[0]+q[0])/2, (p[1]+q[1])/2);
+  }
+  const l = pts[pts.length-1]; ctx.lineTo(l[0], l[1]);
+  if(close) ctx.closePath();
+}
+function hell(cx,cy,rx,ry,fill,rot){
+  rot = rot||0;
+  const N = 28, ph = rnd()*6.28, a = 0.035, start = rnd()*6.28, over = 0.25 + rnd()*0.25;
+  const pts = [];
+  for(let i=0;i<=N;i++){
+    const t = start + (Math.PI*2+over)*i/N;
+    const k = 1 + a*Math.sin(2*t+ph);
+    const x = Math.cos(t)*rx*k, y = Math.sin(t)*ry*k;
+    pts.push([cx + x*Math.cos(rot) - y*Math.sin(rot), cy + x*Math.sin(rot) + y*Math.cos(rot)]);
+  }
+  if(fill){ ctx.save(); ctx.fillStyle = fill; hpath(pts,true); ctx.fill(); ctx.restore(); }
+  hpath(pts,false); ctx.stroke();
+}
+function hcirc(cx,cy,r,fill){ hell(cx,cy,r,r,fill,0); }
+function txt(s, x, y, size, align, color){
+  ctx.save(); ctx.font = (size||16) + "px " + FONT; ctx.textAlign = align||"left";
+  ctx.fillStyle = color||"#111"; ctx.textBaseline = "middle"; ctx.fillText(s, x, y); ctx.restore();
+}
+function pow10(e, x, y, size, col){
+  ctx.save(); ctx.font = size + "px " + FONT; ctx.textBaseline = "middle"; ctx.fillStyle=col||"#111";
+  const w1 = ctx.measureText("10").width;
+  ctx.font = Math.round(size*0.68) + "px " + FONT;
+  const es = String(e).replace("-","−"), w2 = ctx.measureText(es).width;
+  const x0 = x - (w1+w2)/2;
+  ctx.font = size + "px " + FONT; ctx.fillText("10", x0, y);
+  ctx.font = Math.round(size*0.68) + "px " + FONT; ctx.fillText(es, x0 + w1 + 1, y - size*0.42);
+  ctx.restore();
+}
+
+/* ---------- Icônes (coordonnées locales, boîte ~ 64 px) ---------- */
+function icon(id, cx, cy, s){
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
+  seed(fnv(id)); ctx.strokeStyle = "#111"; ctx.lineWidth = 2/s*s*1.0; ctx.lineCap = "round"; ctx.lineJoin="round";
+  ctx.lineWidth = 2.2;
+  switch(id){
+    case "pro": hcirc(0,0,16,"#f6c9c9"); hline(-7,0,7,0); hline(0,-7,0,7); break;
+    case "ato":
+      hell(0,0,26,9,null,0.5); hell(0,0,26,9,null,-0.5);
+      hcirc(0,0,4,"#111"); hcirc(19,-12,3,"#7db7e8"); break;
+    case "vir":
+      for(let i=0;i<10;i++){ const t=i*Math.PI/5; hline(Math.cos(t)*14,Math.sin(t)*14,Math.cos(t)*23,Math.sin(t)*23); hcirc(Math.cos(t)*25,Math.sin(t)*25,2.5,"#9fd39f"); }
+      hcirc(0,0,14,"#c9eac9"); break;
+    case "glo": hell(0,0,26,17,"#f29a9a",0); hell(0,0,12,7,"#d95c5c",0); break;
+    case "che":
+      ctx.lineWidth = 4; ctx.strokeStyle="#6b4a2b";
+      hpath([[-26,22],[-14,6],[-4,8],[6,-6],[16,-4],[26,-22]],false); ctx.stroke(); break;
+    case "fou":
+      for(const dx of [-6,0,6]){ hline(dx,2,dx-8,16); hline(dx,2,dx+8,16); }
+      hell(-16,0,8,6,"#333",0); hell(0,1,7,5,"#333",0); hell(16,-1,10,7,"#333",0);
+      hline(-20,-5,-28,-16); hline(-17,-5,-20,-18); break;
+    case "cue":
+      hcirc(0,-18,8,"#fff"); hline(0,-10,0,8); hline(0,-4,-10,4); hline(0,-4,10,4); hline(0,8,-8,24); hline(0,8,8,24); break;
+    case "eif":
+      hpath([[-22,28],[-10,4],[-3,-18],[0,-30]],false); ctx.stroke();
+      hpath([[22,28],[10,4],[3,-18],[0,-30]],false); ctx.stroke();
+      hline(-13,4,13,4); hline(-6,-12,6,-12); hline(0,-30,0,-36);
+      hpath([[-16,28],[-8,16],[0,14],[8,16],[16,28]],false); ctx.stroke();
+      hline(-11,4,6,-12); hline(11,4,-6,-12); break;
+    case "eve":
+      hpath([[-30,24],[-12,-4],[-4,4],[8,-24],[30,24]],false); ctx.fillStyle="#e8e2d6"; ctx.fill(); ctx.stroke();
+      hpath([[2,-14],[8,-24],[14,-12],[10,-14],[7,-10],[4,-15]],true); ctx.fillStyle="#fff"; ctx.fill(); ctx.stroke(); break;
+    case "ter":
+      hcirc(0,0,26,"#9cc8f0");
+      hpath([[-14,-14],[-4,-18],[2,-10],[-6,-2],[-16,-4]],true); ctx.fillStyle="#7bbf6a"; ctx.fill(); ctx.stroke();
+      hpath([[6,4],[16,0],[20,10],[10,18],[4,12]],true); ctx.fill(); ctx.stroke(); break;
+    case "sol":
+      for(let i=0;i<12;i++){ const t=i*Math.PI/6; hline(Math.cos(t)*22,Math.sin(t)*22,Math.cos(t)*30,Math.sin(t)*30); }
+      hcirc(0,0,18,"#ffd54a"); break;
+    case "tso":
+      hcirc(-22,0,10,"#ffd54a"); hcirc(24,0,5,"#9cc8f0");
+      hline(-9,12,17,12); hline(-9,12,-4,8); hline(-9,12,-4,16); hline(17,12,12,8); hline(17,12,12,16); break;
+    case "al":
+      hpath([[-24,-6],[-21,-14],[-18,-6],[-10,-6],[-16,-1],[-14,8],[-21,3],[-28,8],[-26,-1],[-32,-6]],true);
+      ctx.fillStyle="#ffe680"; ctx.fill(); ctx.stroke();
+      ctx.setLineDash([5,5]); hline(-8,0,26,0); ctx.setLineDash([]); hline(26,0,20,-5); hline(26,0,20,5);
+      txt("1 an", 10, 14, 11, "center"); break;
+    case "vla":
+      for(let arm=0;arm<2;arm++){ const pts=[]; for(let i=0;i<20;i++){ const t=i*0.35+arm*Math.PI, r=2+i*1.4; pts.push([Math.cos(t)*r, Math.sin(t)*r*0.6]); } hpath(pts,false); ctx.stroke(); }
+      hcirc(0,0,4,"#ffe9a8"); break;
+    case "uni":
+      ctx.setLineDash([4,5]); hcirc(0,0,27,null); ctx.setLineDash([]);
+      ctx.fillStyle="#111"; for(let i=0;i<22;i++){ const t=rnd()*6.28, r=rnd()*22; ctx.beginPath(); ctx.arc(Math.cos(t)*r,Math.sin(t)*r,1.3,0,7); ctx.fill(); } break;
+    case "noy":
+      [[-6,-6],[6,-6],[0,0],[-7,6],[7,6],[0,-12],[0,11]].forEach((q,i)=>hcirc(q[0],q[1],7,i%2?"#f6c9c9":"#c9d9f6")); break;
+    case "rx": { const pts=[]; for(let i=0;i<=40;i++){ const x=-28+i*1.3; pts.push([x, Math.sin(i*1.1)*8]); } hpath(pts,false); ctx.stroke();
+      hline(26,0,20,-5); hline(26,0,20,5); txt("X",-24,-18,14,"center"); break; }
+    case "adn": { const a=[],b=[]; for(let i=0;i<=24;i++){ const y=-26+i*2.2; a.push([Math.sin(i*0.5)*13,y]); b.push([-Math.sin(i*0.5)*13,y]); }
+      ctx.strokeStyle="#1a4fa0"; hpath(a,false); ctx.stroke(); ctx.strokeStyle="#d95c5c"; hpath(b,false); ctx.stroke(); ctx.strokeStyle="#111"; ctx.lineWidth=1.5;
+      for(let i=2;i<24;i+=3){ const y=-26+i*2.2, x=Math.sin(i*0.5)*13; hline(-x,y,x,y); } break; }
+    case "plo": { const pts=[]; for(let i=0;i<6;i++){ const t=i*Math.PI/3+0.5; pts.push([Math.cos(t)*20,Math.sin(t)*20]); }
+      hpath(pts.concat([pts[0]]),true); ctx.fillStyle="#e3d4f2"; ctx.fill(); ctx.stroke(); hline(pts[0][0],pts[0][1],pts[3][0],pts[3][1]); hline(pts[1][0],pts[1][1],pts[4][0],pts[4][1]); hline(pts[2][0],pts[2][1],pts[5][0],pts[5][1]); break; }
+    case "bac":
+      hpath([[-14,-9],[14,-9],[22,0],[14,9],[-14,9],[-22,0],[-14,-9]],true); ctx.fillStyle="#cfe8b0"; ctx.fill(); ctx.stroke();
+      hpath([[22,0],[27,-6],[31,2],[35,-4]],false); ctx.stroke(); hpath([[-22,0],[-27,6],[-31,-2],[-35,4]],false); ctx.stroke(); break;
+    case "pap":
+      hpath([[-16,-24],[10,-24],[18,-16],[18,24],[-16,24],[-16,-24]],true); ctx.fillStyle="#fff"; ctx.fill(); ctx.stroke();
+      hline(10,-24,10,-16); hline(10,-16,18,-16); ctx.lineWidth=1.2; for(let y=-8;y<=16;y+=6) hline(-10,y,12,y); break;
+    case "eur": hcirc(0,0,22,"#e8c66a"); hcirc(0,0,15,"#cfd3d8"); txt("1",0,1,18,"center"); break;
+    case "tel":
+      hpath([[-13,-26],[13,-26],[13,26],[-13,26],[-13,-26]],true); ctx.fillStyle="#444"; ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#9cc8f0"; ctx.fillRect(-9,-20,18,36); hcirc(0,21,2,"#fff"); break;
+    case "gir":
+      hell(-4,8,15,8,"#f0c060",0); hline(8,4,16,-24); hline(13,6,20,-22); hell(20,-26,6,4,"#f0c060",0.3);
+      hline(-14,13,-15,28); hline(-8,14,-8,28); hline(2,14,2,28); hline(8,13,9,28);
+      ctx.fillStyle="#8a5a2b"; [[-8,6],[0,10],[-2,4],[6,7]].forEach(q=>{ctx.beginPath();ctx.arc(q[0],q[1],2,0,7);ctx.fill();}); break;
+    case "foo":
+      ctx.fillStyle="#9fd39f"; ctx.fillRect(-28,-18,56,36);
+      hpath([[-28,-18],[28,-18],[28,18],[-28,18],[-28,-18]],false); ctx.stroke(); hline(0,-18,0,18); hcirc(0,0,7,null);
+      hline(-28,-7,-21,-7); hline(-21,-7,-21,7); hline(-21,7,-28,7); hline(28,-7,21,-7); hline(21,-7,21,7); hline(21,7,28,7); break;
+    case "mil":
+      hline(-30,6,30,6);
+      for(const x of [-18,0,18]){ hline(x,6,x,24); hline(x,6,x,-20); hline(x,-20,x-10,6); hline(x,-20,x+10,6); } break;
+    case "mar":
+      hcirc(4,-20,6,"#fff"); hline(3,-14,-2,4); hline(1,-9,12,-3); hline(1,-9,-10,-4); hline(-2,4,10,12); hline(10,12,8,24); hline(-2,4,-14,16);
+      txt("42 km",14,22,11,"left"); break;
+    case "ply":
+      ctx.fillStyle="#111"; ctx.beginPath(); ctx.arc(-14,-16,3.5,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(14,16,3.5,0,7); ctx.fill();
+      ctx.setLineDash([4,4]); hline(-14,-16,14,16); ctx.setLineDash([]);
+      txt("Paris",-14,-27,11,"center"); txt("Lyon",14,27,11,"center"); break;
+    case "lun":
+      hcirc(0,0,24,"#d6d6d6"); hcirc(-8,-6,5,"#bdbdbd"); hcirc(9,6,4,"#bdbdbd"); hcirc(2,-13,3,"#bdbdbd"); break;
+    case "tlu": hcirc(-22,0,11,"#9cc8f0"); hcirc(24,0,4,"#d6d6d6"); hline(-8,14,18,14); hline(-8,14,-3,10); hline(-8,14,-3,18); hline(18,14,13,10); hline(18,14,13,18); break;
+    case "ven": hcirc(-22,0,7,"#9cc8f0"); hcirc(22,0,7,"#f3dfa0"); hline(-10,12,10,12); hline(-10,12,-5,8); hline(-10,12,-5,16); hline(10,12,5,8); hline(10,12,5,16); break;
+    case "nep": hcirc(-24,0,8,"#ffd54a"); hcirc(26,0,6,"#5b7fe0"); ctx.setLineDash([3,4]); hline(-14,0,18,0); ctx.setLineDash([]); hline(-12,12,22,12); hline(22,12,17,8); hline(22,12,17,16); hline(-12,12,-7,8); hline(-12,12,-7,16); break;
+    case "voy":
+      hell(-6,-6,14,14,"#eee",0); hline(-6,-6,4,4); hline(4,4,26,20); hline(4,4,-2,22); hline(4,4,22,-2);
+      ctx.fillStyle="#111"; ctx.fillRect(1,1,7,7); break;
+    case "oor":
+      hcirc(0,0,4,"#ffd54a"); ctx.fillStyle="#111";
+      for(let i=0;i<40;i++){ const t=rnd()*6.28, r=19+rnd()*9; ctx.beginPath(); ctx.arc(Math.cos(t)*r,Math.sin(t)*r,1.1,0,7); ctx.fill(); } break;
+    case "sir": case "plr": {
+      const pts=[]; for(let i=0;i<10;i++){ const t=-Math.PI/2+i*Math.PI/5, r=i%2?8:20; pts.push([Math.cos(t)*r,Math.sin(t)*r]); }
+      hpath(pts.concat([pts[0]]),true); ctx.fillStyle = id==="sir" ? "#cfe3ff" : "#ffe680"; ctx.fill(); ctx.stroke();
+      hline(-28,-20,-22,-16); hline(26,14,20,10); if(id==="plr") txt("N",22,-20,12,"center"); break; }
+    case "cga":
+      for(let arm=0;arm<2;arm++){ const pts=[]; for(let i=0;i<18;i++){ const t=i*0.38+arm*Math.PI, r=2+i*1.4; pts.push([Math.cos(t)*r, Math.sin(t)*r*0.55]); } hpath(pts,false); ctx.stroke(); }
+      ctx.fillStyle="#d95c5c"; ctx.beginPath(); ctx.arc(20,8,3,0,7); ctx.fill(); ctx.strokeStyle="#d95c5c"; hline(18,6,4,1); break;
+    case "and":
+      hell(0,0,28,9,"#efe6c8",-0.35); hell(0,0,16,5,null,-0.35); hcirc(0,0,3,"#fff4c0"); break;
+    case "com":
+      [[-16,-10,8,4,0.3],[10,-14,6,3,-0.4],[16,6,9,4,0.1],[-6,10,7,5,0.8],[0,-2,4,3,0],[-22,8,4,2,0.5]].forEach(g=>hell(g[0],g[1],g[2],g[3],"#efe6c8",g[4])); break;
+    case "qua":
+      hcirc(0,0,6,"#fff4c0"); hline(-4,-4,-24,-24); hline(4,4,24,24); hline(-6,-2,-22,-14); hline(6,2,22,14); break;
+  }
+  ctx.restore();
+}
+
+/* ---------- Cueball ---------- */
+const cb = {e: -1.6, te: -1.6, x: 0, phase: 0, mood: "idle", moodT: 0, dir: 1};
+function drawCueball(x, footY, t){
+  seed(7); ctx.save(); ctx.strokeStyle="#111"; ctx.lineWidth=3; ctx.lineCap="round"; ctx.lineJoin="round";
+  const walking = Math.abs(cb.te - cb.e) > 0.02;
+  const ph = cb.phase, sw = walking ? Math.sin(ph)*0.55 : 0;
+  const bob = walking ? Math.abs(Math.sin(ph))*-2.5 : Math.sin(t*2)*0.8;
+  const hipY = footY - 44 + bob, neckY = hipY - 42, headY = neckY - 17;
+  const L = 46;
+  // jambes
+  const sp = walking ? Math.sin(sw)*L*0.62 : 11;
+  hline(x, hipY, x + sp, footY + (walking? -Math.max(0,Math.sin(ph))*4:0));
+  hline(x, hipY, x - sp, footY + (walking? -Math.max(0,-Math.sin(ph))*4:0));
+  // corps
+  hline(x, hipY, x + cb.dir*1.5, neckY);
+  const sh = neckY + 9;
+  if(cb.mood === "wow" || cb.mood === "yay"){
+    const w = cb.mood==="yay" ? Math.sin(t*12)*0.15 : 0;
+    hline(x, sh, x - 24, sh - 26 + w*30); hline(x, sh, x + 24, sh - 26 - w*30);
+  } else {
+    // bras arrière balance, bras avant tient la loupe
+    hline(x, sh, x - cb.dir*Math.sin(sw)*20 - cb.dir*4, sh + 30);
+    const hx = x + cb.dir*26, hy = sh + 6;
+    hline(x, sh, hx, hy);
+    ctx.strokeStyle = "#8a5a2b"; ctx.lineWidth = 4; hline(hx, hy, hx + cb.dir*12, hy - 10); ctx.strokeStyle = "#111";
+    ctx.lineWidth = 2.5; hcirc(hx + cb.dir*19, hy - 16, 9, "rgba(120,190,255,.45)"); ctx.lineWidth=3;
+  }
+  // tête + écharpe
+  hcirc(x + cb.dir*1.5, headY, 15, "#fff");
+  ctx.strokeStyle = "#e8443b"; ctx.lineWidth = 5; hline(x - 6, neckY + 2, x + 7, neckY + 2);
+  hline(x - cb.dir*4, neckY + 3, x - cb.dir*(12 + Math.sin(t*5)*2), neckY + 16); ctx.strokeStyle = "#111"; ctx.lineWidth = 3;
+  ctx.restore();
+}
+
+/* ---------- Bulle ---------- */
+let bubble = {s:"", t:0};
+function say(s, dur){ bubble = {s, t: performance.now() + (dur||3500)}; }
+function drawBubble(x, y){
+  if(!bubble.s || performance.now() > bubble.t) return;
+  ctx.save(); ctx.font = "16px " + FONT;
+  const lines = bubble.s.split("\n"), w = Math.max(...lines.map(l=>ctx.measureText(l).width)) + 28, h = lines.length*21 + 16;
+  let bx = Math.min(W - w - 10, Math.max(10, x - w*0.25)), by = y - h - 36;
+  seed(42); ctx.strokeStyle="#111"; ctx.lineWidth=2;
+  hell(bx + w/2, by + h/2, w/2, h/2, "#fffbe0", 0);
+  hline(x - 4, by + h - 1, x + 6, y - 12);
+  lines.forEach((l,i)=> txt(l, bx + w/2, by + 18 + i*21, 16, "center"));
+  ctx.restore();
+}
+
+/* ---------- Mise en page ---------- */
+const AXIS_Y = 470, PXD = 104, TRAY_H = 200;
+let center = 0, targetCenter = 0;
+const ex2x = e => W/2 + (e - center)*PXD;
+const x2ex = x => center + (x - W/2)/PXD;
+
+const items = P.o.map((id,i) => ({id, i, name: CAT[id][0], dec: decimalFR(CAT[id][1], CAT[id][2]),
+  og: CAT[id][2], placed: null}));
+const n = items.length, CW = Math.min(150, (W - 20 - (n-1)*8)/n), CH = 168;
+const cardX = i => (W - (n*CW + (n-1)*8))/2 + i*(CW+8);
+
+function wrapValue(s, maxW, size){
+  ctx.save(); ctx.font = size + "px " + FONT;
+  const words = s.split(" "), out = []; let cur = "";
+  for(const w of words){ const t = cur ? cur + " " + w : w; if(ctx.measureText(t).width > maxW && cur){ out.push(cur); cur = w; } else cur = t; }
+  if(cur) out.push(cur); ctx.restore(); return out;
+}
+function wrapName(s, maxW, size){ return wrapValue(s, maxW, size); }
+
+function drawCard(it, x, y, w, h, ghost){
+  seed(fnv(it.id) + 3); ctx.save(); ctx.strokeStyle = "#111"; ctx.lineWidth = 2;
+  if(ghost){ ctx.setLineDash([6,6]); ctx.strokeStyle="#aaa"; }
+  ctx.fillStyle = ghost ? "rgba(255,255,255,.5)" : PAL[it.i % PAL.length]; ctx.fillRect(x, y, w, h);
+  hline(x-2,y,x+w+1,y+1); hline(x+w,y-1,x+w-1,y+h+2); hline(x+w+1,y+h,x-1,y+h-1); hline(x,y+h+1,x+1,y-2);
+  ctx.setLineDash([]);
+  if(ghost){ txt("posé", x+w/2, y+h/2, 15, "center", "#aaa"); ctx.restore(); return; }
+  icon(it.id, x + w/2, y + 44, 0.95);
+  const nl = wrapName(it.name, w - 12, 14);
+  nl.forEach((l,k)=> txt(l, x + w/2, y + 92 + k*17, 14, "center"));
+  const vl = wrapValue(it.dec, w - 12, 13);
+  const y0 = y + 92 + nl.length*17 + 4;
+  vl.forEach((l,k)=> txt(l, x + w/2, y0 + k*16, 13, "center", "#123c8c"));
+  ctx.restore();
+}
+function drawPin(it, x, y){
+  seed(fnv(it.id) + 9); ctx.save(); ctx.strokeStyle = "#111"; ctx.lineWidth = 2;
+  ctx.setLineDash([3,5]); hline(x, y + 30, x, AXIS_Y - 4); ctx.setLineDash([]);
+  hell(x, y, 50, 31, PAL[it.i % PAL.length], 0);
+  icon(it.id, x, y - 11, 0.45);
+  const nl = wrapName(it.name, 86, 11).slice(0,2);
+  nl.forEach((l,k)=> txt(l, x, y + 9 + k*12 - (nl.length-1)*3, 11, "center"));
+  ctx.restore();
+}
+
+/* ---------- Couleurs & décor ---------- */
+const PAL = ["#ffe9a8","#ffd1dc","#c9f0d0","#cfe3ff","#ead7ff","#ffd9b8"];
+const BGK = [[-15,[236,226,252]],[-6,[226,244,236]],[0,[224,242,255]],[7,[255,240,214]],[13,[226,230,250]],[27,[214,218,244]]];
+function bgAt(c){
+  for(let i=0;i<BGK.length-1;i++){ const [a,ca]=BGK[i],[b,cb2]=BGK[i+1];
+    if(c<=b){ const t=Math.max(0,(c-a)/(b-a)); return ca.map((v,k)=>Math.round(v+(cb2[k]-v)*t)); } }
+  return BGK[BGK.length-1][1];
+}
+const smooth = (a,b,x) => { const t=Math.max(0,Math.min(1,(x-a)/(b-a))); return t*t*(3-2*t); };
+const hueE = e => "hsl(" + Math.round(275 - (e+16)/44*275) + ",70%,38%)";
+function decor(t){
+  const cbg = bgAt(center); ctx.fillStyle = "rgb(" + cbg.join(",") + ")"; ctx.fillRect(0, TRAY_H, W, H - TRAY_H);
+  ctx.fillStyle = "#fffdf6"; ctx.fillRect(0, 0, W, TRAY_H);
+  ctx.save();
+  // étoiles (grand)
+  let a = smooth(8, 13, center);
+  if(a > 0){ ctx.globalAlpha = a; seed(31);
+    for(let i=0;i<40;i++){ const x = ((rnd()*W*1.6 - (center*18)) % W + W) % W, y = TRAY_H + 15 + rnd()*(AXIS_Y - TRAY_H - 40), r = 3 + rnd()*5, tw = 0.7 + 0.3*Math.sin(t*2 + i);
+      ctx.fillStyle = ["#f5c518","#ff9a3c","#8fb8ff"][i%3]; ctx.globalAlpha = a*tw;
+      ctx.beginPath(); for(let k=0;k<8;k++){ const rr2 = k%2 ? r*0.35 : r; ctx.lineTo(x + Math.cos(k*Math.PI/4)*rr2, y + Math.sin(k*Math.PI/4)*rr2); } ctx.fill(); } }
+  // molécules (petit)
+  a = 1 - smooth(-9, -4, center);
+  if(a > 0){ seed(53);
+    for(let i=0;i<18;i++){ const x = ((rnd()*W*1.6 - center*22 + Math.sin(t*0.7+i)*8) % W + W) % W, y = TRAY_H + 20 + rnd()*(AXIS_Y - TRAY_H - 60) + Math.cos(t*0.9+i)*6;
+      ctx.globalAlpha = a*0.55; ctx.fillStyle = ["#b48cf0","#7fd1c7","#f59ab5"][i%3];
+      ctx.beginPath(); ctx.arc(x, y, 5 + (i%3)*2, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(x + 9, y - 3, 3.5, 0, 7); ctx.fill(); } }
+  // nuages + herbe (humain)
+  a = 1 - smooth(2.5, 6, Math.abs(center - 0.5));
+  if(a > 0){ ctx.globalAlpha = a; seed(71); ctx.strokeStyle = "#7aa6d6"; ctx.lineWidth = 2;
+    for(let i=0;i<4;i++){ const x = ((i*260 + 80 - center*30 + t*6) % (W+200) + W+200) % (W+200) - 100, y = TRAY_H + 40 + (i%2)*45;
+      hell(x, y, 34, 13, "#ffffff", 0); hell(x + 22, y - 9, 20, 11, "#ffffff", 0); }
+    ctx.fillStyle = "#9bd07a"; ctx.fillRect(0, AXIS_Y, W, 8); }
+  ctx.restore();
+}
+
+/* ---------- Dessin principal ---------- */
+let drag = null, pan = null, locked = false, t0 = performance.now();
+function pinPos(){
+  const stacks = {}, pos = new Map();
+  for(const it of items){ if(it.placed === null || (drag && drag.it === it)) continue;
+    const k = stacks[it.placed] = (stacks[it.placed]||0) + 1;
+    pos.set(it, [ex2x(it.placed), Math.max(TRAY_H + 34, AXIS_Y - 172 - (k-1)*64)]); }
+  return pos;
+}
+function draw(){
+  const t = (performance.now() - t0)/1000;
+  ctx.clearRect(0,0,W,H); decor(t);
+  // tiroir
+  seed(5); ctx.strokeStyle="#111"; ctx.lineWidth=2;
+  items.forEach(it => drawCard(it, cardX(it.i), 10, CW, CH, it.placed !== null || (drag && drag.it===it)));
+  hline(10, TRAY_H + 2, W - 10, TRAY_H + 2);
+  // règle
+  ctx.save(); ctx.strokeStyle="#111"; ctx.lineWidth=3; seed(11);
+  hline(0, AXIS_Y, W, AXIS_Y);
+  ctx.lineWidth = 2;
+  const e0 = Math.ceil(x2ex(0)), e1 = Math.floor(x2ex(W));
+  for(let e=e0; e<=e1; e++){
+    const x = ex2x(e); seed(1000+e);
+    ctx.strokeStyle = hueE(e); ctx.lineWidth = 3; hline(x, AXIS_Y - 10, x, AXIS_Y + 10);
+    pow10(e, x, AXIS_Y + 30, 17, hueE(e));
+  }
+  ctx.restore();
+  txt("mètres", W - 40, AXIS_Y + 58, 13, "center", "#444");
+  // cible de dépôt
+  if(drag){
+    const e = Math.round(x2ex(drag.x));
+    if(drag.y > TRAY_H){ ctx.save(); ctx.strokeStyle = "#1a4fa0"; ctx.lineWidth = 3; seed(77); hcirc(ex2x(e), AXIS_Y, 14, null); ctx.restore(); }
+  }
+  // Cueball
+  cb.x = ex2x(cb.e);
+  drawCueball(cb.x, AXIS_Y - 2, t);
+  // épingles
+  for(const [it, p] of pinPos()) if(p[0] > -60 && p[0] < W + 60) drawPin(it, p[0], p[1]);
+  drawBubble(cb.x, AXIS_Y - 125);
+  // élément tiré
+  if(drag) drawCard(drag.it, drag.x - CW*0.4, drag.y - CH*0.3, CW*0.8, CH*0.75 > 150 ? 150 : CH*0.75, false);
+  // flèches de bord (objets hors champ)
+  let nl = 0, nr = 0;
+  for(const [it, p] of pinPos()){ if(p[0] < -40) nl++; if(p[0] > W + 40) nr++; }
+  if(nl) txt("◀ " + nl, 22, TRAY_H + 22, 15, "center", "#888");
+  if(nr) txt(nr + " ▶", W - 22, TRAY_H + 22, 15, "center", "#888");
+}
+
+/* ---------- Animation ---------- */
+const zoom = document.getElementById("zoom");
+let lastC = 0, lastComment = 0;
+function tick(){
+  center += (targetCenter - center)*0.18;
+  const lo = x2ex(70), hi = x2ex(W - 70);
+  if(!drag && (cb.te < lo || cb.te > hi)) cb.te = Math.max(lo, Math.min(hi, cb.te));
+  const d = cb.te - cb.e;
+  if(Math.abs(d) > 0.02){ cb.dir = d > 0 ? 1 : -1; cb.e += Math.sign(d)*Math.min(Math.abs(d), Math.max(0.035, Math.abs(d)*0.06)); cb.phase += 0.3; }
+  const now = performance.now();
+  if(cb.mood !== "idle" && now > cb.moodT) cb.mood = "idle";
+  if(Math.abs(center - lastC) > 3 && now - lastComment > 2500){
+    lastC = center; lastComment = now;
+    if(center < -9) say("C'est tellement petit\nque j'ai oublié de respirer.");
+    else if(center < -3) say("Ma loupe commence\nà transpirer.");
+    else if(center < 4) say("Ah, la taille humaine.\nQuel soulagement.");
+    else if(center < 14) say("Ça devient grand.\nTrès grand.");
+    else say("J'ai le vertige\ncosmique.");
+  }
+  draw(); requestAnimationFrame(tick);
+}
+
+/* ---------- Interaction ---------- */
+function ptr(ev){ const r = cv.getBoundingClientRect(); return [(ev.clientX - r.left)*W/r.width, (ev.clientY - r.top)*H/r.height]; }
+cv.addEventListener("pointerdown", ev => {
+  const [x,y] = ptr(ev); cv.setPointerCapture(ev.pointerId);
+  if(!locked){
+    for(const it of items){ const cx = cardX(it.i);
+      if(it.placed === null && x>=cx && x<=cx+CW && y>=10 && y<=10+CH){ drag = {it, x, y}; say(["Compte bien\nles zéros…","Ne te fie pas à\nla longueur du nombre.","Où est la virgule ?\nOù est-elle ?"][it.i%3]); return; } }
+    for(const [it,p] of pinPos()){ if(Math.abs(x-p[0])<46 && Math.abs(y-p[1])<30){ drag = {it, x, y}; it.placed = null; return; } }
+  }
+  if(y > TRAY_H) pan = {x, c: targetCenter};
+});
+cv.addEventListener("pointermove", ev => {
+  const [x,y] = ptr(ev);
+  if(drag){ drag.x = x; drag.y = y;
+    if(x < 40) setCenter(targetCenter - 0.08); if(x > W-40) setCenter(targetCenter + 0.08); }
+  else if(pan){ setCenter(pan.c - (x - pan.x)/PXD); }
+});
+function endPtr(ev){
+  if(drag){
+    if(drag.y > TRAY_H){ drag.it.placed = Math.max(-16, Math.min(28, Math.round(x2ex(drag.x)))); cb.te = drag.it.placed + (cb.e < drag.it.placed ? -0.62 : 0.62); say("Je vais voir ça…", 1500); }
+    drag = null; updBtn();
+  }
+  pan = null;
+}
+cv.addEventListener("pointerup", endPtr); cv.addEventListener("pointercancel", endPtr);
+cv.addEventListener("wheel", ev => { ev.preventDefault(); setCenter(targetCenter + Math.sign(ev.deltaY)*0.6); }, {passive:false});
+function setCenter(c){ targetCenter = Math.max(-15, Math.min(27, c)); zoom.value = targetCenter; }
+zoom.addEventListener("input", () => { targetCenter = +zoom.value; });
+
+const btn = document.getElementById("btnVal"), codeEl = document.getElementById("code");
+function updBtn(){ btn.disabled = locked || items.some(it => it.placed === null); }
+if(!P.g){ btn.style.display = "none"; codeEl.style.display = "none"; }
+btn.addEventListener("click", () => {
+  if(items.some(it => it.placed === null)){ say("Il en reste\ndans le tiroir !"); return; }
+  const score = items.filter(it => it.placed === it.og).length;
+  codeEl.textContent = makeCode(P.s, score, n);
+  locked = true; updBtn(); cb.mood = "yay"; cb.moodT = performance.now() + 2500;
+  say("Recopie ce code\ndans Moodle. Vite !", 5000);
+});
+const btnRec = document.getElementById("btnRec");
+if(!P.rec) btnRec.style.display = "none";
+btnRec.addEventListener("click", () => {
+  items.forEach(it => it.placed = null); locked = false; drag = null;
+  codeEl.textContent = "—"; cb.mood = "idle"; updBtn();
+  say("On reprend tout\ndepuis le début !", 2500);
+});
+setCenter(P.c||0); center = targetCenter; updBtn();
+say("Aide-moi à ranger tout ça\nsur l'échelle des tailles !", 5000);
+tick();
+})();
+</script>
+</body>
+</html>
