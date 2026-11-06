@@ -127,7 +127,7 @@ button.go{background:var(--green)}
 .overlay{position:absolute;inset:0;background:rgba(255,255,255,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;text-align:center;padding:20px}
 .overlay h1{font-size:40px;margin:0 0 10px;letter-spacing:1px;-webkit-text-stroke:1.5px var(--ink);color:var(--yel);text-shadow:4px 4px 0 var(--ink)}
 .overlay p{font-size:18px;margin:6px 0}
-.code{font-family:"Courier New",monospace;font-size:30px;font-weight:bold;letter-spacing:6px;background:var(--yel);border:3px solid var(--ink);padding:4px 16px;box-shadow:4px 4px 0 var(--ink);display:inline-block;margin:8px 0}
+.code{user-select:all;-webkit-user-select:all;cursor:text;font-family:"Courier New",monospace;font-size:30px;font-weight:bold;letter-spacing:6px;background:var(--yel);border:3px solid var(--ink);padding:4px 16px;box-shadow:4px 4px 0 var(--ink);display:inline-block;margin:8px 0}
 .dots{display:flex;gap:6px}
 .dot{width:20px;height:20px;border:2.5px solid var(--ink);border-radius:50%;background:#fff}
 .dot.ok{background:var(--green)}.dot.ko{background:var(--red)}.dot.cur{background:var(--yel)}
@@ -143,6 +143,7 @@ button.go{background:var(--green)}
   <div class="panel halftone-y">
     <div class="top">
       <span class="caption" id="tourLbl" style="font-size:20px">Tour 1 / 5</span>
+      <span class="caption" id="scoreLbl" style="font-size:20px;background:#fff">Score : 0</span>
       <button id="btnRestart" style="font-size:14px;padding:4px 12px;box-shadow:3px 3px 0 var(--ink)">↺ Recommencer</button>
     </div>
     <ol class="rules">
@@ -261,7 +262,7 @@ function deal(){
   var idx=[];for(var q=0;q<TOURS;q++)idx.push(q);shuffle(idx);PLAN=[];
   for(var t=0;t<TOURS;t++)PLAN[t]="free";
   PLAN[0]="N";if(TOURS>1){var other=idx.filter(function(i){return i>0;});PLAN[other[0]]="N";}
-  for(var t2=0;t2<TOURS;t2++)if(PLAN[t2]==="free"&&(1+Math.floor(rnd()*6))>=5)PLAN[t2]="X";
+  for(var t2=0;t2<TOURS;t2++)if(PLAN[t2]==="free"){var de=1+Math.floor(rnd()*6);PLAN[t2]=de>=5?"X":(de===4?"N":(de>=2?"A":"free"));}
 }
 var PLAN=[],TYPEDONE=[],TMAX=[];
 if(qs.get("debug")==="1")window.__plan=function(){return {plan:PLAN,done:TYPEDONE};};
@@ -273,6 +274,7 @@ function fitsType(c,type){
   if(type==="X")return r.length===0;
   if(type==="N")return r.length>0&&r.every(function(h){return h.N===c.N&&h.Z!==c.Z&&h.A!==c.A;});
   if(type==="Ns")return r.some(function(h){return h.N===c.N;});
+  if(type==="A")return r.length>0&&!r.some(function(h){return h.N===c.N;})&&r.some(function(h){return h.A===c.A;});
   return r.length>0&&!r.some(function(h){return h.N===c.N;});
 }
 
@@ -297,6 +299,7 @@ function fitHand(){
 window.addEventListener("resize",fitHand);
 function render(){
   $("tourLbl").textContent="Tour "+Math.min(tour,TOURS)+" / "+TOURS;
+  $("scoreLbl").textContent="Score : "+score;
   var b=$("ordiBacks");b.innerHTML="";for(var j=0;j<Math.min(ordi.length,8);j++){b.appendChild(Object.assign(document.createElement("div"),{className:"back"}));}
   var p=$("pile");p.innerHTML="";
   if(top){var t=cardEl(top,true);t.style.cursor="default";t.style.transform="rotate("+(Math.random()*6-3).toFixed(1)+"deg)";p.appendChild(t);}
@@ -344,7 +347,7 @@ function strike(){
   setTimeout(function(){st.classList.remove("on");st.innerHTML="";app.classList.remove("shakeAll");},2450);
 }
 function plusOne(pts){
-  var app=$("app"),ra=app.getBoundingClientRect(),rp=$("pile").getBoundingClientRect(),rs=$("tourLbl").getBoundingClientRect();
+  var app=$("app"),ra=app.getBoundingClientRect(),rp=$("pile").getBoundingClientRect(),rs=$("scoreLbl").getBoundingClientRect();
   var e=document.createElement("div");e.className="plus1";e.textContent="+"+pts;if(pts===3)e.style.fontSize="64px";
   e.style.left=(rp.left-ra.left+rp.width/2-28)+"px";e.style.top=(rp.top-ra.top+rp.height/2-30)+"px";e.style.transform="scale(.3)";
   app.appendChild(e);
@@ -352,7 +355,7 @@ function plusOne(pts){
     e.style.transform="scale(1.3) rotate(-10deg)";
     later(function(){e.style.left=(rs.left-ra.left+rs.width-30)+"px";e.style.top=(rs.top-ra.top-20)+"px";e.style.transform="scale(.6) rotate(10deg)";e.style.opacity="0";},250);
   });});
-  setTimeout(function(){e.remove();var sl=$("tourLbl");sl.classList.remove("bump");void sl.offsetWidth;sl.classList.add("bump");},1050);
+  setTimeout(function(){e.remove();var sl=$("scoreLbl");sl.classList.remove("bump");void sl.offsetWidth;sl.classList.add("bump");},1050);
 }
 
 /* ---------- tour de l'ordi ---------- */
@@ -414,10 +417,11 @@ function ordiPlay(){
       else{var c2=POOL.filter(function(p){return ok(p,top)&&p.k!==top.k&&notInHand(p);});if(c2.length){c=Object.assign({},pick(c2));drew=true;}}
     }
     if(!c){(function(){var r=top?repliesOf(top):[];TMAX[tour-1]=r.some(function(h){return h.N===top.N;})?3:(r.length?1:0);})();ordi.push(drawRandom(ordi));say("Je ne peux pas jouer, je pioche.");busy=false;msg("À toi ! Choisis une carte puis clique sur POSER.");render();return;}
-    say(drew?"Rien dans ma main… je pioche et je pose !":pick(["Au hasard : celle-là !","Euh… celle-ci ?","Plouf plouf… je pose !","Je ferme les yeux et je joue."]));
+    say(drew?pick(["Aucune de mes cartes ne va… je pioche et je pose !","Pas la bonne dans ma main. Pioche… et hop !"]):pick(["Au hasard : celle-là !","Euh… celle-ci ?","Plouf plouf… je pose !","Je ferme les yeux et je joue."]));
     (function(){var r=repliesOf(c);TMAX[tour-1]=r.some(function(h){return h.N===c.N;})?3:(r.length?1:0);})();
     var src=drew?$("deck"):($("ordiBacks").lastElementChild||$("ordiBacks"));
     render();
+    var emp=$("pile").querySelector(".empty");if(emp)emp.style.visibility="hidden";
     flyCard(c,src,function(){
       top=c;ordiLast=c;render();
       var pc=$("pile").firstElementChild;if(pc)pc.classList.add("landed");
@@ -452,9 +456,18 @@ function finish(){
   var o=$("overlay");
   o.innerHTML='<h1>'+(score>=10?"BRAVO&nbsp;!":"FIN&nbsp;!")+'</h1>'+
   '<p>Score : <b>'+score+' point'+(Math.abs(score)>1?'s':'')+'</b> &nbsp;→&nbsp; note : <b>'+Math.max(0,Math.min(score,10))+' / 10</b></p>'+
-  '<p style="margin-top:10px">Code à recopier dans Moodle :</p><div class="code">'+codeVerif(SEED,Math.max(0,Math.min(score,10)))+'</div>'+
+  '<p style="margin-top:10px">Code à recopier dans Moodle :</p><div class="code" id="codeBox">'+codeVerif(SEED,Math.max(0,Math.min(score,10)))+'</div>'+
+  '<div style="margin-top:10px"><button id="btnCopy" class="go">Copier le code</button></div>'+
   '<div style="margin-top:16px"><button id="btnAgain">Recommencer</button></div>';
   $("btnAgain").onclick=start;
+  $("btnCopy").onclick=function(){
+    var txt=$("codeBox").textContent,b=$("btnCopy");
+    function done(){b.textContent="Copié !";setTimeout(function(){b.textContent="Copier le code";},1500);}
+    function fallback(){var ta=document.createElement("textarea");ta.value=txt;ta.style.position="absolute";ta.style.left="-9999px";document.body.appendChild(ta);ta.select();
+      try{document.execCommand("copy");done();}catch(e){}ta.remove();
+      var r=document.createRange();r.selectNodeContents($("codeBox"));var sl=window.getSelection();sl.removeAllRanges();sl.addRange(r);}
+    try{if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(txt).then(done,fallback);else fallback();}catch(e){fallback();}
+  };
   o.style.display="flex";
 }
 function start(){
