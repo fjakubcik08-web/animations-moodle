@@ -36,7 +36,9 @@ html,body{margin:0;background:#fff;font-family:"Comic Sans MS","Comic Neue","Cha
 .card.sh{box-shadow:4px 4px 0 var(--ink)}
 .hand .card:hover{transform:translateY(-6px) rotate(-2deg)}
 .hand .card.sel{transform:translateY(-14px);background:var(--yel)}
-.hand{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;min-height:166px;padding-top:14px}
+.hand{display:flex;justify-content:center;flex-wrap:nowrap;min-height:166px;padding-top:14px;padding-left:4px;padding-right:4px}
+.hand .card{flex:0 0 auto;margin-left:12px}.hand .card:first-child{margin-left:0}
+.hand .card:hover{z-index:60 !important}
 .empty{width:118px;height:162px;border:3px dashed var(--ink);border-radius:10px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:15px;background:rgba(255,255,255,.6)}
 .deck{width:80px;height:112px;cursor:pointer;position:relative}
 .deck .back{position:absolute;width:80px;height:112px;margin:0}
@@ -146,7 +148,7 @@ button.go{background:var(--green)}
     <ol class="rules">
       <li>Pose une carte qui a <b>le même Z</b>, <b>le même N</b> ou <b>le même A</b> que la carte du dessus.</li>
       <li>Aucune carte ne convient ? Clique sur <b>PIOCHER</b>.</li>
-      <li>Une seule tentative par tour. Même <b>Z</b> ou même <b>A</b> : <b>1 point</b>. Même <b>N</b> : <b>3 points</b>. Pioche : <b>0 point</b>.</li>
+      <li>Une seule tentative par tour. Même <b>Z</b> ou même <b>A</b> : <b>1 point</b>. Même <b>N</b> : <b>3 points</b>. Pioche : <b>0 point</b>. Mauvaise carte : <b>−1 point</b>.</li>
     </ol>
   </div>
 
@@ -286,6 +288,13 @@ function cardEl(c,big){
     '<div class="wob"></div><div class="na"><span>'+c.A+'</span><span>'+c.Z+'</span></div><div class="sym">'+c.s+'</div>';
   return d;
 }
+function fitHand(){
+  var h=$("hand"),cs=h.children,n=cs.length;if(!n)return;
+  var w=cs[0].offsetWidth,avail=h.clientWidth-8,gap=12;
+  var step=(n*w+(n-1)*gap<=avail)?w+gap:Math.max(18,(avail-w)/(n-1));
+  for(var i=1;i<n;i++)cs[i].style.marginLeft=(step-w)+"px";
+}
+window.addEventListener("resize",fitHand);
 function render(){
   $("tourLbl").textContent="Tour "+Math.min(tour,TOURS)+" / "+TOURS;
   var b=$("ordiBacks");b.innerHTML="";for(var j=0;j<Math.min(ordi.length,8);j++){b.appendChild(Object.assign(document.createElement("div"),{className:"back"}));}
@@ -293,8 +302,9 @@ function render(){
   if(top){var t=cardEl(top,true);t.style.cursor="default";t.style.transform="rotate("+(Math.random()*6-3).toFixed(1)+"deg)";p.appendChild(t);}
   else p.innerHTML='<div class="empty">En attente de l\'ordi…</div>';
   var h=$("hand");h.innerHTML="";
-  hand.forEach(function(c,i){var e=cardEl(c,false);if(i===sel)e.classList.add("sel");
+  hand.forEach(function(c,i){var e=cardEl(c,false);if(i===sel)e.classList.add("sel");e.style.zIndex=(i===sel?50:i+1);
     e.onclick=function(){if(busy)return;sel=(sel===i?-1:i);render();};h.appendChild(e);});
+  fitHand();
   $("btnPlay").disabled=busy||sel<0;$("btnDraw").disabled=busy;
 }
 function say(t){$("bubble").textContent=t;}
@@ -315,7 +325,7 @@ function sadAnim(){
   var sd=$("sad"),words=["OH NON...","RATÉ...","PERDU..."],w=words[Math.floor(Math.random()*words.length)];
   var h='<div class="spin"></div><div class="flash"></div><div class="rain"></div><div class="scan"></div><div class="star">★</div>';
   for(var i=0;i<6;i++)h+='<div class="tear" style="left:'+(20+i*12+Math.random()*4).toFixed(0)+'%;animation-delay:'+(0.9+Math.random()*1.2).toFixed(2)+'s"></div>';
-  h+='<div class="txt"><b>'+w+'</b><i>Carte refusée : +1 carte</i></div>';
+  h+='<div class="txt"><b>'+w+'</b><i>−1 point · +1 carte</i></div>';
   sd.innerHTML=h;sd.classList.remove("on");void sd.offsetWidth;sd.classList.add("on");
   var pan=document.querySelectorAll("#app > .panel");pan.forEach(function(p){p.classList.add("gray");});
   setTimeout(function(){sd.classList.remove("on");sd.innerHTML="";pan.forEach(function(p){p.classList.remove("gray");});},3700);
@@ -428,7 +438,7 @@ $("btnPlay").onclick=function(){
   if(top&&ok(c,top)&&c.k!==top.k){var pts=(c.N===top.N)?3:1;hand.splice(sel,1);top=c;burst(true,pts);msg(pts===3?"Même N : +3 points !":"Carte acceptée : +1 point");say(pick(["Bien vu !","OK, à moi.","Joli."]));endTurn(pts);}
   else{sadAnim();$("tablePanel").classList.add("shake");setTimeout(function(){$("tablePanel").classList.remove("shake");},400);
     hand.push(drawRandom(top?hand.concat([top]):hand));hand.sort(function(a,b){return a.Z-b.Z||a.A-b.A;});
-    msg("Carte refusée : tu pioches une carte.");say("Oups, pas celle-là.");endTurn(0,true);}
+    msg("Carte refusée : −1 point et tu pioches une carte.");say("Oups, pas celle-là.");endTurn(-1,true);}
 };
 $("btnDraw").onclick=function(){
   if(busy)return;var had=hand.some(function(h){return top&&ok(h,top)&&h.k!==top.k;});
@@ -441,8 +451,8 @@ function note10(){var m=maxP();var n=m?Math.round(20*score/m)/2:10;return String
 function finish(){
   var o=$("overlay");
   o.innerHTML='<h1>'+(score>=10?"BRAVO&nbsp;!":"FIN&nbsp;!")+'</h1>'+
-  '<p>Score : <b>'+score+' point'+(score>1?'s':'')+'</b> &nbsp;→&nbsp; note : <b>'+Math.min(score,10)+' / 10</b></p>'+
-  '<p style="margin-top:10px">Code à recopier dans Moodle :</p><div class="code">'+codeVerif(SEED,Math.min(score,10))+'</div>'+
+  '<p>Score : <b>'+score+' point'+(Math.abs(score)>1?'s':'')+'</b> &nbsp;→&nbsp; note : <b>'+Math.max(0,Math.min(score,10))+' / 10</b></p>'+
+  '<p style="margin-top:10px">Code à recopier dans Moodle :</p><div class="code">'+codeVerif(SEED,Math.max(0,Math.min(score,10)))+'</div>'+
   '<div style="margin-top:16px"><button id="btnAgain">Recommencer</button></div>';
   $("btnAgain").onclick=start;
   o.style.display="flex";
