@@ -227,7 +227,7 @@ function newRule(first){
   rule={t,val,text:ruleText(t,val),hits:0,errs:0,esc:0};
 }
 function spawn(){
-  const M=pool.filter(isOk),D=pool.filter(e=>!isOk(e));
+  const M=pool.filter(isOk),D=pool.filter(e=>!isOk(e)&&!(rule.ref&&same(e,rule.ref)));
   let e;
   const anyOk=atoms.some(a=>isOk(a));
   if(Math.random()<(anyOk?.4:.75)||!D.length)e=pick(M);
@@ -463,9 +463,11 @@ function update(dt){
     }
   }
   for(const b of bullets){
-    for(const a of atoms){
-      if(a.dead||b.dead)continue;
-      if(Math.abs(b.x-a.x)<a.r+6&&b.y<a.y+a.r&&b.y+58>a.y-a.r){
+    let a=null;
+    for(const c of atoms){if(c.dead)continue;
+      if(Math.abs(b.x-c.x)<c.r+2&&b.y<c.y+c.r&&b.y+58>c.y-c.r&&(!a||c.y>a.y))a=c;}
+    {
+      if(a&&!b.dead){
         b.dead=a.dead=true;
         if(isOk(a)){score+=Math.round(10*mult());hits++;rule.hits++;bigBoom(a);addFx(a.x,a.y-10,pick(['WOW !','YES !','SUPER !','BRAVO !']),'#7b1fa2',28,false);streak++;if(shieldT<=0)shieldG=Math.min(1,shieldG+.06);
           if(streak===3)doCheer('GO GO GO !');else if(streak===5)doCheer('EN FEU !!');else if(streak>5&&streak%3===0)doCheer(pick(['INARRÊTABLE !','LÉGENDAIRE !','TOP GUN !']));
