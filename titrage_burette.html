@@ -19,6 +19,22 @@
   #bBur{ min-width:220px; font-weight:bold; }
   #bBur.on{ background:#ffe9a8; }
   #bAgit.on{ background:#c9f2c9; }
+  #wrap{ position:relative; }
+  #sm{ display:none; position:absolute; inset:6px; background:rgba(255,255,255,.97); z-index:10; overflow:auto;
+       border:2.5px solid var(--ink); border-radius:14px 6px 16px 5px / 6px 14px 5px 16px; padding:14px 18px; box-sizing:border-box; }
+  #sm.on{ display:block; }
+  #sm h2{ margin:0 0 8px; font-size:20px; }
+  #sm h3{ margin:12px 0 6px; font-size:15px; }
+  #smPre{ display:flex; flex-wrap:wrap; gap:8px; }
+  #smPre button{ font-size:13px; padding:5px 11px; }
+  #sm .g{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px 18px; }
+  #sm label{ display:flex; flex-direction:column; font-size:13px; gap:2px; }
+  #sm input[type=text]{ font:15px system-ui,sans-serif; padding:5px 7px; border:2px solid var(--ink); border-radius:6px; }
+  #sm input[type=color]{ width:100%; height:32px; border:2px solid var(--ink); border-radius:6px; padding:0 2px; background:#fff; }
+  #sm .row{ display:flex; gap:8px; align-items:center; margin-top:6px; }
+  #sm textarea{ flex:1; font:12px monospace; height:44px; border:2px solid var(--ink); border-radius:6px; resize:none; }
+  #sm .act{ display:flex; gap:12px; justify-content:center; margin-top:14px; }
+  #sm small{ color:#666; }
 </style>
 </head>
 <body>
@@ -34,6 +50,28 @@
     <button id="bBur" title="Clic : une goutte — maintenir : écoulement">Burette ▼ (clic = 1 goutte · maintenir = couler)</button>
     <button id="bAgit">Agitateur : OFF</button>
     <button id="bReset">Recommencer</button>
+  </div>
+  <div id="sm">
+    <h2>⚙ Menu secret — paramètres du titrage</h2>
+    <h3>Presets</h3>
+    <div id="smPre"></div>
+    <h3>Réglages <small>(chimie : _ indice, ^ exposant, {} groupe — ex : Fe^{2+}, MnO_4^-)</small></h3>
+    <div class="g">
+      <label>Titrant (tn)<input type="text" id="f_tn"></label>
+      <label>C titrant en mol/L (c)<input type="text" id="f_c"></label>
+      <label>Titré (td)<input type="text" id="f_td"></label>
+      <label>V titré en mL (vt)<input type="text" id="f_vt"></label>
+      <label>V équivalence en mL (ve)<input type="text" id="f_ve"></label>
+      <label>Couleur titrant burette (ct)<input type="color" id="f_ct"></label>
+      <label>Couleur avant équivalence (cb)<input type="color" id="f_cb"></label>
+      <label>Couleur après équivalence (ca)<input type="color" id="f_ca"></label>
+      <label style="flex-direction:row;align-items:center;gap:8px">Décor cartoon (bg)<input type="checkbox" id="f_bg"></label>
+    </div>
+    <h3>Lien codé</h3>
+    <div class="row"><textarea id="smUrl" readonly></textarea><button data-cp="smUrl">Copier</button></div>
+    <h3>Iframe Moodle</h3>
+    <div class="row"><textarea id="smIfr" readonly></textarea><button data-cp="smIfr">Copier</button></div>
+    <div class="act"><button id="smGo">Appliquer et tester</button><button id="smClose">Fermer</button></div>
   </div>
 </div>
 <script>
@@ -66,19 +104,30 @@ function xorDecode(p){
   }catch(e){ return {}; }
 }
 
+function xorEncode(obj){
+  const d = new TextEncoder().encode(JSON.stringify(obj));
+  const k = new TextEncoder().encode(KEY);
+  let bin = "";
+  for(let i=0;i<d.length;i++) bin += String.fromCharCode(d[i] ^ k[i % k.length]);
+  return btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+
 const DEF = { tn:"(K^+ + MnO_4^-)", c:"2.00e-2", td:"(Fe^{2+} + SO_4^{2-})", vt:"20.0",
               ve:12.4, cb:"#dfeccb", ca:"#e7a3d3", ct:"#7b2a8e", bg:1 };
 const P = Object.assign({}, DEF);
+const NO_PARAM = (location.search.replace(/^\?/,"").trim()==="");   // ouvert sans paramètre -> menu secret (clic sur l'animation)
+function normP(){
+  for(const k of ["cb","ca","ct"]){ let s=String(P[k]).trim(); if(s[0]!=="#") s="#"+s; P[k]=s; }
+  P.ve = parseFloat(String(P.ve).replace(",", "."));
+  if(!isFinite(P.ve)) P.ve = DEF.ve;
+}
 (function(){
   const q = new URLSearchParams(location.search);
   if(q.get("p")) Object.assign(P, xorDecode(q.get("p")));
   for(const k of Object.keys(DEF)) if(q.has(k)) P[k] = q.get(k);
-  for(const k of ["cb","ca","ct"]){ let s=String(P[k]).trim(); if(s[0]!=="#") s="#"+s; P[k]=s; }
-  P.ve = parseFloat(String(P.ve).replace(",", "."));
-  if(!isFinite(P.ve)) P.ve = DEF.ve;
+  normP();
 })();
-const VT  = parseFloat(String(P.vt).replace(",", ".")) || 20;
-const VEQ = P.ve;
+let VT, VEQ;
 const VMAX = 25;            // burette 25 mL
 const DROP = 0.05;          // volume d'une goutte (mL)
 const FLOW = 0.8;           // débit en écoulement continu (mL/s)
@@ -90,9 +139,8 @@ function hex2rgb(h){
   const n = parseInt(h,16);
   return isFinite(n) ? [(n>>16)&255,(n>>8)&255,n&255] : [200,200,200];
 }
-const CB = hex2rgb(P.cb), CA = hex2rgb(P.ca), CT = hex2rgb(P.ct);
+let CB, CA, CT, CTV;
 /* couleur visible du titrant (solution incolore -> légère teinte bleutée pour voir le ménisque) */
-const CTV = ((0.299*CT[0]+0.587*CT[1]+0.114*CT[2])/255 > 0.82) ? [175,205,230] : CT;
 const lerp = (a,b,t)=>a+(b-a)*t;
 const mix = (c1,c2,t)=>c1.map((v,i)=>Math.round(lerp(v,c2[i],t)));
 const rgba = (c,a)=>`rgba(${c[0]},${c[1]},${c[2]},${a})`;
@@ -164,7 +212,16 @@ const BUR_END = yBur(VMAX)+18;                   // bas du tube gradué
 const COCK_Y = BUR_END+14;                       // robinet
 const TIP_Y = COCK_Y+44;                         // extrémité de la pointe
 const BK = { cx:BX, top:TIP_Y-18, bot:530, w:160 };   // bécher
-const BK_CAP = (VT+VMAX<=90) ? 100 : 250;
+let BK_CAP;
+function applyP(){
+  VT  = parseFloat(String(P.vt).replace(",", ".")) || 20;
+  VEQ = P.ve;
+  CB = hex2rgb(P.cb); CA = hex2rgb(P.ca); CT = hex2rgb(P.ct);
+  /* titrant incolore -> légère teinte bleutée pour voir le ménisque */
+  CTV = ((0.299*CT[0]+0.587*CT[1]+0.114*CT[2])/255 > 0.82) ? [175,205,230] : CT;
+  BK_CAP = (VT+VMAX<=90) ? 100 : 250;
+}
+applyP();
 const BK_INNER = (BK.bot-8) - (BK.top+16);        // hauteur utile
 const yBk = v => (BK.bot-8) - v/BK_CAP*BK_INNER;
 
@@ -558,6 +615,55 @@ function draw(){
   drawLabelBurette();
   drawZoom();
   drawMsg();
+}
+
+/* ---------- menu secret (uniquement si la page est ouverte sans paramètre) ---------- */
+const PRESETS = [
+  {n:"MnO₄⁻ / Fe²⁺", p:{tn:"(K^+ + MnO_4^-)", c:"2.00e-2", td:"(Fe^{2+} + SO_4^{2-})", vt:"20.0", ve:12.4, cb:"#dfeccb", ca:"#e7a3d3", ct:"#7b2a8e"}},
+  {n:"Thiosulfate / I₂", p:{tn:"(2Na^+ + S_2O_3^{2-})", c:"1.00e-1", td:"I_2", vt:"10.0", ve:14.6, cb:"#c9862b", ca:"#f7f7f2", ct:"#ffffff"}},
+  {n:"NaOH / HCl + BBT", p:{tn:"(Na^+ + HO^-)", c:"1.00e-1", td:"(H_3O^+ + Cl^-)", vt:"20.0", ve:15.2, cb:"#f2dc4b", ca:"#3f6fc4", ct:"#ffffff"}},
+  {n:"NaOH / acide + phénol.", p:{tn:"(Na^+ + HO^-)", c:"1.00e-1", td:"CH_3COOH", vt:"10.0", ve:11.8, cb:"#f7f7f2", ca:"#e64ca6", ct:"#ffffff"}},
+  {n:"I₂ / vitamine C + amidon", p:{tn:"I_2", c:"5.00e-3", td:"C_6H_8O_6", vt:"20.0", ve:9.6, cb:"#f7f7f2", ca:"#2b2a6b", ct:"#a0601e"}},
+];
+const FIELDS = ["tn","c","td","vt","ve","cb","ca","ct"];
+const sm = document.getElementById("sm");
+const fld = k => document.getElementById("f_"+k);
+function toHex6(h){ const c=hex2rgb(String(h)); return "#"+c.map(v=>v.toString(16).padStart(2,"0")).join(""); }
+function fillForm(o){
+  for(const k of FIELDS){ if(o[k]===undefined) continue;
+    fld(k).value = ["cb","ca","ct"].includes(k) ? toHex6(o[k]) : String(o[k]); }
+  if(o.bg!==undefined) fld("bg").checked = String(o.bg)!=="0";
+}
+function readForm(){
+  const o={};
+  for(const k of FIELDS) o[k]=fld(k).value.trim();
+  o.ve = parseFloat(o.ve.replace(",",".")); if(!isFinite(o.ve)) o.ve=DEF.ve;
+  o.vt = o.vt.replace(",","."); o.c = o.c.replace(",",".");
+  o.bg = fld("bg").checked ? 1 : 0;
+  return o;
+}
+function baseURL(){
+  return (location.protocol==="file:") ? "https://fjakubcik08-web.github.io/animations-moodle/titrage_burette.html"
+                                       : location.origin+location.pathname;
+}
+function updOut(o){
+  const url = baseURL()+"?p="+xorEncode(o);
+  document.getElementById("smUrl").value = url;
+  document.getElementById("smIfr").value = `<iframe src="${url}" width="900" height="700" style="border:0;max-width:100%;" title="Titrage — burette"></iframe>`;
+}
+if(NO_PARAM){
+  const pre=document.getElementById("smPre");
+  PRESETS.forEach(pr=>{ const b=document.createElement("button"); b.textContent=pr.n;
+    b.onclick=()=>{ fillForm(pr.p); updOut(readForm()); }; pre.appendChild(b); });
+  cv.addEventListener("click",()=>{ fillForm(P); updOut(readForm()); sm.classList.add("on"); });
+  sm.addEventListener("input",()=>updOut(readForm()));
+  document.getElementById("smGo").onclick=()=>{ Object.assign(P, readForm()); normP(); applyP(); reset(); sm.classList.remove("on"); };
+  document.getElementById("smClose").onclick=()=>sm.classList.remove("on");
+  sm.querySelectorAll("[data-cp]").forEach(b=>b.onclick=()=>{
+    const t=document.getElementById(b.dataset.cp); t.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).catch(()=>document.execCommand("copy"));
+    b.textContent="✓"; setTimeout(()=>b.textContent="Copier",1200);
+  });
 }
 
 let last=performance.now();
