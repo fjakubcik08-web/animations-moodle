@@ -217,6 +217,8 @@ function applyP(){
   VT  = parseFloat(String(P.vt).replace(",", ".")) || 20;
   VEQ = P.ve;
   CB = hex2rgb(P.cb); CA = hex2rgb(P.ca); CT = hex2rgb(P.ct);
+  /* pas de changement de couleur visible (cb ~ ca) -> on force un virage : teinte assombrie */
+  if(Math.hypot(CA[0]-CB[0], CA[1]-CB[1], CA[2]-CB[2]) < 45) CA = CB.map(v => Math.round(v*0.55));
   /* titrant incolore -> légère teinte bleutée pour voir le ménisque */
   CTV = ((0.299*CT[0]+0.587*CT[1]+0.114*CT[2])/255 > 0.82) ? [175,205,230] : CT;
   BK_CAP = (VT+VMAX<=90) ? 100 : 250;
