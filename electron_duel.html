@@ -14,10 +14,85 @@ canvas{display:block;touch-action:none;cursor:crosshair;outline:none}
 #copyBtn{flex:0 0 32%;box-sizing:border-box;background:#ff3b5c;color:#fff;border:3px solid #fff;border-radius:8px;cursor:pointer;
   font-family:"Courier New",Courier,monospace;font-weight:bold}
 #copyBtn:active{transform:translateY(1px)}
+.comic{position:absolute;pointer-events:none;overflow:visible;z-index:5}
+.comic .lines{position:absolute;inset:0;opacity:0;animation:lnFlash .45s ease-out forwards}
+.comic .bb,.comic .bf{position:absolute;left:50%;top:50%;width:calc(var(--bw) * var(--sc));height:calc(var(--bh) * var(--sc));transform:translate(-50%,-50%) scale(0)}
+.comic .bb{background:#000;animation:burst 1.25s cubic-bezier(.2,1.9,.4,1) forwards}
+.comic .bf{background:radial-gradient(circle,rgba(0,0,0,.28) 22%,transparent 24%) 0 0/calc(7px * var(--sc)) calc(7px * var(--sc)),var(--c1);
+  animation:burst 1.25s cubic-bezier(.2,1.9,.4,1) .03s forwards}
+.comic .in{position:absolute;left:50%;top:50%;width:calc(var(--bw) * .62 * var(--sc));height:calc(var(--bh) * .62 * var(--sc));transform:translate(-50%,-50%) scale(0);
+  background:var(--c3);animation:burst 1.25s cubic-bezier(.2,1.9,.4,1) .06s forwards}
+.comic .w{position:absolute;left:50%;top:50%;white-space:nowrap;font:italic 900 calc(var(--fs) * var(--sc))/1 Impact,"Arial Black","Comic Sans MS",sans-serif;letter-spacing:.02em;
+  color:var(--c2);-webkit-text-stroke:calc(2px * var(--sc)) #000;
+  text-shadow:calc(2px * var(--sc)) calc(2px * var(--sc)) 0 #000,calc(4px * var(--sc)) calc(4px * var(--sc)) 0 #000,calc(6px * var(--sc)) calc(6px * var(--sc)) 0 var(--c4);
+  transform:translate(-50%,-50%) rotate(var(--r)) scale(0);animation:word 1.25s cubic-bezier(.3,2,.5,1) .08s forwards}
+.comic .dot{position:absolute;left:50%;top:50%;width:calc(14px * var(--sc));height:calc(14px * var(--sc));border-radius:50%;background:var(--c2);border:calc(2px * var(--sc)) solid #000;
+  transform:translate(-50%,-50%);animation:fly .8s ease-out forwards}
+@keyframes lnFlash{0%{opacity:0}20%{opacity:.9}100%{opacity:0}}
+@keyframes burst{0%{opacity:1;transform:translate(-50%,-50%) scale(0) rotate(-25deg)}35%{transform:translate(-50%,-50%) scale(1.25) rotate(8deg)}55%{transform:translate(-50%,-50%) scale(.95) rotate(-4deg)}
+  75%{transform:translate(-50%,-50%) scale(1.03) rotate(2deg);opacity:1}100%{transform:translate(-50%,-50%) scale(1.6) rotate(12deg);opacity:0}}
+@keyframes word{0%{opacity:1;transform:translate(-50%,-50%) rotate(var(--r)) scale(0)}30%{opacity:1;transform:translate(-50%,-50%) rotate(calc(var(--r) * -1)) scale(1.45)}
+  45%{opacity:1;transform:translate(-50%,-50%) rotate(var(--r)) scale(1)}60%,75%{opacity:1;transform:translate(-50%,-50%) rotate(calc(var(--r) + 4deg)) scale(1.08)}
+  100%{transform:translate(-50%,-120%) rotate(var(--r)) scale(.6);opacity:0}}
+@keyframes fly{0%{transform:translate(-50%,-50%) scale(1)}100%{transform:translate(calc(-50% + var(--dx) * var(--sc)),calc(-50% + var(--dy) * var(--sc))) scale(.2);opacity:0}}
+@keyframes cShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-6px,3px) rotate(-.6deg)}40%{transform:translate(5px,-4px) rotate(.5deg)}60%{transform:translate(-4px,-2px)}80%{transform:translate(3px,4px)}}
+#wrap.cshake{animation:cShake .3s linear}
+@property --a{syntax:'<angle>';inherits:false;initial-value:0deg}
+#hintBtn{position:absolute;display:none;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box;cursor:pointer;
+  border:3px solid #fff;border-radius:12px;color:#fff;font-family:"Courier New",Courier,monospace;font-weight:bold;line-height:1.05;
+  background:linear-gradient(120deg,#ff004c,#ff9a00,#ffe600,#00ff9d,#00c8ff,#b400ff,#ff004c);background-size:300% 300%;
+  animation:btnFlow 2.5s linear infinite,btnPulse 1s ease-in-out infinite;text-shadow:0 2px 0 #000,0 0 6px #000}
+#hintBtn .s{opacity:.9}
+#hintBtn:hover{transform:scale(1.06) rotate(-2deg)}
+#hintBtn:active{transform:scale(.95)}
+#hintBtn:disabled{animation:none;background:#2a2a3a;border-color:#556;color:#778;cursor:default;transform:none;text-shadow:none;box-shadow:none}
+@keyframes btnFlow{0%{background-position:0% 50%}100%{background-position:300% 50%}}
+@keyframes btnPulse{0%,100%{box-shadow:0 0 6px 2px #ff00c8,0 0 0 0 rgba(255,255,255,.7)}50%{box-shadow:0 0 22px 8px #00e5ff,0 0 0 6px rgba(255,255,255,0)}}
+#scanBeam{position:absolute;display:none;pointer-events:none;overflow:hidden}
+#scanBeam.go{display:block}
+#scanBeam::before{content:'';position:absolute;top:0;bottom:0;width:18%;left:-20%;
+  background:linear-gradient(90deg,transparent,rgba(0,255,200,.15),rgba(180,255,255,.9),rgba(0,255,200,.15),transparent);
+  box-shadow:0 0 40px 10px rgba(0,255,220,.5);animation:sweep .7s ease-in-out forwards}
+#scanBeam::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,255,200,.10) 0 2px,transparent 2px 6px);animation:scanFade .7s forwards}
+@keyframes sweep{0%{left:-20%}100%{left:105%}}
+@keyframes scanFade{0%{opacity:0}30%{opacity:1}100%{opacity:0}}
+#hint{position:absolute;display:none;pointer-events:none}
+#hint.on{display:block;animation:hintIn .6s cubic-bezier(.2,1.8,.4,1) both,hintShake .35s .6s ease-in-out infinite}
+#hint .ring{position:absolute;inset:calc(-9px * var(--sc,1));padding:calc(6px * var(--sc,1));border-radius:calc(14px * var(--sc,1));
+  background:conic-gradient(from var(--a),#ff004c,#ffe600,#00ff9d,#00c8ff,#b400ff,#ff004c);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  animation:spin 1s linear infinite;filter:drop-shadow(0 0 8px #fff)}
+#hint .glow{position:absolute;inset:0;border-radius:10px;animation:glow 0.8s ease-in-out infinite alternate}
+#hint .x{position:absolute;inset:0;background:
+  linear-gradient(35deg,transparent 46%,rgba(255,0,60,.55) 47% 53%,transparent 54%),linear-gradient(-35deg,transparent 46%,rgba(255,0,60,.55) 47% 53%,transparent 54%);
+  animation:xBlink .5s steps(2) infinite;border-radius:10px}
+#hint .lbl{position:absolute;left:50%;bottom:100%;white-space:nowrap;font:900 calc(20px * var(--sc,1))/1 "Comic Sans MS","Comic Neue",cursive;
+  background:linear-gradient(90deg,#ff004c,#ffe600,#00ff9d,#00c8ff,#ff00c8,#ff004c);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  -webkit-text-stroke:calc(1px * var(--sc,1)) #120a1e;filter:drop-shadow(0 2px 0 #000);animation:lblBounce .5s ease-in-out infinite alternate,btnFlow 1.2s linear infinite;
+  transform-origin:50% 100%;margin-bottom:calc(4px * var(--sc,1))}
+#hint i{position:absolute;width:calc(8px * var(--sc,1));height:calc(8px * var(--sc,1));border-radius:50%;background:#fff;box-shadow:0 0 8px 3px var(--c);opacity:0;animation:spark 1.1s ease-out infinite}
+#hint i:nth-of-type(1){left:0;top:0;--dx:-40px;--dy:-30px;--c:#ff004c;animation-delay:0s}
+#hint i:nth-of-type(2){right:0;top:0;--dx:40px;--dy:-30px;--c:#ffe600;animation-delay:.15s}
+#hint i:nth-of-type(3){left:0;bottom:0;--dx:-40px;--dy:30px;--c:#00ff9d;animation-delay:.3s}
+#hint i:nth-of-type(4){right:0;bottom:0;--dx:40px;--dy:30px;--c:#00c8ff;animation-delay:.45s}
+#hint i:nth-of-type(5){left:50%;top:0;--dx:0px;--dy:-45px;--c:#b400ff;animation-delay:.6s}
+#hint i:nth-of-type(6){left:50%;bottom:0;--dx:0px;--dy:45px;--c:#ff00c8;animation-delay:.75s}
+#hint i:nth-of-type(7){left:0;top:50%;--dx:-50px;--dy:0px;--c:#fff;animation-delay:.9s}
+#hint i:nth-of-type(8){right:0;top:50%;--dx:50px;--dy:0px;--c:#ffe600;animation-delay:.2s}
+@keyframes spin{to{--a:360deg}}
+@keyframes hintIn{0%{transform:scale(3) rotate(-20deg);opacity:0;filter:brightness(4)}60%{opacity:1}100%{transform:scale(1) rotate(0);filter:brightness(1)}}
+@keyframes hintShake{0%,100%{transform:rotate(0)}25%{transform:rotate(-2.5deg) scale(1.03)}75%{transform:rotate(2.5deg) scale(1.03)}}
+@keyframes glow{from{box-shadow:0 0 10px 4px rgba(255,0,80,.7),inset 0 0 12px rgba(255,0,80,.5)}to{box-shadow:0 0 30px 12px rgba(0,229,255,.8),inset 0 0 20px rgba(0,229,255,.5)}}
+@keyframes xBlink{0%{opacity:1}100%{opacity:.25}}
+@keyframes lblBounce{from{transform:translateX(-50%) translateY(0) rotate(-6deg) scale(1)}to{transform:translateX(-50%) translateY(-6px) rotate(6deg) scale(1.15)}}
+@keyframes spark{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(calc(var(--dx) * var(--sc,1)),calc(var(--dy) * var(--sc,1))) scale(.2)}}
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="cv" tabindex="0"></canvas></div>
+<button id="hintBtn" type="button"><span class="t">SCANNER</span><span class="s">1 SEULE FOIS</span></button>
+<div id="scanBeam"></div>
+<div id="hint"><div class="glow"></div><div class="x"></div><div class="ring"></div><div class="lbl">PIÈGE !</div><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 <div id="codebox"><input id="codeIn" type="text" readonly spellcheck="false" aria-label="Code de fin"><button id="copyBtn" type="button">COPIER</button></div>
 <script>
 (() => {
@@ -84,14 +159,14 @@ function codeFor(seed, note) {
 
 /* ================= ENTITÉS : ATOMES ET IONS ================= */
 const ELS = ['H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 'Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca'];
-const SUB = [['1s', 2, 1], ['2s', 2, 2], ['2p', 6, 2], ['3s', 2, 3], ['3p', 6, 3]];
+const SUB = [['1s', 2, 1], ['2s', 2, 2], ['2p', 6, 2], ['3s', 2, 3], ['3p', 6, 3], ['4s', 2, 4]];
 function fill(e) { const o = []; let r = e; for (const [nm, cap, sh] of SUB) { const k = Math.min(cap, r); o.push(k); r -= k; } return o; } // [1s,2s,2p,3s,3p]
 function mkEnt(z, q) {
   const e = z - q, c = fill(e), outer = e === 0 ? 0 : (c[3] + c[4] > 0 ? 3 : c[1] + c[2] > 0 ? 2 : 1);
   const val = outer === 1 ? c[0] : outer === 2 ? c[1] + c[2] : outer === 3 ? c[3] + c[4] : 0;
   return { z, q, sym: ELS[z - 1], e, cfg: c.join(','), outer, val };
 }
-const ATOMS = []; for (let z = 1; z <= 18; z++) ATOMS.push(mkEnt(z, 0));
+const ATOMS = []; for (let z = 1; z <= 20; z++) ATOMS.push(mkEnt(z, 0));
 const IONS = [[1, 1], [3, 1], [11, 1], [19, 1], [4, 2], [12, 2], [20, 2], [13, 3], [9, -1], [17, -1], [8, -2], [16, -2], [7, -3]].map(([z, q]) => mkEnt(z, q));
 const ALLE = ATOMS.concat(IONS);
 
@@ -147,39 +222,11 @@ function wrect(x, y, w, h, seed, amp = 1.4) {
 }
 function blink(f = 2) { return Math.floor(T * f * 2) % 2 === 0; }
 
-/* ================= SON (WebAudio, M = muet) ================= */
-let AC = null, muted = false;
-function audioInit() { if (AC) { if (AC.state === 'suspended') AC.resume().catch(() => {}); return; } try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; } }
-function beep(f1, f2, dur, type = 'square', vol = 0.04, delay = 0) {
-  if (!AC || muted) return;
-  try {
-    const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime + delay;
-    o.type = type; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f2), t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + dur + 0.03);
-  } catch (e) {}
-}
-function noise(dur, vol = 0.06) {
-  if (!AC || muted) return;
-  try {
-    const n = Math.floor(AC.sampleRate * dur), buf = AC.createBuffer(1, n, AC.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-    const s = AC.createBufferSource(), g = AC.createGain(); s.buffer = buf; g.gain.value = vol; s.connect(g); g.connect(AC.destination); s.start();
-  } catch (e) {}
-}
-const SFX = {
-  coin() { beep(990, 990, 0.08, 'square', 0.05); beep(1320, 1320, 0.25, 'square', 0.05, 0.08); },
-  ok() { beep(660, 880, 0.08, 'square', 0.04); },
-  shoot(t) { [() => beep(1400, 300, 0.12, 'sawtooth', 0.025), () => beep(500, 1500, 0.12, 'sine', 0.04), () => { noise(0.15, 0.03); beep(300, 120, 0.15, 'triangle', 0.04); }, () => beep(900, 400, 0.15, 'triangle', 0.04)][t](); },
-  boom() { noise(0.35, 0.07); beep(220, 60, 0.3, 'triangle', 0.05); },
-  bad() { beep(200, 90, 0.35, 'square', 0.05); },
-  crash() { noise(0.9, 0.12); beep(160, 30, 0.9, 'sawtooth', 0.06); },
-  shield() { beep(300, 1200, 0.5, 'sine', 0.05); },
-  ready() { beep(880, 880, 0.08, 'square', 0.04); beep(1175, 1175, 0.12, 'square', 0.04, 0.1); },
-  type() { beep(1800, 1800, 0.015, 'square', 0.012); },
-  clear() { [523, 659, 784, 1046].forEach((f, i) => beep(f, f, 0.14, 'square', 0.04, i * 0.12)); },
-  over() { [392, 330, 262, 196].forEach((f, i) => beep(f, f * 0.98, 0.25, 'square', 0.04, i * 0.22)); }
-};
+/* ================= SON : désactivé ================= */
+function audioInit() {}
+function beep() {}
+function noise() {}
+const SFX = new Proxy({}, { get: () => () => {} });
 
 /* ================= FONDS ================= */
 function makeBg(n) {
@@ -414,14 +461,14 @@ function drawFx(e) {
 
 /* ================= DUEL : CONFIGURATIONS & PLATEAUX ================= */
 const SUPD = '⁰¹²³⁴⁵⁶⁷⁸⁹';
-const CAP = { '1s': 2, '2s': 2, '2p': 6, '3s': 2, '3p': 6 };
-const ENT = (() => { const e = String(P.ent === undefined ? 'ai' : P.ent).toLowerCase(); return (e === 'a' || e === 'i') ? e : 'ai'; })();
-const ENT_NOUN = { a: 'atomes', i: 'ions', ai: 'atomes et ions' }[ENT];
-const ENT_ONE = { a: 'ATOME', i: 'ION', ai: 'ENTITÉ' }[ENT];
+const CAP = { '1s': 2, '2s': 2, '2p': 6, '3s': 2, '3p': 6, '4s': 2 };
+const ENT = (() => { const e = String(P.ent === undefined ? 'auto' : P.ent).toLowerCase(); return ['a', 'i', 'ai'].includes(e) ? e : 'auto'; })();
+const MODE = n => ENT === 'auto' ? (n === 3 ? 'ai' : 'a') : ENT;
+const ONE = n => ({ a: 'ATOME', i: 'ION', ai: 'ENTITÉ' })[MODE(n)];
 function cfgParts(e) { const c = fill(e), o = []; SUB.forEach(([nm], i) => { if (c[i]) o.push([nm, c[i]]); }); return o; }
 function pKey(parts) { return parts.map(p => p[0] + p[1]).join(' '); }
 function pLines(parts) { const s = parts.map(p => p[0] + SUPD[p[1]]); return s.length > 3 ? [s.slice(0, 3).join(' '), s.slice(3).join(' ')] : [s.join(' ')]; }
-function isValidParts(parts) { const e = parts.reduce((a, p) => a + p[1], 0); return e >= 1 && e <= 18 && pKey(cfgParts(e)) === pKey(parts); }
+function isValidParts(parts) { const e = parts.reduce((a, p) => a + p[1], 0); return e >= 1 && e <= 20 && pKey(cfgParts(e)) === pKey(parts); }
 const DATOMS = ATOMS.map(a => Object.assign({}, a, { key: pKey(cfgParts(a.e)) }));
 const DIONS = IONS.filter(x => x.e > 0).map(a => Object.assign({}, a, { key: pKey(cfgParts(a.e)) }));
 const SPEC = { 1: { P: 6, K: 3, O: 2, zmax: 10 }, 2: { P: 7, K: 3, O: 2, zmax: 20 }, 3: { P: 8, K: 4, O: 3, zmax: 20 } };
@@ -439,38 +486,39 @@ function mkTrap(rng, baseE) {
 function buildBoard(n) {
   const rng = mulberry32(((CFG.s + 1) * 2654435761 ^ (n * 40503)) >>> 0), S = SPEC[n];
   let pool = [];
-  if (ENT !== 'i') pool = pool.concat(DATOMS.filter(a => a.z <= Math.min(18, S.zmax)));
-  if (ENT !== 'a') pool = pool.concat(DIONS.filter(a => a.z <= S.zmax));
+  const md = MODE(n);
+  if (md !== 'i') pool = pool.concat(DATOMS.filter(a => a.z <= S.zmax));
+  if (md !== 'a') pool = pool.concat(DIONS.filter(a => a.z <= S.zmax));
   shuffle(pool, rng);
   let ents;
-  if (n === 3 && ENT === 'ai') { const io = pool.filter(x => x.q), at = pool.filter(x => !x.q); ents = io.slice(0, 4).concat(at.slice(0, S.P - 4)); }
+  if (n === 3 && md === 'ai') { const io = pool.filter(x => x.q), at = pool.filter(x => !x.q); ents = io.slice(0, 4).concat(at.slice(0, S.P - 4)); }
   else ents = pool.slice(0, Math.min(S.P, pool.length));
   const used = new Set(ents.map(x => x.key));
   const cards = ents.map(x => ({ parts: cfgParts(x.e), valid: true }));
   const tk = new Set(); let g = 0;
   while (tk.size < S.K && g++ < 800) {
-    const base = rng() < 0.7 ? ents[Math.floor(rng() * ents.length)].e : 2 + Math.floor(rng() * 17);
+    const base = rng() < 0.7 ? ents[Math.floor(rng() * ents.length)].e : 2 + Math.floor(rng() * 19);
     const tp = mkTrap(rng, base); if (!tp) continue; const k = pKey(tp);
     if (tk.has(k) || used.has(k)) continue; tk.add(k); cards.push({ parts: tp, valid: false });
   }
   const ok = new Set(); g = 0;
   while (ok.size < S.O && g++ < 800) {
     const b = ents[Math.floor(rng() * ents.length)].e, e = b + (rng() < 0.5 ? -1 : 1) * (1 + Math.floor(rng() * 2));
-    if (e < 1 || e > 18) continue; const k = pKey(cfgParts(e));
+    if (e < 1 || e > 20) continue; const k = pKey(cfgParts(e));
     if (used.has(k) || ok.has(k)) continue; ok.add(k); cards.push({ parts: cfgParts(e), valid: true, orphan: true });
   }
   shuffle(cards, rng); shuffle(ents, rng);
-  const ne = ents.length, rowsE = ne <= 4 ? 1 : 2, per = Math.ceil(ne / rowsE);
-  const E = ents.map((x, i) => {
-    const r = Math.floor(i / per), c = i % per, cnt = r === rowsE - 1 ? ne - per * (rowsE - 1) : per;
-    return { kind: 'ent', ent: x, key: x.key, x: W / 2 + (c - (cnt - 1) / 2) * 92, y: rowsE === 1 ? 172 : 142 + r * 64, r: 26,
-      hue: Math.floor(rng() * 360), seed: Math.floor(rng() * 1e5), o1: rng() * TAU, ph: rng() * TAU, es: 1.5 + rng() * 1.5, alive: true, i };
+  const ne = ents.length;
+  const all = ents.map(x => ({ kind: 'ent', ent: x, key: x.key, hue: Math.floor(rng() * 360), seed: Math.floor(rng() * 1e5), o1: rng() * TAU, ph: rng() * TAU, es: 1.5 + rng() * 1.5 }))
+    .concat(cards.map(c => Object.assign(c, { kind: 'cfg', key: pKey(c.parts), lines: pLines(c.parts) })));
+  shuffle(all, rng);
+  const cols = 4, cw = 110, ch = 56, gx = 8, na = all.length, rows = Math.ceil(na / cols);
+  const step = Math.min(64, (392 + gx) / rows), y0 = 106 + (392 - (rows * step - (step - ch))) / 2;
+  all.forEach((it, k) => {
+    const r = Math.floor(k / cols), c = k % cols, cnt = r === rows - 1 ? na - cols * (rows - 1) : cols;
+    Object.assign(it, { x: W / 2 + (c - (cnt - 1) / 2) * (cw + gx), y: y0 + ch / 2 + r * step, w: cw, h: ch, alive: true, i: k });
   });
-  const nc = cards.length, rowsC = Math.ceil(nc / 3);
-  const C = cards.map((c, i) => {
-    const r = Math.floor(i / 3), col = i % 3, cnt = r === rowsC - 1 ? nc - 3 * (rowsC - 1) : 3;
-    return Object.assign(c, { kind: 'cfg', key: pKey(c.parts), lines: pLines(c.parts), x: W / 2 + (col - (cnt - 1) / 2) * 156, y: 260 + r * 50, w: 148, h: 44, alive: true, i: i + ne });
-  });
+  const E = all.filter(x => x.kind === 'ent'), C = all.filter(x => x.kind === 'cfg');
   return { E, C, P: ne, K: tk.size };
 }
 const MULT = n => n === 3 ? CFG.fx : 1;
@@ -504,13 +552,13 @@ const DECKPOS = { x: 40, y: 600 };
 const SHR = { x: 165, y: 510, w: 150, h: 84 };
 function newGame() {
   Object.assign(G, { score: 0, lives: CFG.vies, li: 0, fx: [], pops: [], strips: [], shake: 0, red: 0, lvl: LEVELS[0], mult: MULT(LEVELS[0]), time: CFG.t,
-    E: [], C: [], P: 0, sel: null, acts: 0, good: 0, errs: 0, pairs: 0, streak: 0, tr: null, win: false, note: 0, rank: 'D', code: '', hiAnn: false, dealT: 0, gear: 0 });
+    E: [], C: [], P: 0, sel: null, acts: 0, good: 0, errs: 0, pairs: 0, streak: 0, tr: null, win: false, note: 0, rank: 'D', code: '', hiAnn: false, dealT: 0, gear: 0, scanUsed: false, hint: null });
 }
 newGame();
 function go(s) { state = s; st = 0; }
 function startLevel() {
   const n = LEVELS[G.li], b = buildBoard(n);
-  Object.assign(G, { lvl: n, mult: MULT(n), E: b.E, C: b.C, P: b.P, sel: null, acts: 0, good: 0, errs: 0, pairs: 0, streak: 0, time: CFG.t, dealT: 0 });
+  Object.assign(G, { lvl: n, mult: MULT(n), E: b.E, C: b.C, P: b.P, sel: null, hint: null, acts: 0, good: 0, errs: 0, pairs: 0, streak: 0, time: CFG.t, dealT: 0 });
   if (n === 2) makeAsts();
   go('levelintro');
 }
@@ -537,7 +585,7 @@ function tryPair(e, c) {
     e.leave = { t: 0, x0: e.x, y0: e.y, tx: mx, ty: my, type: 'pair' }; c.leave = { t: 0, x0: c.x, y0: c.y, tx: mx, ty: my, type: 'pair' };
     SFX.ok();
     G.pend = (G.pend || 0) + 1;
-    e.onDone = () => { boom(mx, my, e.hue); SFX.boom(); addScore(pts(10)); pop('+' + pts(10), mx, my - 10, { c: '#ffe14d', size: 26 }); encourage(); G.pend--; };
+    e.onDone = () => { boom(mx, my, e.hue); comicFx(mx, my, false); SFX.boom(); addScore(pts(10)); pop('+' + pts(10), mx, my - 10, { c: '#ffe14d', size: 26 }); encourage(); G.pend--; };
   } else {
     G.errs++; e.shk = 0.5; c.shk = 0.5; addScore(-pts(10));
     pop('-' + pts(10) + '  -1 VIE', (e.x + c.x) / 2, (e.y + c.y) / 2, { c: '#ff4a4a', size: 24 });
@@ -545,11 +593,11 @@ function tryPair(e, c) {
   }
 }
 function tryShred(c) {
-  G.acts++; G.sel = null;
+  const sc = !!c.hinted; if (!sc) G.acts++; G.sel = null;
   if (!c.valid) {
-    G.good++; G.streak++;
+    if (!sc) { G.good++; G.streak++; }
     c.leave = { t: 0, x0: c.x, y0: c.y, tx: SHR.x + SHR.w / 2, ty: SHR.y + 10, type: 'shred' };
-    c.onDone = () => { addScore(pts(5)); pop('+' + pts(5) + ' PIÈGE !', SHR.x + SHR.w / 2, SHR.y - 14, { c: '#7dff7d', size: 22 }); encourage();
+    c.onDone = () => { comicFx(SHR.x + SHR.w / 2, SHR.y - 30, true); if (sc) pop('+0 (SCANNÉ)', SHR.x + SHR.w / 2, SHR.y - 14, { c: '#9fd', size: 20 }); else { addScore(pts(5)); pop('+' + pts(5) + ' PIÈGE !', SHR.x + SHR.w / 2, SHR.y - 14, { c: '#7dff7d', size: 22 }); encourage(); }
       for (let i = 0; i < 9; i++) G.strips.push({ x: SHR.x + 30 + i * 11, y: SHR.y + SHR.h - 4, vy: 60 + rand() * 50, t: 0, rot: (rand() - 0.5) * 0.4 }); SFX.boom(); };
     noise(0.5, 0.05);
   } else {
@@ -583,8 +631,7 @@ function finishGame(win) {
 /* ================= ENTRÉES ================= */
 function toLogical(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; }
 function itemAt(p) {
-  for (const e of G.E) if (e.alive && !e.leave && Math.hypot(p.x - e.x, p.y - e.y) < e.r + 6) return e;
-  for (const c of G.C) if (c.alive && !c.leave && Math.abs(p.x - c.x) < c.w / 2 && Math.abs(p.y - c.y) < c.h / 2) return c;
+  for (const it of G.E.concat(G.C)) if (it.alive && !it.leave && Math.abs(p.x - it.x) < it.w / 2 && Math.abs(p.y - it.y) < it.h / 2) return it;
   return null;
 }
 function inShredder(p) { return p.x >= SHR.x && p.x <= SHR.x + SHR.w && p.y >= SHR.y - 8 && p.y <= SHR.y + SHR.h; }
@@ -626,7 +673,6 @@ window.addEventListener('keydown', e => {
   const k = e.key;
   if ([' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter'].includes(k)) e.preventDefault();
   if (e.repeat) return; audioInit();
-  if (k === 'm' || k === 'M') { muted = !muted; return; }
   if (k === 'Escape' && state === 'play') { G.sel = null; return; }
   if ((k === ' ' || k === 'Enter') && state !== 'play') onPress(null);
 });
@@ -686,7 +732,7 @@ function drawTopHUD() {
 }
 function drawBanner() {
   ctx.fillStyle = '#ffd60a'; wrect(4, 25, 472, 60, 7); ctx.fill(); ctx.strokeStyle = '#1a1205'; ctx.lineWidth = 3; ctx.stroke();
-  const l1 = 'ASSOCIE CHAQUE ' + ENT_ONE, l2 = 'À SA CONFIGURATION ÉLECTRONIQUE', maxW = G.mult > 1 ? 380 : 450;
+  const l1 = 'ASSOCIE CHAQUE ' + ONE(G.lvl), l2 = 'À SA CONFIGURATION ÉLECTRONIQUE', maxW = G.mult > 1 ? 380 : 450;
   let fs = 19; ctx.font = 'bold ' + fs + 'px ' + FC; const tw = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width);
   if (tw > maxW) fs = Math.floor(fs * maxW / tw);
   txt(l1, 14, 45, { size: fs, c: '#1a1205', align: 'left' }); txt(l2, 14, 68, { size: fs, c: '#1a1205', align: 'left' });
@@ -717,44 +763,43 @@ function drawShredder() {
   txt('BROYEUR', x + w / 2, y + 54, { arcade: 1, size: 17, c: hot ? '#7dff7d' : '#fff' });
   txt('À PIÈGES', x + w / 2, y + 72, { arcade: 1, size: 11, c: '#ffd21f' });
 }
-function drawCfgCard(c, cx, cy, sx, sy, back) {
+function drawCard(c, cx, cy, sx, sy, back) {
   ctx.save(); ctx.translate(cx, cy); ctx.scale(sx, sy);
   const w = c.w, h = c.h;
   if (back) drawBack(deck, -w / 2, -h / 2, w, h);
   else {
     const sel = G.sel === c, hov = state === 'play' && !c.leave && itemAt(mouse) === c;
     if (sel) { ctx.fillStyle = `rgba(255,225,77,${0.35 + 0.2 * Math.sin(T * 8)})`; rrect(-w / 2 - 6, -h / 2 - 6, w + 12, h + 12, 10); ctx.fill(); }
-    ctx.fillStyle = '#fffbea'; wrect(-w / 2, -h / 2, w, h, c.i * 13 + 5, 1); ctx.fill();
-    ctx.strokeStyle = sel ? '#ffb000' : hov ? '#4ff0ff' : DECKS[deck].col; ctx.lineWidth = sel ? 4 : 3; ctx.stroke();
-    if (c.lines.length === 1) txt(c.lines[0], 0, 1, { arcade: 1, size: 15, c: '#1a1530' });
-    else { txt(c.lines[0], 0, -9, { arcade: 1, size: 15, c: '#1a1530' }); txt(c.lines[1], 0, 10, { arcade: 1, size: 15, c: '#1a1530' }); }
+    const bord = sel ? '#ffb000' : hov ? '#4ff0ff' : DECKS[deck].col;
+    if (c.kind === 'ent') {
+      ctx.fillStyle = `hsl(${c.hue},45%,18%)`; wrect(-w / 2, -h / 2, w, h, c.i * 13 + 5, 1); ctx.fill();
+      ctx.save(); rrect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4, 6); ctx.clip();
+      drawAtom(c.ent, 0, 0, 21, c.hue, c.seed, T * c.es + c.ph, c.o1, CFG.zs); ctx.restore();
+      wrect(-w / 2, -h / 2, w, h, c.i * 13 + 5, 1); ctx.strokeStyle = bord; ctx.lineWidth = sel ? 4 : 3; ctx.stroke();
+    } else {
+      ctx.fillStyle = '#fffbea'; wrect(-w / 2, -h / 2, w, h, c.i * 13 + 5, 1); ctx.fill();
+      ctx.strokeStyle = bord; ctx.lineWidth = sel ? 4 : 3; ctx.stroke();
+      if (c.lines.length === 1) txt(c.lines[0], 0, 1, { arcade: 1, size: 13, c: '#1a1530' });
+      else { txt(c.lines[0], 0, -9, { arcade: 1, size: 13, c: '#1a1530' }); txt(c.lines[1], 0, 10, { arcade: 1, size: 13, c: '#1a1530' }); }
+    }
   }
   ctx.restore();
 }
 function drawBoard() {
   const dealing = state === 'levelintro';
-  for (const c of G.C) {
+  for (const c of G.E.concat(G.C)) {
     let x = c.x, y = c.y, sx = 1, sy = 1, back = false;
-    const t0 = c.i * 0.07, pd = clamp((G.dealT - t0) / 0.4, 0, 1), pf = clamp((G.dealT - t0 - 0.4) / 0.25, 0, 1);
+    const t0 = c.i * 0.06, pd = clamp((G.dealT - t0) / 0.4, 0, 1), pf = clamp((G.dealT - t0 - 0.4) / 0.25, 0, 1);
     if (pd < 1 || pf < 1) {
       if (G.dealT < t0) continue;
       const e = ease(pd); x = DECKPOS.x + (c.x - DECKPOS.x) * e; y = DECKPOS.y + (c.y - DECKPOS.y) * e;
-      sx = Math.abs(Math.cos(pf * Math.PI)); back = pf < 0.5; sx = Math.max(0.04, sx);
+      sx = Math.max(0.04, Math.abs(Math.cos(pf * Math.PI))); back = pf < 0.5;
     }
     if (c.shk > 0) x += Math.sin(T * 60) * 5 * c.shk / 0.5;
     if (c.leave) { const L = c.leave;
       if (L.type === 'pair') { const k = ease(L.t / 0.35); x = L.x0 + (L.tx - L.x0) * k; y = L.y0 + (L.ty - L.y0) * k; sx = sy = 1 - 0.6 * k; }
       else { const k1 = ease(L.t / 0.3), k2 = clamp((L.t - 0.3) / 0.4, 0, 1); x = L.x0 + (L.tx - L.x0) * k1; y = L.y0 + (L.ty - L.y0) * k1 + k2 * 20; sx = 1 - 0.2 * k1; sy = Math.max(0.02, 1 - k2); } }
-    drawCfgCard(c, x, y, sx, sy, back);
-  }
-  for (const e of G.E) {
-    const t0 = e.i * 0.07; if (dealing && G.dealT < t0) continue;
-    const pk = clamp((G.dealT - t0) / 0.3, 0, 1); let x = e.x, y = e.y, sc = pk < 1 ? 0.3 + 0.9 * ease(pk) : 1;
-    if (e.shk > 0) x += Math.sin(T * 60) * 5 * e.shk / 0.5;
-    if (e.leave) { const k = ease(e.leave.t / 0.35); x = e.leave.x0 + (e.leave.tx - e.leave.x0) * k; y = e.leave.y0 + (e.leave.ty - e.leave.y0) * k; sc = 1 - 0.6 * k; }
-    const sel = G.sel === e, hov = state === 'play' && !e.leave && itemAt(mouse) === e;
-    if (sel || hov) { ctx.strokeStyle = sel ? '#ffe14d' : '#4ff0ff'; ctx.lineWidth = sel ? 4 : 2.5; circle(x, y, e.r * sc + 10 + (sel ? Math.sin(T * 8) * 2 : 0)); ctx.stroke(); }
-    ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); drawAtom(e.ent, 0, 0, e.r, e.hue, e.seed, T * e.es + e.ph, e.o1, CFG.zs); ctx.restore();
+    drawCard(c, x, y, sx, sy, back);
   }
   if (state === 'play' && G.sel && G.sel.alive) {
     ctx.save(); ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 2.5; ctx.setLineDash([8, 6]); ctx.lineDashOffset = -T * 40;
@@ -805,8 +850,8 @@ function drawHowTo(footerReady) {
   ];
   rows.forEach((r, i) => { const y = 100 + i * 25; txt(r[0].padEnd(24, '.'), 30, y, { arcade: 1, size: 14, c: '#e8e8ff', align: 'left' }); txt(r[1], 450, y, { arcade: 1, size: 14, c: r[2], align: 'right' }); });
   ctx.strokeStyle = '#4ff0ff'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(30, 306); ctx.lineTo(450, 306); ctx.stroke(); ctx.setLineDash([]);
-  [['1. CLIC', 'SUR UN ' + ENT_ONE], ['2. CLIC', 'SUR SA CONFIGURATION'], ['PIÈGE', 'CARTE → BROYEUR'], ['ANNULER', 'RE-CLIC / ÉCHAP']]
-    .forEach((r, i) => { const y = 330 + i * 25; txt(r[0], 30, y, { arcade: 1, size: 14, c: '#ffe14d', align: 'left' }); txt(r[1], 450, y, { arcade: 1, size: 14, c: '#fff', align: 'right' }); });
+  [['1. CLIC', ENT === 'auto' ? 'SUR UNE CARTE ATOME / ION' : 'SUR UNE CARTE ' + ONE(1)], ['2. CLIC', 'SUR SA CONFIGURATION'], ['PIÈGE', 'CARTE → BROYEUR'], ['SCANNER', '1 SEULE FOIS PAR PARTIE'], ['ANNULER', 'RE-CLIC / ÉCHAP']]
+    .forEach((r, i) => { const y = 326 + i * 22; txt(r[0], 30, y, { arcade: 1, size: 14, c: '#ffe14d', align: 'left' }); txt(r[1], 450, y, { arcade: 1, size: 14, c: '#fff', align: 'right' }); });
   txt('PIÈGE = CONFIGURATION IMPOSSIBLE', W / 2, 444, { arcade: 1, size: 13, c: '#ffd60a' });
   txt('OU MAL ÉCRITE', W / 2, 463, { arcade: 1, size: 13, c: '#ffd60a' });
   txt(LEVELS.length + ' LEVEL' + (LEVELS.length > 1 ? 'S' : '') + ' · ' + Math.round(CFG.t) + ' S CHACUN · ' + CFG.vies + ' VIES', W / 2, 492, { arcade: 1, size: 13, c: '#9fd' });
@@ -874,6 +919,66 @@ function drawEnd() {
   if (st > 5) { if (blink(1.2)) txt('CLIC POUR REJOUER', W / 2, 590, { arcade: 1, size: 16, c: '#889' }); }
   else txt('...', W / 2, 590, { arcade: 1, size: 16, c: '#445' });
 }
+const hintBtn = document.getElementById('hintBtn'), hintEl = document.getElementById('hint'), beam = document.getElementById('scanBeam');
+function scr(el, x, y, w, h) { const r = cv.getBoundingClientRect(); el.style.left = (r.left + x * SC) + 'px'; el.style.top = (r.top + y * SC) + 'px'; el.style.width = (w * SC) + 'px'; el.style.height = (h * SC) + 'px'; }
+function useScanner() {
+  if (state !== 'play' || G.scanUsed) return;
+  G.scanUsed = true; G.sel = null;
+  beam.classList.remove('go'); void beam.offsetWidth; beam.classList.add('go');
+  beep(200, 2400, 0.7, 'sawtooth', 0.03);
+  setTimeout(() => {
+    beam.classList.remove('go');
+    if (state !== 'play') return;
+    const tr = G.C.filter(c => c.alive && !c.leave && !c.valid);
+    if (!tr.length) { pop('AUCUN PIÈGE DÉTECTÉ', W / 2, 300, { size: 24, c: '#6ff6ff', arcade: true, dur: 1.5 }); return; }
+    const c = tr[Math.floor(rand() * tr.length)]; c.hinted = true; G.hint = c;
+    hintEl.classList.remove('on'); void hintEl.offsetWidth; hintEl.classList.add('on');
+    SFX.ready(); beep(1200, 300, 0.4, 'square', 0.03, 0.1);
+  }, 720);
+}
+hintBtn.addEventListener('click', e => { e.preventDefault(); audioInit(); useScanner(); hintBtn.blur(); try { cv.focus({ preventScroll: true }); } catch (_) {} });
+function syncDom() {
+  const show = state === 'play' || state === 'levelintro';
+  hintBtn.style.display = show ? 'flex' : 'none';
+  if (show) { scr(hintBtn, 340, 514, 130, 62); hintBtn.style.fontSize = Math.max(8, 15 * SC) + 'px'; hintBtn.querySelector('.s').style.fontSize = Math.max(7, 10 * SC) + 'px';
+    hintBtn.disabled = G.scanUsed || state !== 'play'; if (G.scanUsed) hintBtn.querySelector('.s').textContent = 'UTILISÉ'; else hintBtn.querySelector('.s').textContent = '1 SEULE FOIS'; }
+  scr(beam, 0, 104, W, 400);
+  const c = G.hint;
+  if (c && c.alive && !c.leave && state === 'play') {
+    const dx = c.shk > 0 ? Math.sin(T * 60) * 5 * c.shk / 0.5 : 0;
+    scr(hintEl, c.x - c.w / 2 + dx, c.y - c.h / 2, c.w, c.h); hintEl.style.setProperty('--sc', SC);
+  } else if (hintEl.classList.contains('on')) { hintEl.classList.remove('on'); if (!c || !c.alive || state !== 'play') G.hint = null; }
+}
+const COMIC_PAIR = ['KAPOW!', 'BAM!', 'WHAM!', 'POW!', 'ZOK!', 'BIFF!', 'ZLONK!', 'SOCK!', 'THWACK!', 'BOOM!', 'ZAP!', 'KRAKA!'];
+const COMIC_SHRED = ['CRUNCH!', 'SKRRTCH!', 'GRRIND!', 'CRAAK!', 'SHRED!', 'RRRIP!'];
+const COMIC_COL = [['#ffe600', '#ff1f3d', '#fff', '#0047ff'], ['#00e5ff', '#ff00a8', '#fff', '#1a0066'], ['#ff6a00', '#ffe600', '#fff8d0', '#d1001f'],
+  ['#7dff3a', '#b400ff', '#fff', '#00552b'], ['#ff1f3d', '#ffe600', '#ffd0d6', '#000'], ['#ffffff', '#ff1f3d', '#ffe600', '#0047ff']];
+function starPoly(n, rin) { const pts = []; for (let i = 0; i < n * 2; i++) { const a = i / (n * 2) * TAU - Math.PI / 2, r = i % 2 ? rin * (0.85 + rand() * 0.3) : 1 - rand() * 0.15;
+  pts.push((50 + Math.cos(a) * r * 50).toFixed(1) + '% ' + (50 + Math.sin(a) * r * 50).toFixed(1) + '%'); } return 'polygon(' + pts.join(',') + ')'; }
+function comicFx(x, y, shred) {
+  const wrap = document.createElement('div'); wrap.className = 'comic';
+  const col = COMIC_COL[Math.floor(rand() * COMIC_COL.length)], word = (shred ? COMIC_SHRED : COMIC_PAIR)[Math.floor(rand() * (shred ? COMIC_SHRED.length : COMIC_PAIR.length))];
+  const bw = 190 + rand() * 40, bh = 140 + rand() * 30, poly = starPoly(10 + Math.floor(rand() * 6), 0.55 + rand() * 0.12);
+  wrap.style.cssText = `--sc:${SC};--bw:${bw}px;--bh:${bh}px;--fs:${word.length > 6 ? 34 : 42}px;--r:${(rand() * 24 - 12).toFixed(1)}deg;--c1:${col[0]};--c2:${col[1]};--c3:${col[2]};--c4:${col[3]}`;
+  scr(wrap, 0, 0, W, H);
+  const px = (x / W * 100).toFixed(1) + '%', py = (y / H * 100).toFixed(1) + '%';
+  const lines = document.createElement('div'); lines.className = 'lines';
+  lines.style.background = `repeating-conic-gradient(from ${Math.floor(rand() * 9)}deg at ${px} ${py},rgba(0,0,0,.85) 0 1.6deg,transparent 1.6deg 7deg)`;
+  lines.style.webkitMaskImage = lines.style.maskImage = `radial-gradient(circle at ${px} ${py},transparent 0 ${70 * SC}px,#000 ${190 * SC}px)`;
+  wrap.appendChild(lines);
+  const holder = document.createElement('div'); holder.style.cssText = `position:absolute;left:${px};top:${py};width:0;height:0`;
+  const bb = document.createElement('div'); bb.className = 'bb'; bb.style.clipPath = poly; bb.style.width = `calc(var(--bw) * 1.1 * var(--sc))`; bb.style.height = `calc(var(--bh) * 1.1 * var(--sc))`;
+  const bf = document.createElement('div'); bf.className = 'bf'; bf.style.clipPath = poly;
+  const inn = document.createElement('div'); inn.className = 'in'; inn.style.clipPath = starPoly(8, 0.7);
+  const w = document.createElement('div'); w.className = 'w'; w.textContent = word;
+  holder.append(bb, bf, inn);
+  for (let i = 0; i < 8; i++) { const d = document.createElement('div'); d.className = 'dot'; const a = i / 8 * TAU + rand() * 0.4, r = 90 + rand() * 50;
+    d.style.setProperty('--dx', (Math.cos(a) * r).toFixed(0) + 'px'); d.style.setProperty('--dy', (Math.sin(a) * r).toFixed(0) + 'px'); d.style.animationDelay = (0.05 + rand() * 0.1).toFixed(2) + 's'; holder.appendChild(d); }
+  holder.appendChild(w); wrap.appendChild(holder);
+  document.body.appendChild(wrap);
+  const wr = document.getElementById('wrap'); wr.classList.remove('cshake'); void wr.offsetWidth; wr.classList.add('cshake');
+  setTimeout(() => wrap.remove(), 1400);
+}
 function render(dt) {
   ctx.save();
   if (G.shake > 0) ctx.translate((rand() - 0.5) * 10 * G.shake / 0.4, (rand() - 0.5) * 10 * G.shake / 0.4);
@@ -887,7 +992,6 @@ function render(dt) {
     if (state === 'dying' && st > 0.9) bigCenter('GAME OVER', 320, 50, '#ff3b5c');
     if (G.red > 0) { ctx.fillStyle = `rgba(255,0,0,${G.red * 0.5})`; ctx.fillRect(0, 0, W, H); }
     drawBanner();
-    txt(muted ? 'M:SON OFF' : 'M:SON', 472, 630, { arcade: 1, size: 10, c: '#557', align: 'right' });
   } else if (state === 'attract') drawAttract();
   else if (state === 'howto') drawHowTo(st > 2.5);
   else if (state === 'pushstart') {
@@ -904,12 +1008,12 @@ function render(dt) {
 let last = performance.now();
 function loop(ts) {
   const dt = Math.min(0.05, Math.max(0, (ts - last) / 1000)); last = ts; T += dt;
-  update(dt); render(dt);
+  update(dt); render(dt); syncDom();
   requestAnimationFrame(loop);
 }
 resize();
 requestAnimationFrame(loop);
-window.__DUEL = { decodeP, codeFor, CFG, ENT, LEVELS, MAXS, buildBoard, cfgParts, pKey, isValidParts, DATOMS, DIONS, G, get state() { return state; } };
+window.__DUEL = { decodeP, codeFor, CFG, ENT, MODE, LEVELS, useScanner, comicFx, MAXS, buildBoard, cfgParts, pKey, isValidParts, DATOMS, DIONS, G, get state() { return state; } };
 })();
 </script>
 </body>
