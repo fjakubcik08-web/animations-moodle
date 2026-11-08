@@ -11,7 +11,7 @@ canvas{display:block;touch-action:none;cursor:crosshair;outline:none}
 #codebox{position:absolute;display:none;box-sizing:border-box;gap:2%;align-items:stretch}
 #codeIn{flex:1 1 auto;min-width:0;box-sizing:border-box;background:#0b0820;color:#ffe14d;border:3px solid #ffe14d;border-radius:8px;
   font-family:"Courier New",Courier,monospace;font-weight:bold;text-align:center;letter-spacing:.12em;user-select:text;-webkit-user-select:text;outline:none}
-#copyBtn{flex:0 0 32%;box-sizing:border-box;background:#ff3b5c;color:#fff;border:3px solid #fff;border-radius:8px;cursor:pointer;
+#copyBtn{display:none!important;flex:0 0 32%;box-sizing:border-box;background:#ff3b5c;color:#fff;border:3px solid #fff;border-radius:8px;cursor:pointer;
   font-family:"Courier New",Courier,monospace;font-weight:bold}
 #copyBtn:active{transform:translateY(1px)}
 .comic{position:absolute;pointer-events:none;overflow:visible;z-index:5}
@@ -151,7 +151,7 @@ function decodeP(str) {
 }
 const Q = new URLSearchParams(location.search);
 const P = Q.get('p') ? decodeP(Q.get('p')) : {};
-['lvl', 'nc', 'fx', 'obj', 'vies', 'zs', 't', 's', 'ent'].forEach(k => { if (Q.has(k)) P[k] = Q.get(k); });
+['lvl', 'nc', 'fx', 'obj', 'vies', 'zs', 't', 's', 'ion'].forEach(k => { if (Q.has(k)) P[k] = Q.get(k); });
 function num(v, d, mn, mx) { const x = parseFloat(v); return isFinite(x) ? clamp(x, mn, mx) : d; }
 const CFG = {
   lvl: Math.round(num(P.lvl, 1, 1, 3)),
@@ -212,7 +212,7 @@ function placeCode() {
   codebox.style.top = (r.top + CODE_L.y * SC) + 'px';
   codebox.style.width = (CODE_L.w * SC) + 'px';
   codebox.style.height = (CODE_L.h * SC) + 'px';
-  codeIn.style.fontSize = Math.max(10, 24 * SC) + 'px';
+  codeIn.style.fontSize = Math.max(12, 30 * SC) + 'px';
   copyBtn.style.fontSize = Math.max(9, 16 * SC) + 'px';
 }
 window.addEventListener('resize', resize);
@@ -486,8 +486,10 @@ function drawFx(e) {
 /* ================= DUEL : CONFIGURATIONS & PLATEAUX ================= */
 const SUPD = '⁰¹²³⁴⁵⁶⁷⁸⁹';
 const CAP = { '1s': 2, '2s': 2, '2p': 6, '3s': 2, '3p': 6, '4s': 2 };
-const ENT = (() => { const e = String(P.ent === undefined ? 'auto' : P.ent).toLowerCase(); return ['a', 'i', 'ai'].includes(e) ? e : 'auto'; })();
-const MODE = n => ENT === 'auto' ? (n === 3 ? 'ai' : 'a') : ENT;
+// ion : false (défaut) = atomes uniquement ; true = ions monoatomiques ajoutés au level final
+const ION = [true, 1, '1', 'true', 'oui', 'on'].includes(typeof P.ion === 'string' ? P.ion.toLowerCase() : P.ion);
+const ENT = ION ? 'auto' : 'a';
+const MODE = n => (ION && n >= 2) ? 'ai' : 'a';
 const ONE = n => ({ a: 'ATOME', i: 'ION', ai: 'ENTITÉ' })[MODE(n)];
 function cfgParts(e) { const c = fill(e), o = []; SUB.forEach(([nm], i) => { if (c[i]) o.push([nm, c[i]]); }); return o; }
 function pKey(parts) { return parts.map(p => p[0] + p[1]).join(' '); }
@@ -495,7 +497,7 @@ function pLines(parts) { const s = parts.map(p => p[0] + SUPD[p[1]]); return s.l
 function isValidParts(parts) { const e = parts.reduce((a, p) => a + p[1], 0); return e >= 1 && e <= 20 && pKey(cfgParts(e)) === pKey(parts); }
 const DATOMS = ATOMS.map(a => Object.assign({}, a, { key: pKey(cfgParts(a.e)) }));
 const DIONS = IONS.filter(x => x.e > 0).map(a => Object.assign({}, a, { key: pKey(cfgParts(a.e)) }));
-const SPEC = { 1: { P: 6, K: 3, O: 2, zmax: 10 }, 2: { P: 7, K: 3, O: 2, zmax: 20 }, 3: { P: 8, K: 4, O: 3, zmax: 20 } };
+const SPEC = { 1: { P: 6, K: 3, O: 2, zmin: 1, zmax: 10 }, 2: { P: 7, K: 3, O: 2, zmin: 1, zmax: 18 }, 3: { P: 8, K: 4, O: 3, zmin: 11, zmax: 20 } };
 function shuffle(a, rng) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 function mkTrap(rng, baseE) {
   const parts = cfgParts(baseE).map(p => p.slice()), opts = [];
@@ -511,11 +513,15 @@ function buildBoard(n) {
   const rng = mulberry32(((CFG.s + 1) * 2654435761 ^ (n * 40503)) >>> 0), S = SPEC[n];
   let pool = [];
   const md = MODE(n);
-  if (md !== 'i') pool = pool.concat(DATOMS.filter(a => a.z <= S.zmax));
-  if (md !== 'a') pool = pool.concat(DIONS.filter(a => a.z <= S.zmax));
+  if (md !== 'i') pool = pool.concat(DATOMS.filter(a => a.z >= S.zmin && a.z <= S.zmax));
+  if (md !== 'a') pool = pool.concat(DIONS.filter(a => a.z >= S.zmin && a.z <= S.zmax));
   shuffle(pool, rng);
   let ents;
-  if (n === 3 && md === 'ai') { const io = pool.filter(x => x.q), at = pool.filter(x => !x.q); ents = io.slice(0, 4).concat(at.slice(0, S.P - 4)); }
+  if (md === 'ai') {   // level 2 : 3 ions simples (charge ±1 ou ±2, Z ≤ 18) ; level final : 4 ions Z ≥ 11
+    const k = n === 3 ? 4 : 3, at = pool.filter(x => !x.q);
+    let io = pool.filter(x => x.q); if (n === 2) io = io.filter(x => Math.abs(x.q) <= 2);
+    ents = io.slice(0, k).concat(at.slice(0, S.P - k));
+  }
   else ents = pool.slice(0, Math.min(S.P, pool.length));
   const used = new Set(ents.map(x => x.key));
   const cards = ents.map(x => ({ parts: cfgParts(x.e), valid: true }));
@@ -875,7 +881,7 @@ function drawHowTo(footerReady) {
   ];
   rows.forEach((r, i) => { const y = 100 + i * 25; txt(r[0].padEnd(24, '.'), 30, y, { arcade: 1, size: 14, c: '#e8e8ff', align: 'left' }); txt(r[1], 450, y, { arcade: 1, size: 14, c: r[2], align: 'right' }); });
   ctx.strokeStyle = '#4ff0ff'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(30, 306); ctx.lineTo(450, 306); ctx.stroke(); ctx.setLineDash([]);
-  [['1. CLIC', ENT === 'auto' ? 'SUR UNE CARTE ATOME / ION' : 'SUR UNE CARTE ' + ONE(1)], ['2. CLIC', 'SUR SA CONFIGURATION'], ['PIÈGE', 'CARTE → BROYEUR'], ['SCANNER', '1/LEVEL · GARDÉ = +1 PIÈGE'], ['ANNULER', 'RE-CLIC / ÉCHAP']]
+  [['1. CLIC', ION ? 'SUR UNE CARTE ATOME / ION' : 'SUR UNE CARTE ATOME'], ['2. CLIC', 'SUR SA CONFIGURATION'], ['PIÈGE', 'CARTE → BROYEUR'], ['SCANNER', '1/LEVEL · GARDÉ = +1 PIÈGE'], ['ANNULER', 'RE-CLIC / ÉCHAP']]
     .forEach((r, i) => { const y = 326 + i * 22; txt(r[0], 30, y, { arcade: 1, size: 14, c: '#ffe14d', align: 'left' }); txt(r[1], 450, y, { arcade: 1, size: 14, c: '#fff', align: 'right' }); });
   txt('PIÈGE = CONFIGURATION IMPOSSIBLE', W / 2, 444, { arcade: 1, size: 13, c: '#ffd60a' });
   txt('OU MAL ÉCRITE', W / 2, 463, { arcade: 1, size: 13, c: '#ffd60a' });
@@ -897,7 +903,7 @@ function drawTop5() {
   base.slice(0, 5).forEach((r, i) => { const y = 228 + i * 44, c = r.nm === 'YOU' ? (blink(3) ? '#fff' : '#ff3b5c') : cols[i];
     txt(['1ST', '2ND', '3RD', '4TH', '5TH'][i], 70, y, { arcade: 1, size: 24, c, align: 'left' }); txt(r.nm, 220, y, { arcade: 1, size: 24, c }); txt(String(r.s).padStart(6, '0'), 410, y, { arcade: 1, size: 24, c, align: 'right' }); });
 }
-const DEMO = [DIONS[1], DATOMS[7], DIONS[9]];
+const DEMO = [DATOMS[10], DATOMS[7], DATOMS[16]];
 function drawAttract() {
   const ph = Math.floor(st / 6) % 3;
   if (ph === 0) {
@@ -1056,7 +1062,7 @@ function loop(ts) {
 }
 resize();
 requestAnimationFrame(loop);
-window.__DUEL = { decodeP, codeFor, CFG, ENT, MODE, LEVELS, useScanner, comicFx, MAXS, buildBoard, cfgParts, pKey, isValidParts, DATOMS, DIONS, G, get state() { return state; } };
+window.__DUEL = { decodeP, codeFor, CFG, ENT, ION, MODE, LEVELS, useScanner, comicFx, MAXS, buildBoard, cfgParts, pKey, isValidParts, DATOMS, DIONS, G, get state() { return state; } };
 })();
 </script>
 </body>
