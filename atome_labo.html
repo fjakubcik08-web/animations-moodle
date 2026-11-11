@@ -121,7 +121,7 @@
 /* ====================== PARAMÈTRES (?p= codé XOR+base64url, clés en clair prioritaires) ====================== */
 const KEY="P2-atome*labo#dc04";
 const DEF={at:[[6,6,6],[8,8,8],[11,12,11]],nm:["A","B","C"],bal:1,cmp:1,lock:1,one:1,cs:3,unit:"kg",
-           mp:1.673e-27,mn:1.675e-27,me:9.109e-31,noise:0,dur:2.9,move:1,seed:-1,chg:1,chgfree:1};
+           mp:1.673e-27,mn:1.675e-27,me:9.109e-31,noise:0,dur:2.9,move:1,seed:-1,chg:1,chgfree:1,acc:""};
 function decodeP(code){
   try{let b=code.replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';
     const bin=atob(b),k=new TextEncoder().encode(KEY),u=new Uint8Array(bin.length);
@@ -134,14 +134,15 @@ const P=Object.assign({},DEF);
   for(const [k,v] of q){if(k==='p'||!(k in DEF))continue;
     if(k==='at')P.at=v.split(';').map(t=>t.split(',').map(Number));
     else if(k==='nm')P.nm=v.split(',');
-    else if(k==='unit')P.unit=v;
+    else if(k==='unit'||k==='acc')P[k]=v;
     else P[k]=Number(v);}
   P.at=P.at.filter(a=>Array.isArray(a)&&a.length===3).slice(0,3);if(!P.at.length)P.at=DEF.at;
   P.cs=Math.min(6,Math.max(1,Math.round(P.cs)));
 })();
 function m32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 const CONFIG=(function(){
-  let list=P.at.map(a=>({p:a[0],n:a[1],e:a[2]}));
+  const ACC=String(P.acc||'').toUpperCase();
+  let list=P.at.map((a,i)=>({p:a[0],n:a[1],e:a[2],acc:'BC'.includes(ACC[i])?ACC[i]:'X'}));
   const rnd=m32(P.seed>=0?P.seed:Math.floor(Math.random()*4294967296));
   if(P.seed>=0)for(let i=list.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[list[i],list[j]]=[list[j],list[i]];}
   list.forEach((a,i)=>{a.name=String(P.nm[i]!==undefined?P.nm[i]:"ABC"[i]);
@@ -227,7 +228,8 @@ const devs={
   cmp:mkDev('cmp','DÉCOMPOSITOR 3000',790,CONFIG.cmpActive,['ZZZAPP !!','KRAKA-BOOM !!','SHAZAM !!'],false)
 };
 const DKEYS=Object.keys(devs);
-const ruled=k=>!devs[k].free;   // appareil soumis aux règles "un seul à la fois" / "verrou"
+const ruled=k=>!devs[k].free;
+const broken=(a,k)=>(k==='bal'&&a.acc==='C')||(k==='cmp'&&a.acc==='B');   // appareil soumis aux règles "un seul à la fois" / "verrou"
 const bursts=[];
 function burst(x,y,text,col,bad){bursts.push({x,y,text,col,bad,t0:performance.now(),rot:(Math.random()-.5)*.3});}
 
@@ -294,6 +296,7 @@ function release(e){
   if(!k){a.tx=a.home.x;a.ty=a.home.y;return;}
   const d=devs[k];let err=null;
   if(!d.active)err='HORS SERVICE !';
+  else if(broken(a,k))err='EN PANNE POUR CET ATOME !';
   else if(d.atom)err='OCCUPÉ !';
   else if(ruled(k)&&CONFIG.one&&DKEYS.some(j=>j!==k&&ruled(j)&&devs[j].atom))err='UN APPAREIL À LA FOIS !';
   else if(ruled(k)&&CONFIG.lock&&[...a.used].some(j=>j!==k&&ruled(j)))err='DÉJÀ ANALYSÉ AILLEURS !';
@@ -387,6 +390,11 @@ function overlay(d,x,y,w,h,t){
   if(!d.active){ctx.save();rRect(x,y,w,h,77,1);ctx.fillStyle='rgba(50,50,60,.6)';ctx.fill();
     ctx.translate(x+w/2,y+h/2-20);ctx.rotate(-.18);rRect(-130,-28,260,56,88,1.5);ink('#ff3b1f',3.5);
     txt('HORS SERVICE',0,2,32,'#fff',IMPACT,'center',4);ctx.restore();return;}
+  if(drag&&broken(drag,d.key)){ctx.save();rRect(x,y,w,h,78,1);ctx.fillStyle='rgba(30,30,35,.6)';ctx.fill();
+    for(let i=0;i<5;i++){const k=((t*.0007)+i/5)%1;ctx.globalAlpha=(1-k)*.7;ctx.fillStyle='#9a9aa4';
+      ctx.beginPath();ctx.arc(x+60+i*42+Math.sin(t*.003+i)*8,y-10-k*90,10+k*22,0,7);ctx.fill();}
+    ctx.globalAlpha=1;ctx.translate(x+w/2,y+h/2-20);ctx.rotate(.15+Math.sin(t*.03)*.03);rRect(-115,-28,230,56,89,1.5);ink('#ff9b1f',3.5);
+    txt('EN PANNE !',0,2,32,'#fff',IMPACT,'center',4);ctx.restore();return;}
   if(sleepy(d)){ctx.save();rRect(x,y,w,h,79,1);ctx.fillStyle='rgba(40,40,70,.45)';ctx.fill();
     for(let i=0;i<3;i++){const k=((t*.0006)+i/3)%1;ctx.globalAlpha=1-k;
       txt('Z',x+w-70+k*40+i*6,y+40-k*60,18+i*8,'#fff',IMPACT,'center',3);}
