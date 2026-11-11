@@ -128,7 +128,9 @@ const patCloud= dotPattern(8,1.6,'rgba(255,255,255,0.22)');
 
 /* ================= ÉTAT ================= */
 const EOBJ=Math.log10((300/(objmm*1e-3))/s0);       // exposant de zoom de l'objet (~300 px)
-const LV=[]; if(useObj) LV.push(EOBJ); for(let k=zmin;k<=zmax;k++) LV.push(k);
+const nucpx = +(P.nucpx ?? (240 + Math.random()*140));   // diamètre du noyau au zoom max : 240-380 px, varie à chaque chargement
+const ENUC = Math.log10(nucpx/(2*Rnuc*s0));          // dernier niveau : noyau bien visible, quel que soit l'élément
+const LV=[]; if(useObj) LV.push(EOBJ); for(let k=zmin;k<=Math.min(zmax,ENUC-0.5);k++) LV.push(k); LV.push(ENUC);
 let level=Math.max(0,Math.min(LV.length-1,z0i)), logZ=LV[level], t0=performance.now();
 const OBJCOL={Au:'#f2c230',Cu:'#d27a43',Ag:'#c9ced6',Al:'#bfc6cc',Fe:'#8d939a',Na:'#d0d4d8',U:'#7d8775',C:'#3a3a3a'}[el]||'#b8c0c8';
 const blob=[]; { const r=rng(99); for(let k=2;k<9;k++) blob.push([k,(r()-0.5)*0.16/k*2,r()*6.28]); }
