@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Légender un schéma</title>
+<style>
+:root{--bleu:#1f5fa8;--bleu2:#e8f0fa;--gris:#5b6675;--bord:#b9c6d6;--fond:#f7f9fc;--ok:#2e8b57;--ko:#c0392b;}
+*{box-sizing:border-box}
+html,body{margin:0;background:#fff;color:#1d2733;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;}
+#app{max-width:940px;margin:0 auto;padding:10px 12px 14px;}
+.consigne{font-size:14px;color:var(--gris);margin:0 0 10px;}
+#stage{position:relative;width:100%;touch-action:none;}
+#img{display:block;width:56%;margin:0 auto;height:auto;user-select:none;-webkit-user-select:none;-webkit-user-drag:none;pointer-events:none;}
+#lines{position:absolute;left:0;top:0;pointer-events:none;overflow:visible;}
+.box{position:absolute;height:34px;border:2px dashed var(--bord);border-radius:8px;background:var(--fond);
+  display:flex;align-items:center;padding:0 6px 0 4px;font-size:14px;cursor:pointer;transition:border-color .15s,background .15s;}
+.box .num{flex:0 0 auto;min-width:20px;height:20px;border-radius:10px;background:var(--bleu);color:#fff;font-size:12px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;margin-right:6px;}
+.box .txt{flex:1 1 auto;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.box.filled{border-style:solid;border-color:var(--bleu);background:var(--bleu2);font-weight:600;color:var(--bleu);}
+.box.fixed{border-style:solid;border-color:#c9d1db;background:#eef1f5;color:var(--gris);cursor:default;font-style:italic;}
+.box.hover{border-color:#e08a00;background:#fff4e0;}
+.box.ok{border-color:var(--ok);background:#e6f4ec;color:var(--ok);}
+.box.ko{border-color:var(--ko);background:#fbeaea;color:var(--ko);}
+#trayWrap{margin-top:12px;border-top:1px solid #e3e8ef;padding-top:10px;}
+#trayTitle{font-size:13px;color:var(--gris);margin-bottom:6px;}
+#tray{display:flex;flex-wrap:wrap;gap:8px;min-height:38px;padding:4px;border-radius:8px;}
+#tray.hover{background:#fff4e0;}
+.chip{padding:7px 12px;border-radius:18px;background:#fff;border:1.5px solid var(--bleu);color:var(--bleu);font-size:14px;font-weight:600;
+  cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+.chip.sel{background:var(--bleu);color:#fff;}
+.ghost{position:fixed;z-index:50;pointer-events:none;opacity:.9;transform:translate(-50%,-50%);cursor:grabbing;}
+#bar{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;}
+button{font:inherit;font-size:14px;padding:7px 14px;border-radius:8px;border:1px solid var(--bord);background:#fff;color:#1d2733;cursor:pointer;}
+button.prim{background:var(--bleu);border-color:var(--bleu);color:#fff;font-weight:600;}
+button:disabled{opacity:.45;cursor:default;}
+#msg{font-size:13px;color:#b06a00;}
+#codeBox{display:none;margin-top:12px;padding:10px 14px;border-radius:10px;background:var(--bleu2);border:1px solid #c6d7ee;}
+#codeBox .lab{font-size:13px;color:var(--gris);}
+#codeBox .code{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:26px;font-weight:700;letter-spacing:2px;color:var(--bleu);user-select:all;-webkit-user-select:all;}
+#err{display:none;padding:14px;border-radius:8px;background:#fbeaea;color:var(--ko);font-size:14px;}
+/* éditeur */
+#ed{display:none;}
+#edStage{position:relative;width:70%;margin:0 auto;cursor:crosshair;}
+#edStage img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none;}
+.mk{position:absolute;transform:translate(-50%,-50%);min-width:20px;height:20px;border-radius:10px;background:#e08a00;color:#fff;font-size:11px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;padding:0 4px;pointer-events:none;box-shadow:0 0 0 2px #fff;}
+#edOut{width:100%;height:150px;font-family:ui-monospace,Consolas,monospace;font-size:13px;margin-top:8px;}
+#edRow{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap;}
+#edLab{font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--bord);border-radius:6px;min-width:220px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="err"></div>
+
+  <div id="main" style="display:none">
+    <p class="consigne" id="consigne"></p>
+    <div id="stage">
+      <img id="img" alt="">
+      <svg id="lines"></svg>
+    </div>
+    <div id="trayWrap">
+      <div id="trayTitle">Étiquettes</div>
+      <div id="tray"></div>
+    </div>
+    <div id="bar">
+      <button id="btnReset">Tout effacer</button>
+      <button id="btnOk" class="prim">Valider</button>
+      <span id="msg"></span>
+    </div>
+    <div id="codeBox">
+      <div class="lab">Code à recopier dans Moodle :</div>
+      <div class="code" id="code"></div>
+      <div class="lab">Tes réponses sont verrouillées.</div>
+    </div>
+  </div>
+
+  <div id="ed">
+    <p class="consigne">Mode éditeur : clique sur l'image pour poser un point, tape l'étiquette puis Entrée. Copie ensuite la liste dans ton notebook.</p>
+    <div id="edStage"><img id="edImg" alt=""></div>
+    <div id="edRow">
+      <input id="edLab" placeholder="Étiquette du dernier point">
+      <button id="edUndo">Annuler le dernier point</button>
+    </div>
+    <textarea id="edOut" readonly></textarea>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- encodage (miroir Python : etiq_encode / etiq_hash / etiq_code) ---------- */
+const KEY = "PBayle-Etiquettes#7q";
+const ALPH = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+function b64urlToBytes(s){
+  s = s.replace(/-/g,"+").replace(/_/g,"/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s), u = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+function decodeP(p){
+  const b = b64urlToBytes(p), k = new TextEncoder().encode(KEY);
+  for (let i=0;i<b.length;i++) b[i] ^= k[i % k.length];
+  return JSON.parse(new TextDecoder("utf-8").decode(b));
+}
+function fnv(str){
+  let h = 0x811c9dc5;
+  for (const ch of str){ h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+function norm(s){ return String(s).normalize("NFC").trim().toLowerCase(); }
+function hashLabel(seed,i,label){ return fnv(seed+"|"+i+"|"+norm(label)).toString(16).padStart(8,"0"); }
+function codeFin(seed,score,n){
+  const t = "ETIQ|"+seed+"|"+score+"|"+n;
+  let h = fnv(t); const h2 = fnv(t+"#");
+  let c = "";
+  for (let i=0;i<6;i++){ c += ALPH[h & 31]; h >>>= 5; }
+  c += ALPH[h2 & 31];
+  return c.slice(0,4)+"-"+c.slice(4);
+}
+
+/* ---------- paramètres ---------- */
+const Q = new URLSearchParams(location.search);
+let P = {};
+try { if (Q.get("p")) P = decodeP(Q.get("p")); } catch(e){ P = {__bad:true}; }
+// paramètres en clair prioritaires (tests locaux)
+for (const k of ["img","num","fb","edit"]) if (Q.has(k)) P[k] = (k==="img") ? Q.get(k) : Number(Q.get(k));
+
+function imgUrl(name){
+  if (!name) return "";
+  if (/^(https?:|data:|\/|\.)/.test(name)) return name;
+  return "images/" + name;
+}
+function showErr(t){ const e=document.getElementById("err"); e.textContent=t; e.style.display="block"; }
+
+if (P.edit) startEditor();
+else if (P.__bad || !P.z || !P.l || !P.h) showErr("Paramètre manquant ou invalide : cette animation doit être ouverte avec son lien ?p=… généré par Python.");
+else startMain();
+
+/* =================================================================== */
+function startMain(){
+  const main = document.getElementById("main"); main.style.display = "block";
+  const stage = document.getElementById("stage"), img = document.getElementById("img"), svg = document.getElementById("lines");
+  const tray = document.getElementById("tray"), msg = document.getElementById("msg");
+  const btnOk = document.getElementById("btnOk"), btnReset = document.getElementById("btnReset");
+
+  const seed = P.s|0, zones = P.z, labels = P.l, H = P.h, fixed = P.f || [];
+  const n = zones.length, reuse = !!P.r, showNum = (P.num === undefined) ? true : !!P.num, fb = !!P.fb;
+  const placed = new Array(n).fill(-1);
+  let locked = false, confirmPending = false, selected = -1;
+
+  document.getElementById("consigne").textContent =
+    "Fais glisser chaque étiquette dans la bonne case (ou clique sur une étiquette puis sur une case)."
+    + (labels.length > n ? " Attention : certaines étiquettes ne servent à rien." : "")
+    + " Clique sur une case remplie pour la vider.";
+
+  // stockage local (verrouillage après validation)
+  const SKEY = "etiq_v1_" + fnv(Q.get("p") || "") + "_" + seed;
+  function save(code){ try { localStorage.setItem(SKEY, JSON.stringify({placed, code})); } catch(e){} }
+  function load(){ try { const v = localStorage.getItem(SKEY); return v ? JSON.parse(v) : null; } catch(e){ return null; } }
+
+  // cases
+  const boxes = [];
+  zones.forEach((z,i) => {
+    const b = document.createElement("div"); b.className = "box"; b.dataset.i = i;
+    b.innerHTML = (showNum ? '<span class="num">'+(i+1)+'</span>' : '') + '<span class="txt"></span>';
+    b.addEventListener("click", () => onBoxClick(i));
+    stage.appendChild(b); boxes.push(b);
+  });
+  const fixedBoxes = fixed.map(f => {
+    const b = document.createElement("div"); b.className = "box fixed";
+    b.innerHTML = '<span class="txt"></span>'; b.querySelector(".txt").textContent = f[2];
+    stage.appendChild(b); return b;
+  });
+
+  function render(){
+    boxes.forEach((b,i) => {
+      const t = b.querySelector(".txt");
+      if (placed[i] >= 0){ t.textContent = labels[placed[i]]; b.classList.add("filled"); }
+      else { t.textContent = ""; b.classList.remove("filled"); }
+    });
+    fitAll();
+    tray.innerHTML = "";
+    labels.forEach((lab,j) => {
+      if (!reuse && placed.includes(j)) return;
+      const c = document.createElement("div"); c.className = "chip" + (selected===j ? " sel" : "");
+      c.textContent = lab; c.dataset.j = j;
+      c.addEventListener("pointerdown", e => startDrag(e, j, -1));
+      tray.appendChild(c);
+    });
+    btnOk.disabled = locked; btnReset.disabled = locked;
+  }
+
+  function fitAll(){
+    document.querySelectorAll("#stage .box .txt").forEach(t => {
+      t.style.fontSize = "";
+      let fs = 14;
+      while (t.scrollWidth > t.clientWidth && fs > 10){ fs -= 0.5; t.style.fontSize = fs + "px"; }
+    });
+  }
+  function place(i,j){
+    if (locked) return;
+    if (!reuse){ const k = placed.indexOf(j); if (k >= 0) placed[k] = -1; }
+    placed[i] = j; selected = -1; confirmPending = false; msg.textContent = ""; render();
+  }
+  function onBoxClick(i){
+    if (locked || dragMoved) return;
+    if (selected >= 0) place(i, selected);
+    else if (placed[i] >= 0){ placed[i] = -1; confirmPending = false; msg.textContent = ""; render(); }
+  }
+
+  // glisser-déposer (pointer events)
+  let drag = null, dragMoved = false;
+  function startDrag(e, j, fromBox){
+    if (locked) return;
+    e.preventDefault();
+    const g = document.createElement("div"); g.className = "chip ghost"; g.textContent = labels[j];
+    drag = {j, fromBox, x0:e.clientX, y0:e.clientY, g, shown:false};
+    dragMoved = false;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, {once:true});
+  }
+  function targetAt(x,y){
+    const el = document.elementFromPoint(x,y);
+    if (!el) return null;
+    const b = el.closest(".box"); if (b && !b.classList.contains("fixed")) return {box:+b.dataset.i};
+    if (el.closest("#trayWrap")) return {tray:true};
+    return null;
+  }
+  let hoverEl = null;
+  function setHover(el){ if (hoverEl) hoverEl.classList.remove("hover"); hoverEl = el; if (el) el.classList.add("hover"); }
+  function onMove(e){
+    if (!drag) return;
+    if (!drag.shown && Math.hypot(e.clientX-drag.x0, e.clientY-drag.y0) > 5){ drag.shown = true; dragMoved = true; document.body.appendChild(drag.g); }
+    if (!drag.shown) return;
+    drag.g.style.left = e.clientX+"px"; drag.g.style.top = e.clientY+"px";
+    const t = targetAt(e.clientX,e.clientY);
+    setHover(t ? (t.tray ? tray : boxes[t.box]) : null);
+  }
+  function onUp(e){
+    window.removeEventListener("pointermove", onMove);
+    const d = drag; drag = null; setHover(null);
+    if (!d) return;
+    if (!d.shown){ // simple clic : sélection (depuis la réserve) ; sur une case, c'est le click qui gère
+      if (d.fromBox < 0){ selected = (selected === d.j) ? -1 : d.j; render(); }
+      setTimeout(() => dragMoved = false, 0); return;
+    }
+    d.g.remove();
+    const t = targetAt(e.clientX,e.clientY);
+    if (t && t.box !== undefined) place(t.box, d.j);
+    else if (d.fromBox >= 0){ placed[d.fromBox] = -1; render(); }
+    setTimeout(() => dragMoved = false, 0);
+  }
+  // une case remplie peut aussi être déplacée en la faisant glisser
+  boxes.forEach((b,i) => b.addEventListener("pointerdown", e => { if (placed[i] >= 0 && !locked) startDrag(e, placed[i], i); }));
+
+  btnReset.addEventListener("click", () => { if (locked) return; placed.fill(-1); selected = -1; confirmPending = false; msg.textContent = ""; render(); });
+  btnOk.addEventListener("click", () => {
+    if (locked) return;
+    const vides = placed.filter(v => v < 0).length;
+    if (vides > 0 && !confirmPending){
+      confirmPending = true;
+      msg.textContent = "Il reste " + vides + " case" + (vides>1?"s":"") + " vide" + (vides>1?"s":"") + ". Clique encore sur Valider pour confirmer.";
+      return;
+    }
+    finish();
+  });
+  function finish(restoredCode){
+    let score = 0;
+    placed.forEach((j,i) => {
+      const good = j >= 0 && hashLabel(seed, i, labels[j]) === H[i];
+      if (good) score++;
+      if (fb) boxes[i].classList.add(good ? "ok" : "ko");
+    });
+    const code = restoredCode || codeFin(seed, score, n);
+    locked = true; selected = -1; msg.textContent = "";
+    document.getElementById("code").textContent = code;
+    document.getElementById("codeBox").style.display = "block";
+    save(code); render();
+  }
+
+  // mise en page : cases à gauche / à droite de l'image, traits de rappel
+  function layout(){
+    const W = stage.clientWidth, iw = img.clientWidth, ih = img.clientHeight, ix = img.offsetLeft, iy = img.offsetTop;
+    if (!iw || !ih) return;
+    const colW = Math.round(W * 0.205), bh = 34, gap = 8;
+    const items = [];
+    zones.forEach((z,i) => items.push({el:boxes[i], x:z[0], y:z[1], num:i+1}));
+    fixed.forEach((f,i) => items.push({el:fixedBoxes[i], x:f[0], y:f[1], num:0}));
+    items.forEach(it => { it.tx = ix + it.x/100*iw; it.ty = iy + it.y/100*ih; it.side = it.x < 50 ? "L" : "R"; });
+    let maxB = iy + ih;
+    for (const side of ["L","R"]){
+      const col = items.filter(it => it.side === side).sort((a,b) => a.ty - b.ty);
+      let prev = -Infinity;
+      col.forEach(it => { it.top = Math.max(it.ty - bh/2, prev + gap, 0); prev = it.top + bh; });
+      // si ça déborde en bas, on remonte
+      let lim = Math.max(iy + ih, bh);
+      for (let k = col.length-1; k >= 0; k--){
+        if (col[k].top + bh > lim) col[k].top = Math.max(0, lim - bh);
+        lim = col[k].top - gap;
+      }
+      col.forEach(it => maxB = Math.max(maxB, it.top + bh));
+    }
+    stage.style.height = Math.ceil(maxB + 2) + "px";
+    let s = "";
+    items.forEach(it => {
+      const left = it.side === "L" ? 0 : W - colW;
+      it.el.style.left = left + "px"; it.el.style.top = it.top + "px"; it.el.style.width = colW + "px";
+      const ax = it.side === "L" ? colW : W - colW, ay = it.top + bh/2;
+      s += '<line x1="'+ax+'" y1="'+ay+'" x2="'+it.tx+'" y2="'+it.ty+'" stroke="#1f5fa8" stroke-width="1.6" stroke-opacity=".85"/>';
+      s += '<circle cx="'+it.tx+'" cy="'+it.ty+'" r="4.5" fill="#1f5fa8" stroke="#fff" stroke-width="1.5"/>';
+    });
+    svg.setAttribute("width", W); svg.setAttribute("height", stage.clientHeight);
+    svg.innerHTML = s;
+    fitAll();
+  }
+  img.addEventListener("load", layout);
+  img.addEventListener("error", () => showErr("Image introuvable : " + imgUrl(P.img)));
+  window.addEventListener("resize", layout);
+  img.src = imgUrl(P.img);
+
+  const st = load();
+  if (st && Array.isArray(st.placed) && st.placed.length === n){ st.placed.forEach((v,i) => placed[i] = v); render(); finish(st.code); }
+  else render();
+}
+
+/* =================================================================== */
+function startEditor(){
+  document.getElementById("ed").style.display = "block";
+  const st = document.getElementById("edStage"), im = document.getElementById("edImg");
+  const lab = document.getElementById("edLab"), out = document.getElementById("edOut");
+  const pts = [];
+  im.src = imgUrl(P.img);
+  im.addEventListener("error", () => showErr("Image introuvable : " + imgUrl(P.img) + " (utilise ?edit=1&img=nom_du_fichier)"));
+  function draw(){
+    st.querySelectorAll(".mk").forEach(m => m.remove());
+    pts.forEach((p,i) => {
+      const m = document.createElement("div"); m.className = "mk"; m.textContent = i+1;
+      m.style.left = p[0]+"%"; m.style.top = p[1]+"%"; st.appendChild(m);
+    });
+    out.value = '"zones": [\n' + pts.map(p => '    (' + p[0].toFixed(1) + ', ' + p[1].toFixed(1) + ', "' + (p[2]||"?").replace(/"/g,'\\"') + '"),').join("\n") + '\n],';
+  }
+  st.addEventListener("click", e => {
+    const r = im.getBoundingClientRect();
+    const x = (e.clientX - r.left)/r.width*100, y = (e.clientY - r.top)/r.height*100;
+    if (x<0||x>100||y<0||y>100) return;
+    pts.push([Math.round(x*10)/10, Math.round(y*10)/10, ""]); lab.value = ""; lab.focus(); draw();
+  });
+  lab.addEventListener("input", () => { if (pts.length){ pts[pts.length-1][2] = lab.value; draw(); } });
+  lab.addEventListener("keydown", e => { if (e.key === "Enter") lab.blur(); });
+  document.getElementById("edUndo").addEventListener("click", () => { pts.pop(); lab.value = ""; draw(); });
+  draw();
+}
+</script>
+</body>
+</html>
