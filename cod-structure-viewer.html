@@ -19,7 +19,12 @@
   #toolbar button:disabled{background:#5c7fa8;color:#9fb3cc;cursor:not-allowed;opacity:.6;}
   #toolbar .nav{margin-left:auto;display:flex;gap:6px;}
   #canvasHolder{position:absolute;top:34px;left:0;right:0;bottom:0;background:#000;}
-  canvas{display:block;width:100%;height:100%;cursor:grab;}
+  canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none;}
+  #zoomBox{position:absolute;bottom:10px;right:10px;z-index:7;display:flex;flex-direction:column;gap:6px;}
+  #zoomBox button{width:44px;height:44px;border:none;border-radius:50%;background:#1565c0;color:#fff;
+    font-size:24px;font-weight:bold;line-height:44px;padding:0;cursor:pointer;
+    box-shadow:0 2px 6px rgba(0,0,0,.5);user-select:none;-webkit-user-select:none;touch-action:manipulation;}
+  #zoomBox button:active{background:#0a3a80;}
   canvas:active{cursor:grabbing;}
   #infoBar{position:absolute;top:40px;left:8px;z-index:5;background:rgba(0,0,0,.6);
     color:#eee;font-family:Arial,Helvetica,sans-serif;font-size:13px;
@@ -54,7 +59,11 @@
   <div id="infoBar" style="display:none;"></div>
   <div id="status"></div>
   <div id="watermark"></div>
-  <div id="legend2">glisser: rotation / molette: zoom</div>
+  <div id="zoomBox">
+    <button id="zoomIn" title="zoomer">+</button>
+    <button id="zoomOut" title="dézoomer">&minus;</button>
+  </div>
+  <div id="legend2">glisser : rotation / + − : zoom</div>
 </div>
 
 <script>
@@ -316,11 +325,25 @@ function decodeCod(code){
 
 let currentId = null;
 
+/* ---- Contraste cation/anion ----
+   Si les deux couleurs sont trop proches (ex. Li #b22222 / Br #a52a2a), la couleur
+   de l'anion est remplacée par la première couleur bien distincte de la palette. */
+const CONTRAST_MIN = 160;
+const FALLBACK_COLORS = ['#00bfff','#ffd700','#00e676','#ffffff','#ff9800','#7c4dff'];
+function hexRgb(h){ h = h.replace('#',''); return [0,2,4].map(i => parseInt(h.substr(i,2),16)); }
+function colDist(a,b){ const p = hexRgb(a), q = hexRgb(b);
+  return Math.sqrt((p[0]-q[0])**2 + (p[1]-q[1])**2 + (p[2]-q[2])**2); }
+function withContrast(entry){
+  if(colDist(entry.catColor, entry.aniColor) >= CONTRAST_MIN) return entry;
+  const alt = FALLBACK_COLORS.find(c => colDist(c, entry.catColor) >= 200) || '#ffffff';
+  return Object.assign({}, entry, {aniColor: alt});
+}
+
 function loadCod(id){
   id = parseInt(id, 10);
   const statusEl = document.getElementById('status');
   const infoEl = document.getElementById('infoBar');
-  const entry = DB[id];
+  let entry = DB[id];
   if(!entry){
     infoEl.style.display = 'none';
     statusEl.style.display = 'block';
@@ -329,6 +352,7 @@ function loadCod(id){
     return;
   }
   currentId = id;
+  entry = withContrast(entry);
   statusEl.style.display = 'none';
   const repr = document.getElementById('reprSelect').value;
   buildStructure(entry, repr);
@@ -352,6 +376,22 @@ document.getElementById('nextBtn').addEventListener('click', () => {
   const idx = DB_IDS.indexOf(currentId);
   if(idx >= 0 && idx < DB_IDS.length-1) loadCod(DB_IDS[idx+1]);
 });
+/* ---- Boutons de zoom (sans souris : pavé tactile / écran tactile) ----
+   clic = un cran ; maintenir appuyé = zoom continu */
+function zoomStep(f){ camDist = Math.max(4, Math.min(40, camDist * f)); }
+function holdZoom(btn, f){
+  let timer = null;
+  const stop = () => { if(timer){ clearInterval(timer); timer = null; } };
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation();
+    zoomStep(f);
+    stop(); timer = setInterval(() => zoomStep(Math.pow(f, 0.25)), 40);
+  });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+}
+holdZoom(document.getElementById('zoomIn'), 0.85);
+holdZoom(document.getElementById('zoomOut'), 1/0.85);
+
 document.getElementById('autoRotate').addEventListener('change', e => { autoRotate = e.target.checked; });
 document.getElementById('reprSelect').addEventListener('change', () => {
   if(currentId != null) loadCod(currentId);
