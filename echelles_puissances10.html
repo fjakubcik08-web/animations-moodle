@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>De l'atome à la roche</title>
+<style>
+  :root{--ink:#14161c;--blue:#1565c0;--red:#e53935;--yellow:#ffd54f;--light:#eef1f6;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:#07090d;color:var(--light);font-family:"Trebuchet MS","Segoe UI",sans-serif;user-select:none;
+    background-image:radial-gradient(rgba(66,165,245,.16) 1.2px,transparent 1.3px);background-size:10px 10px;}
+  body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:40;
+    background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px);}
+  #page{max-width:960px;margin:0 auto;padding:14px 16px 20px;}
+  h1{margin:0 0 14px;font-family:Impact,"Arial Black",sans-serif;font-weight:normal;letter-spacing:3px;font-size:30px;
+    color:#fff;background:var(--blue);display:inline-block;padding:4px 18px;border:3px solid var(--light);
+    box-shadow:5px 5px 0 var(--yellow);transform:skew(-8deg);text-shadow:3px 3px 0 var(--ink);}
+  .panel{border:3px solid var(--light);box-shadow:6px 6px 0 var(--blue);padding:28px 14px 16px;position:relative;
+    background:radial-gradient(ellipse at 30% 20%,#f5f8fa 0%,#dde5eb 70%,#c9d4dc 100%);color:var(--ink);}
+  .ptitle{position:absolute;top:-15px;left:14px;z-index:6;background:var(--yellow);border:3px solid var(--ink);color:var(--ink);
+    font-family:Impact,sans-serif;letter-spacing:1px;padding:1px 10px;font-size:15px;transform:rotate(-2deg);}
+  #tray{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;min-height:58px;padding:6px;border:3px dashed #90a4ae;border-radius:10px;margin-bottom:18px;}
+  .tok{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#fff;border:3px solid var(--ink);border-radius:22px;
+    font-family:Impact,sans-serif;font-size:18px;letter-spacing:1px;cursor:grab;box-shadow:3px 3px 0 var(--blue);touch-action:none;}
+  .tok:active{cursor:grabbing;}
+  .tok.drag{position:fixed;z-index:60;pointer-events:none;transform:translate(-50%,-50%) rotate(-4deg);box-shadow:5px 5px 0 var(--yellow);}
+  #axisWrap{position:relative;height:300px;}
+  #axis{position:absolute;left:3%;right:3%;top:205px;height:6px;background:var(--ink);border-radius:3px;}
+  #axis:after{content:"";position:absolute;right:-14px;top:-7px;border-left:16px solid var(--ink);border-top:10px solid transparent;border-bottom:10px solid transparent;}
+  .tick{position:absolute;top:197px;width:3px;height:22px;background:var(--ink);transform:translateX(-50%);}
+  .tick.hot{background:var(--red);height:30px;top:193px;}
+  .lab{position:absolute;top:226px;transform:translateX(-50%);font-family:"Courier New",monospace;font-weight:bold;font-size:15px;white-space:nowrap;}
+  .unit{position:absolute;right:0;top:262px;font-family:Impact,sans-serif;font-size:16px;letter-spacing:1px;}
+  .placed{position:absolute;transform:translateX(-50%);}
+  .placed .tok{font-size:15px;padding:4px 10px;box-shadow:2px 2px 0 var(--blue);}
+  .stem{position:absolute;width:3px;background:var(--blue);transform:translateX(-50%);}
+  .bar{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:6px;flex-wrap:wrap;}
+  .btn{font-family:Impact,sans-serif;font-size:21px;letter-spacing:1px;color:#fff;background:var(--red);border:3px solid var(--ink);
+    box-shadow:4px 4px 0 var(--yellow);padding:8px 22px;cursor:pointer;transform:skew(-8deg);touch-action:manipulation;}
+  .btn.alt{background:#37474f;font-size:16px;padding:6px 14px;}
+  .btn.shake{animation:shk .4s;}
+  @keyframes shk{0%,100%{transform:skew(-8deg)}25%{transform:skew(-8deg) translateX(-8px)}75%{transform:skew(-8deg) translateX(8px)}}
+  #code{font-family:"Courier New",monospace;font-weight:bold;font-size:24px;background:#000;color:#69f0ae;border:3px solid var(--ink);
+    padding:6px 16px;min-width:190px;text-align:center;letter-spacing:2px;}
+  #msg{text-align:center;min-height:22px;margin-top:8px;font-weight:bold;color:#c62828;}
+  #fx{position:absolute;inset:0;overflow:hidden;pointer-events:none;}
+  .burst{position:absolute;left:50%;top:40%;width:240px;height:160px;margin:-80px 0 0 -120px;background:var(--yellow);
+    display:flex;align-items:center;justify-content:center;transform:scale(0);
+    clip-path:polygon(50% 0,61% 22%,85% 5%,78% 32%,100% 38%,80% 55%,98% 78%,70% 72%,62% 100%,48% 78%,25% 98%,27% 70%,0 75%,18% 52%,2% 30%,28% 30%,22% 5%,42% 22%);
+    font-family:Impact,sans-serif;font-size:42px;color:var(--red);text-shadow:3px 3px 0 var(--ink);}
+  .burst.go{animation:pow .8s ease-out forwards;}
+  @keyframes pow{0%{transform:scale(0) rotate(-25deg)}40%{transform:scale(1.15) rotate(6deg)}70%{transform:scale(1)}100%{transform:scale(1.4);opacity:0}}
+</style>
+</head>
+<body>
+<div id="page">
+  <h1>DE L'ATOME À LA ROCHE</h1>
+  <div class="panel" id="panel">
+    <span class="ptitle">ÉCHELLE DES TAILLES</span>
+    <div id="fx"><div class="burst" id="burst">BAM !</div></div>
+    <div id="tray"></div>
+    <div id="axisWrap"><div id="axis"></div><span class="unit">taille (m)</span></div>
+    <div class="bar">
+      <button class="btn alt" id="resetBtn">↺ RECOMMENCER</button>
+      <button class="btn" id="okBtn">✔ VALIDER</button>
+      <span id="code">- - - -</span>
+    </div>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   PARAMETRES  (?p= JSON -> XOR cle "PBayle-Echelles10#7" -> base64url)
+   { s: graine 0..65535 (code de fin) }
+   Le code de fin = FNV-1a 32 bits de "graine|e_atome|e_maille|e_cristal|e_mineral|e_roche"
+   (alphabet sans caracteres ambigus, format XXXX-XXX). Aucune bonne reponse dans la page.
+   ===================================================================== */
+const KEY = "PBayle-Echelles10#7";
+const ITEMS = [['atome','⚛ Atome'],['maille','▦ Maille'],['cristal','💎 Cristal'],['mineral','🔷 Minéral'],['roche','⛰ Roche']];
+const EMIN = -12, EMAX = 2;
+function decodeParams(code){
+  try{ let b64 = code.replace(/-/g,'+').replace(/_/g,'/'); while(b64.length % 4) b64 += '=';
+    const raw = atob(b64), k = new TextEncoder().encode(KEY), bytes = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) bytes[i] = raw.charCodeAt(i) ^ k[i % k.length];
+    return JSON.parse(new TextDecoder().decode(bytes)); }catch(e){ return null; } }
+const Q = new URLSearchParams(location.search);
+const CFG = Object.assign({s:0}, (Q.get('p') && decodeParams(Q.get('p'))) || {});
+if(Q.has('s')) CFG.s = +Q.get('s');
+
+const ALPH = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+function fnv(str){ let h = 0x811c9dc5; for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+function finalCode(exps){
+  let h = fnv(CFG.s + '|' + exps.join('|')), out = '';
+  for(let i=0;i<7;i++){ out += ALPH[h % 32]; h = Math.floor(h / 32); if(i === 3) out += '-'; }
+  return out;
+}
+
+const $ = id => document.getElementById(id);
+const pos = {};                        // id -> exposant
+const SUP = {'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
+const pow10 = e => '10' + String(e).split('').map(c=>SUP[c]).join('');
+const xOf = e => 3 + 94 * (e - EMIN) / (EMAX - EMIN);   // en % de la largeur
+
+/* graduations */
+for(let e=EMIN; e<=EMAX; e++){
+  const t = document.createElement('div'); t.className = 'tick'; t.id = 'tk'+e; t.style.left = xOf(e)+'%'; $('axisWrap').appendChild(t);
+  const l = document.createElement('div'); l.className = 'lab'; l.style.left = xOf(e)+'%'; l.textContent = pow10(e); $('axisWrap').appendChild(l);
+}
+
+function makeTok(id, label){ const t = document.createElement('div'); t.className = 'tok'; t.dataset.id = id; t.textContent = label;
+  t.addEventListener('pointerdown', startDrag); return t; }
+function render(){
+  $('tray').innerHTML = ''; document.querySelectorAll('.placed,.stem').forEach(n => n.remove());
+  const stack = {};
+  ITEMS.forEach(([id,label]) => {
+    if(pos[id] === undefined){ $('tray').appendChild(makeTok(id,label)); return; }
+    const e = pos[id], k = stack[e] = (stack[e] || 0) + 1;
+    const top = 190 - k*44;
+    const st = document.createElement('div'); st.className = 'stem'; st.style.left = xOf(e)+'%'; st.style.top = (top+34)+'px'; st.style.height = (196-top-34)+'px';
+    const p = document.createElement('div'); p.className = 'placed'; p.style.left = xOf(e)+'%'; p.style.top = top+'px'; p.appendChild(makeTok(id,label));
+    $('axisWrap').appendChild(st); $('axisWrap').appendChild(p);
+  });
+  if($('tray').children.length === 0) $('tray').innerHTML = '<span style="color:#546e7a;align-self:center">Toutes les étiquettes sont placées.</span>';
+  $('code').textContent = '- - - -';
+}
+
+/* glisser-déposer (souris, doigt, pavé tactile) */
+let drag = null;
+function nearestExp(clientX){ const r = $('axis').getBoundingClientRect(), wr = $('axisWrap').getBoundingClientRect();
+  const pct = (clientX - wr.left) / wr.width * 100; return Math.max(EMIN, Math.min(EMAX, Math.round(EMIN + (pct-3)/94*(EMAX-EMIN)))); }
+function overAxis(clientY){ const wr = $('axisWrap').getBoundingClientRect(); return clientY > wr.top && clientY < wr.bottom; }
+function startDrag(e){
+  e.preventDefault(); const src = e.currentTarget, id = src.dataset.id;
+  const g = src.cloneNode(true); g.classList.add('drag'); document.body.appendChild(g);
+  drag = {id, g}; move(e); src.style.visibility = 'hidden';
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', end, {once:true});
+}
+function move(e){ if(!drag) return; drag.g.style.left = e.clientX+'px'; drag.g.style.top = e.clientY+'px';
+  document.querySelectorAll('.tick').forEach(t => t.classList.remove('hot'));
+  if(overAxis(e.clientY)) $('tk'+nearestExp(e.clientX)).classList.add('hot'); }
+function end(e){
+  window.removeEventListener('pointermove', move);
+  document.querySelectorAll('.tick').forEach(t => t.classList.remove('hot'));
+  if(overAxis(e.clientY)) pos[drag.id] = nearestExp(e.clientX); else delete pos[drag.id];
+  drag.g.remove(); drag = null; $('msg').textContent = ''; render();
+}
+
+$('resetBtn').onclick = () => { ITEMS.forEach(([id]) => delete pos[id]); $('msg').textContent = ''; render(); };
+$('okBtn').onclick = () => {
+  const b = $('okBtn');
+  if(ITEMS.some(([id]) => pos[id] === undefined)){
+    $('msg').textContent = 'Place toutes les étiquettes sur l’échelle avant de valider.';
+    b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); return; }
+  $('code').textContent = finalCode(ITEMS.map(([id]) => pos[id]));
+  const w = $('burst'); w.textContent = ['BAM !','POW !','ZAP !'][Math.floor(Math.random()*3)];
+  w.classList.remove('go'); void w.offsetWidth; w.classList.add('go');
+};
+render();
+</script>
+</body>
+</html>
