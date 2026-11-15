@@ -108,7 +108,7 @@
   .neck{width:26px;height:18px;background:#90a4ae;border:3px solid var(--ink);border-top:none;border-bottom:none;}
   .body{width:220px;border:3px solid var(--ink);border-radius:18px 18px 10px 10px;background:#263238;padding:12px 12px 10px;box-shadow:inset 0 -8px 0 #1c262b;}
   .brand{font-family:Impact,sans-serif;letter-spacing:2px;font-size:12px;color:#90a4ae;text-align:center;margin-bottom:6px;}
-  #screen{font-family:"Courier New",monospace;font-size:17px;font-weight:bold;background:#0f2e1a;color:#69f0ae;
+  #screen{font-family:"Courier New",monospace;font-size:15px;font-weight:bold;background:#0f2e1a;color:#69f0ae;
     border:3px solid var(--ink);border-radius:6px;padding:9px 6px;text-align:center;letter-spacing:.5px;min-height:46px;}
   .keys{display:flex;justify-content:space-between;margin-top:9px;}
   .keys span{font-family:Impact,sans-serif;font-size:12px;letter-spacing:1px;background:var(--blue);color:#fff;border:2px solid var(--ink);border-radius:20px;padding:2px 12px;}
@@ -421,7 +421,7 @@ function buildStructure(S){
     catScene.forEach(p1 => aniScene.forEach(p2 => { if(p1.distanceTo(p2) < th){ const mid = new THREE.Vector3().addVectors(p1,p2).multiplyScalar(.5);
       half(p1,mid,S.cc); half(mid,p2,S.ca); } }));
   }
-  $('legend').innerHTML = legendChip(S.cc, CFG.sym ? S.sc : '') + legendChip(S.ca, CFG.sym ? S.sa : '');
+  $('legend').innerHTML = legendChip(S.cc, CFG.sym ? S.sc+' (cation)' : 'cation') + legendChip(S.ca, CFG.sym ? S.sa+' (anion)' : 'anion');
 }
 function legendChip(c, sym){ return `<span><span class="dot" style="background:${c}"></span>${sym || '&nbsp;'}</span>`; }
 
@@ -488,7 +488,7 @@ $('gl').addEventListener('pointerup', e => {
     if(overPlate(e.clientX,e.clientY)){
       const t = dragAtom.userData.t, S = SAMPLES[cur], c = $('onPlate');
       atomBallStyle(c, t, t ? 34 : 26); c.style.transform = 'translateX(-50%) scale(1)';
-      onPan = {m: t ? S.ma : S.mc, sym: t ? S.sa : S.sc}; $('screen').textContent = '- - - kg';
+      onPan = {m: t ? S.ma : S.mc, sym: CFG.sym ? (t ? S.sa : S.sc) : (t ? 'anion' : 'cation')}; $('screen').textContent = '- - - kg';
     }
     dragAtom.visible = true; dragAtom = null;
   }
@@ -549,7 +549,7 @@ $('weighBtn').onclick = () => {
   let n = 0; const roll = setInterval(() => {
     $('screen').textContent = sci((Math.random()*9+1)*Math.pow(10,e))+' kg';
     if(++n > 14){ clearInterval(roll);
-      $('screen').textContent = (CFG.sym ? onPan.sym+' : ' : '') + sci(onPan.m)+' kg';
+      $('screen').textContent = onPan.sym+' : '+sci(onPan.m)+' kg';
       $('bal').classList.remove('flash'); void $('bal').offsetWidth; $('bal').classList.add('flash'); } }, 55);
 };
 </script>
