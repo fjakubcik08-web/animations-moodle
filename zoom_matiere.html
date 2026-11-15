@@ -11,7 +11,7 @@
     background-image:radial-gradient(rgba(66,165,245,.16) 1.2px,transparent 1.3px);background-size:10px 10px;}
   body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:40;
     background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px);}
-  #page{max-width:960px;margin:0 auto;padding:14px 16px 20px;}
+  #page{width:960px;margin:0;padding:14px 16px 20px;}
   h1{margin:0 0 14px;font-family:Impact,"Arial Black",sans-serif;font-weight:normal;letter-spacing:3px;font-size:30px;
     color:#fff;background:var(--blue);display:inline-block;padding:4px 18px;border:3px solid var(--light);
     box-shadow:5px 5px 0 var(--yellow);transform:skew(-8deg);text-shadow:3px 3px 0 var(--ink);}
@@ -104,9 +104,10 @@ const SIZE = {mono:1.2e-3, poly:8e-3, amorphe:1.5e-3};    // taille de l'échant
 const LG = 8e-4;                                          // taille d'un grain du polycristal (m)
 let cur = 0, measOn = false, meas = null, cellOn = false, cell = {x:0, y:0, th:0}, atomsDrawn = [];
 const $ = id => document.getElementById(id);
+/* outils masques avec visibility (et non display) : la page garde la meme hauteur, donc l'iframe aussi */
 if(!CFG.mes) $('measBtn').style.display = 'none';
 if(!CFG.maille) ['cellBtn','rotL','rotR'].forEach(id => $(id).style.display = 'none');
-if(!CFG.mes && !CFG.maille) $('measOut').style.display = 'none';
+if(!CFG.mes && !CFG.maille){ $('measOut').style.visibility = 'hidden'; }
 if(!CFG.zone) $('zone').style.display = 'none';
 
 const gem = c => `<svg width="40" height="40" viewBox="0 0 44 44"><polygon points="22,3 40,15 34,40 10,40 4,15" fill="${c}" stroke="#14161c" stroke-width="3"/><polygon points="22,3 30,15 22,40 14,15" fill="rgba(255,255,255,.35)"/></svg>`;
@@ -238,8 +239,9 @@ $('cellBtn').onclick = () => { cellOn = !cellOn; if(cellOn){ measOn = false; mea
 hold($('rotL'), () => { cell.th += Math.PI/90; draw(); }); hold($('rotR'), () => { cell.th -= Math.PI/90; draw(); });
 
 let dragM = false, dragC = null;
-const world = e => { const r = cv.getBoundingClientRect(), F = Math.pow(10,-$('zoom').value), s = W/F;
-  return [(e.clientX-r.left-W/2)/s, (H/2-(e.clientY-r.top))/s, e.clientX-r.left, e.clientY-r.top]; };
+const world = e => { const r = cv.getBoundingClientRect(), F = Math.pow(10,-$('zoom').value), s = W/F, k = W / r.width;
+  const px = (e.clientX - r.left) * k, py = (e.clientY - r.top) * k;      /* pixels du canvas (page mise a l'echelle) */
+  return [(px-W/2)/s, (H/2-py)/s, px, py]; };
 cv.addEventListener('pointerdown', e => {
   const [x,y,px,py] = world(e);
   if(measOn){ meas = {x1:px, y1:py, x2:px, y2:py}; dragM = true; cv.setPointerCapture(e.pointerId); }
@@ -261,6 +263,26 @@ cv.addEventListener('pointerup', () => {
 window.addEventListener('resize', resize);
 buildSeeds();
 resize();
+</script>
+<script>
+/* mise a l'echelle : la page est dessinee pour 960 px de large puis reduite a la largeur de l'iframe.
+   Avec une iframe en aspect-ratio 960/H, le contenu remplit toujours exactement l'iframe. */
+(function(){
+  let W0 = 960;
+  let H0 = 0;
+  function fit(){
+    const p = document.getElementById('page');
+    if(!H0){ p.style.transform = 'none'; W0 = p.offsetWidth; H0 = p.offsetHeight; }
+    const s = Math.min(1, window.innerWidth / W0, window.innerHeight / H0);
+    p.style.transformOrigin = '0 0';
+    p.style.transform = 'translateX(' + Math.max(0, (window.innerWidth - W0 * s) / 2) + 'px) scale(' + s + ')';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.height = Math.ceil(H0 * s) + 'px';
+    window.__s = s;
+  }
+  window.addEventListener('resize', fit); window.addEventListener('load', () => { H0 = 0; fit(); }); fit();
+  window.__pageScale = () => window.__s || 1;
+})();
 </script>
 </body>
 </html>

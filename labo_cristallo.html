@@ -15,7 +15,7 @@
   body:after{content:"";position:fixed;inset:0;pointer-events:none;z-index:41;
     background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.65) 100%);}
   @keyframes scan{to{background-position:0 300px}}
-  #page{max-width:960px;margin:0 auto;padding:14px 16px 20px;}
+  #page{width:960px;margin:0;padding:14px 16px 20px;}
   .hand{filter:url(#rough);}
   h1{margin:0 0 14px;font-family:Impact,"Arial Black",sans-serif;font-weight:normal;letter-spacing:3px;font-size:30px;
     color:#fff;background:var(--blue);display:inline-block;padding:4px 18px;border:3px solid var(--light);
@@ -34,7 +34,7 @@
   .sample small{display:block;font-size:11px;color:#90a4ae;}
   /* rangee du bas */
   #row{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:20px;margin-top:30px;align-items:start;}
-  #stage{min-height:450px;padding-top:24px;}
+  #stage{min-height:520px;padding-top:24px;}  /* hauteur fixe : micro, terminal et 3D tiennent dans la meme place */
   #fx{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:4;}
   .btn{font-family:Impact,sans-serif;font-size:21px;letter-spacing:1px;color:#fff;background:var(--red);
     border:3px solid var(--light);box-shadow:4px 4px 0 var(--yellow);padding:8px 22px;cursor:pointer;transform:skew(-8deg);touch-action:manipulation;}
@@ -130,7 +130,6 @@
   @keyframes word{0%{transform:scale(0) rotate(-30deg)}35%{transform:scale(1.2) rotate(-8deg)}65%{transform:scale(1) rotate(-12deg)}100%{transform:scale(1.3) rotate(-12deg);opacity:0}}
   #ghost{position:fixed;z-index:50;pointer-events:none;display:none;transform:translate(-50%,-50%) rotate(-6deg);}
   #ghost.atomBall{transform:translate(-50%,-50%);box-shadow:3px 3px 0 var(--ink);}
-  @media (max-width:720px){#row{grid-template-columns:minmax(0,1fr);}}
 </style>
 </head>
 <body>
@@ -552,6 +551,26 @@ $('weighBtn').onclick = () => {
       $('screen').textContent = onPan.sym+' : '+sci(onPan.m)+' kg';
       $('bal').classList.remove('flash'); void $('bal').offsetWidth; $('bal').classList.add('flash'); } }, 55);
 };
+</script>
+<script>
+/* mise a l'echelle : la page est dessinee pour 960 px de large puis reduite a la largeur de l'iframe.
+   Avec une iframe en aspect-ratio 960/H, le contenu remplit toujours exactement l'iframe. */
+(function(){
+  let W0 = 960;
+  let H0 = 0;
+  function fit(){
+    const p = document.getElementById('page');
+    if(!H0){ p.style.transform = 'none'; W0 = p.offsetWidth; H0 = p.offsetHeight; }
+    const s = Math.min(1, window.innerWidth / W0, window.innerHeight / H0);
+    p.style.transformOrigin = '0 0';
+    p.style.transform = 'translateX(' + Math.max(0, (window.innerWidth - W0 * s) / 2) + 'px) scale(' + s + ')';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.height = Math.ceil(H0 * s) + 'px';
+    window.__s = s;
+  }
+  window.addEventListener('resize', fit); window.addEventListener('load', () => { H0 = 0; fit(); }); fit();
+  window.__pageScale = () => window.__s || 1;
+})();
 </script>
 </body>
 </html>

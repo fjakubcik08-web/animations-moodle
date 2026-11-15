@@ -11,30 +11,30 @@
     background-image:radial-gradient(rgba(66,165,245,.16) 1.2px,transparent 1.3px);background-size:10px 10px;}
   body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:40;
     background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px);}
-  #page{max-width:960px;margin:0 auto;padding:14px 16px 20px;}
-  h1{margin:0 0 14px;font-family:Impact,"Arial Black",sans-serif;font-weight:normal;letter-spacing:3px;font-size:30px;
+  #page{width:960px;margin:0;padding:10px 12px 14px;}
+  h1{margin:0 0 12px;font-family:Impact,"Arial Black",sans-serif;font-weight:normal;letter-spacing:3px;font-size:30px;
     color:#fff;background:var(--blue);display:inline-block;padding:4px 18px;border:3px solid var(--light);
     box-shadow:5px 5px 0 var(--yellow);transform:skew(-8deg);text-shadow:3px 3px 0 var(--ink);}
-  .panel{border:3px solid var(--light);box-shadow:6px 6px 0 var(--blue);padding:28px 14px 16px;position:relative;
+  .panel{border:3px solid var(--light);box-shadow:6px 6px 0 var(--blue);padding:22px 12px 12px;position:relative;
     background:radial-gradient(ellipse at 30% 20%,#f5f8fa 0%,#dde5eb 70%,#c9d4dc 100%);color:var(--ink);}
   .ptitle{position:absolute;top:-15px;left:14px;z-index:6;background:var(--yellow);border:3px solid var(--ink);color:var(--ink);
     font-family:Impact,sans-serif;letter-spacing:1px;padding:1px 10px;font-size:15px;transform:rotate(-2deg);}
-  #tray{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;min-height:58px;padding:6px;border:3px dashed #90a4ae;border-radius:10px;margin-bottom:18px;}
-  .tok{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#fff;border:3px solid var(--ink);border-radius:22px;
+  #tray{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;min-height:50px;padding:5px;border:3px dashed #90a4ae;border-radius:10px;margin-bottom:6px;}
+  .tok{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:#fff;border:3px solid var(--ink);border-radius:22px;
     font-family:Impact,sans-serif;font-size:18px;letter-spacing:1px;cursor:grab;box-shadow:3px 3px 0 var(--blue);touch-action:none;}
   .tok:active{cursor:grabbing;}
   .tok.drag{position:fixed;z-index:60;pointer-events:none;transform:translate(-50%,-50%) rotate(-4deg);box-shadow:5px 5px 0 var(--yellow);}
-  #axisWrap{position:relative;height:300px;}
-  #axis{position:absolute;left:3%;right:3%;top:205px;height:6px;background:var(--ink);border-radius:3px;}
+  #axisWrap{position:relative;height:250px;}
+  #axis{position:absolute;left:3%;right:3%;top:190px;height:6px;background:var(--ink);border-radius:3px;}
   #axis:after{content:"";position:absolute;right:-14px;top:-7px;border-left:16px solid var(--ink);border-top:10px solid transparent;border-bottom:10px solid transparent;}
-  .tick{position:absolute;top:197px;width:3px;height:22px;background:var(--ink);transform:translateX(-50%);}
-  .tick.hot{background:var(--red);height:30px;top:193px;}
-  .lab{position:absolute;top:226px;transform:translateX(-50%);font-family:"Courier New",monospace;font-weight:bold;font-size:15px;white-space:nowrap;}
-  .unit{position:absolute;right:0;top:262px;font-family:Impact,sans-serif;font-size:16px;letter-spacing:1px;}
+  .tick{position:absolute;top:182px;width:3px;height:22px;background:var(--ink);transform:translateX(-50%);}
+  .tick.hot{background:var(--red);height:30px;top:178px;}
+  .lab{position:absolute;top:210px;transform:translateX(-50%);font-family:"Courier New",monospace;font-weight:bold;font-size:15px;white-space:nowrap;}
+  .unit{position:absolute;right:0;top:0;font-family:Impact,sans-serif;font-size:16px;letter-spacing:1px;}
   .placed{position:absolute;transform:translateX(-50%);}
-  .placed .tok{font-size:15px;padding:4px 10px;box-shadow:2px 2px 0 var(--blue);}
+  .placed .tok{font-size:15px;padding:3px 8px;box-shadow:2px 2px 0 var(--blue);}
   .stem{position:absolute;width:3px;background:var(--blue);transform:translateX(-50%);}
-  .bar{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:6px;flex-wrap:wrap;}
+  .bar{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:4px;flex-wrap:wrap;}
   .btn{font-family:Impact,sans-serif;font-size:21px;letter-spacing:1px;color:#fff;background:var(--red);border:3px solid var(--ink);
     box-shadow:4px 4px 0 var(--yellow);padding:8px 22px;cursor:pointer;transform:skew(-8deg);touch-action:manipulation;}
   .btn.alt{background:#37474f;font-size:16px;padding:6px 14px;}
@@ -116,8 +116,8 @@ function render(){
   ITEMS.forEach(([id,label]) => {
     if(pos[id] === undefined){ $('tray').appendChild(makeTok(id,label)); return; }
     const e = pos[id], k = stack[e] = (stack[e] || 0) + 1;
-    const top = 190 - k*44;
-    const st = document.createElement('div'); st.className = 'stem'; st.style.left = xOf(e)+'%'; st.style.top = (top+34)+'px'; st.style.height = (196-top-34)+'px';
+    const top = 178 - k*35;
+    const st = document.createElement('div'); st.className = 'stem'; st.style.left = xOf(e)+'%'; st.style.top = (top+28)+'px'; st.style.height = (184-top-28)+'px';
     const p = document.createElement('div'); p.className = 'placed'; p.style.left = xOf(e)+'%'; p.style.top = top+'px'; p.appendChild(makeTok(id,label));
     $('axisWrap').appendChild(st); $('axisWrap').appendChild(p);
   });
@@ -157,6 +157,21 @@ $('okBtn').onclick = () => {
   w.classList.remove('go'); void w.offsetWidth; w.classList.add('go');
 };
 render();
+</script>
+<script>
+/* mise a l'echelle : la page est dessinee pour 960 px de large puis reduite a la largeur de l'iframe.
+   Avec une iframe en aspect-ratio 960/H, le contenu remplit toujours exactement l'iframe. */
+(function(){
+  const W0 = 960;
+  function fit(){
+    const s = Math.min(1, window.innerWidth / W0), p = document.getElementById('page');
+    p.style.transform = 'scale(' + s + ')'; p.style.transformOrigin = '0 0';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.height = Math.ceil(p.offsetHeight * s) + 'px';
+  }
+  window.addEventListener('resize', fit); window.addEventListener('load', fit); setTimeout(fit, 60);
+  window.__pageScale = () => Math.min(1, window.innerWidth / W0);
+})();
 </script>
 </body>
 </html>
