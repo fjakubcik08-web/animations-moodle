@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Labo de cristallographie</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{--ink:#14161c;--blue:#1565c0;--red:#e53935;--yellow:#ffd54f;--light:#eef1f6;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:#07090d;color:var(--light);font-family:"Trebuchet MS","Segoe UI",sans-serif;min-height:100vh;
+    background-image:radial-gradient(rgba(66,165,245,.16) 1.2px,transparent 1.3px);background-size:10px 10px;}
+  body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:40;
+    background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px);animation:scan 8s linear infinite;}
+  body:after{content:"";position:fixed;inset:0;pointer-events:none;z-index:41;
+    background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.65) 100%);}
+  @keyframes scan{to{background-position:0 300px}}
+  #page{max-width:960px;margin:0 auto;padding:14px 16px 20px;}
+  .hand{filter:url(#rough);}
+  h1{margin:0 0 14px;font-family:Impact,"Arial Black",sans-serif;font-weight:normal;letter-spacing:3px;font-size:30px;
+    color:#fff;background:var(--blue);display:inline-block;padding:4px 18px;border:3px solid var(--light);
+    box-shadow:5px 5px 0 var(--yellow);transform:skew(-8deg);text-shadow:3px 3px 0 var(--ink);}
+  .panel{background:#11151d;border:3px solid var(--light);box-shadow:6px 6px 0 var(--blue);padding:12px 14px;position:relative;}
+  #stage,#scale{background:radial-gradient(ellipse at 30% 20%,#f5f8fa 0%,#dde5eb 70%,#c9d4dc 100%);color:var(--ink);}
+  .ptitle{position:absolute;top:-15px;left:14px;z-index:6;background:var(--yellow);border:3px solid var(--ink);color:var(--ink);
+    font-family:Impact,sans-serif;letter-spacing:1px;padding:1px 10px;font-size:15px;transform:rotate(-2deg);}
+  /* echantillons */
+  #samples{display:flex;gap:16px;justify-content:center;padding-top:20px;flex-wrap:wrap;}
+  .sample{flex:1;min-width:150px;max-width:200px;display:flex;align-items:center;gap:12px;border:3px solid var(--light);
+    padding:8px 12px;cursor:grab;background:#1a202b;transition:transform .15s,box-shadow .15s,opacity .2s;touch-action:none;user-select:none;}
+  .sample:hover{transform:translate(-2px,-2px);box-shadow:4px 4px 0 var(--yellow);}
+  .sample.in{opacity:.35;border-style:dashed;cursor:default;transform:none;box-shadow:none;}
+  .sample b{font-family:Impact,sans-serif;font-weight:normal;font-size:26px;letter-spacing:1px;}
+  .sample small{display:block;font-size:11px;color:#90a4ae;}
+  /* rangee du bas */
+  #row{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:20px;margin-top:30px;align-items:start;}
+  #stage{min-height:450px;padding-top:24px;}
+  #fx{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:4;}
+  .btn{font-family:Impact,sans-serif;font-size:21px;letter-spacing:1px;color:#fff;background:var(--red);
+    border:3px solid var(--light);box-shadow:4px 4px 0 var(--yellow);padding:8px 22px;cursor:pointer;transform:skew(-8deg);touch-action:manipulation;}
+  #stage .btn,#scale .btn{border-color:var(--ink);}
+  .btn:hover{background:#f4511e;}
+  .btn:active{transform:skew(-8deg) translate(3px,3px);box-shadow:1px 1px 0 var(--yellow);}
+  .btn.small{font-size:13px;padding:4px 10px;background:var(--blue);white-space:nowrap;box-shadow:3px 3px 0 var(--yellow);}
+  .btn.small.alt{background:#37474f;}
+  .btn.shake{animation:shk .4s;}
+  @keyframes shk{0%,100%{transform:skew(-8deg)}25%{transform:skew(-8deg) translateX(-8px)}75%{transform:skew(-8deg) translateX(8px)}}
+  .btns{display:flex;flex-wrap:wrap;gap:8px;}
+  .center{text-align:center;}
+  #msg{min-height:22px;font-size:14px;margin-top:8px;color:#c62828;font-weight:bold;}
+  #slot.hot{stroke:#ffd54f;stroke-width:6;}
+  .burst{position:absolute;left:50%;top:46%;width:260px;height:170px;margin:-85px 0 0 -130px;
+    background:var(--yellow);display:flex;align-items:center;justify-content:center;
+    clip-path:polygon(50% 0,61% 22%,85% 5%,78% 32%,100% 38%,80% 55%,98% 78%,70% 72%,62% 100%,48% 78%,25% 98%,27% 70%,0 75%,18% 52%,2% 30%,28% 30%,22% 5%,42% 22%);
+    font-family:Impact,sans-serif;font-size:44px;color:var(--red);text-shadow:3px 3px 0 var(--ink);transform:scale(0);}
+  .burst.go{animation:pow .75s ease-out forwards;}
+  @keyframes pow{0%{transform:scale(0) rotate(-25deg)}40%{transform:scale(1.15) rotate(6deg)}70%{transform:scale(1)}100%{transform:scale(1.5);opacity:0}}
+  /* terminaux */
+  #term,#measTerm{background:#000;border:3px solid #33ff66;overflow:hidden;font-family:"Courier New",monospace;color:#33ff66;}
+  #term{display:none;position:relative;height:420px;font-size:14px;padding:14px 16px;line-height:1.55;}
+  #measTerm{display:none;position:absolute;inset:0;background:rgba(0,0,0,.93);font-size:12px;padding:10px 12px;line-height:1.4;z-index:3;}
+  #term:before,#measTerm:before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.35) 0 1px,transparent 1px 3px);}
+  .dim{color:#1f9e45;} .ok{color:#fff;} .warn{color:#ffd54f;} .hex{color:#1f7a3a;} .red{color:#ff5252;}
+  .big{font-size:22px;color:#fff;text-shadow:0 0 8px #33ff66;margin-top:6px;}
+  .cursor{display:inline-block;width:9px;height:16px;background:#33ff66;vertical-align:-3px;animation:blink .7s steps(1) infinite;}
+  @keyframes blink{50%{opacity:0}}
+  .crt-off{animation:crtOff .45s ease-in forwards;}
+  @keyframes crtOff{0%{transform:scale(1,1);filter:brightness(1)}60%{transform:scale(1,.01);filter:brightness(3)}100%{transform:scale(0,.01);filter:brightness(5)}}
+  .crt-on{animation:crtOn .55s ease-out;}
+  @keyframes crtOn{0%{transform:scale(0,.01);filter:brightness(5)}45%{transform:scale(1,.01);filter:brightness(3)}100%{transform:scale(1,1);filter:brightness(1)}}
+  .glitch{animation:glt .25s steps(2) 4;}
+  @keyframes glt{0%{transform:translate(0)}25%{transform:translate(-4px,2px);color:#ff5252}50%{transform:translate(3px,-2px);color:#40c4ff}75%{transform:translate(-2px,1px)}100%{transform:translate(0)}}
+  .shakeAll{animation:sa .3s;}
+  @keyframes sa{25%{transform:translate(-3px,2px)}50%{transform:translate(3px,-2px)}75%{transform:translate(-2px,-1px)}}
+  /* visualisation 3D */
+  #vizCard{display:none;}
+  #vizCard .top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 10px;margin-bottom:10px;}
+  #vizCard .tag{font-family:Impact,sans-serif;font-size:20px;letter-spacing:1px;white-space:nowrap;}
+  #cvWrap{position:relative;height:380px;border:3px solid var(--ink);background:#000;}
+  #cvWrap canvas{display:block;}
+  #gl{width:100%;height:100%;touch-action:none;cursor:grab;}
+  #ov{position:absolute;inset:0;pointer-events:none;z-index:2;}
+  #legend{position:absolute;top:8px;left:8px;z-index:2;background:rgba(0,0,0,.6);color:#eee;font-size:13px;
+    padding:5px 9px;border-radius:4px;display:flex;gap:12px;}
+  #legend .dot{display:inline-block;width:13px;height:13px;border-radius:50%;vertical-align:-2px;margin-right:5px;border:1px solid #000;}
+  #reprBox{position:absolute;top:8px;right:8px;z-index:2;display:flex;border:2px solid #fff;border-radius:20px;overflow:hidden;}
+  #reprBox button{border:none;background:rgba(0,0,0,.65);color:#cfd8dc;font-family:Impact,sans-serif;font-size:14px;letter-spacing:1px;
+    padding:6px 12px;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;gap:6px;}
+  #reprBox button.on{background:#ffd54f;color:#14161c;}
+  #reprBox svg{display:block;}
+  #zoomBox{position:absolute;bottom:10px;right:10px;z-index:2;display:flex;flex-direction:column;gap:6px;}
+  #zoomBox button{width:40px;height:40px;border:2px solid #fff;border-radius:50%;background:var(--blue);color:#fff;
+    font-size:22px;font-weight:bold;line-height:36px;padding:0;cursor:pointer;touch-action:manipulation;}
+  .hint{font-size:13px;margin-top:8px;color:#455a64;}
+  #aBadge{display:none;margin-top:8px;font-family:"Courier New",monospace;font-size:16px;font-weight:bold;
+    background:#000;color:#69f0ae;border:3px solid var(--ink);padding:6px 10px;text-align:center;}
+  /* balance */
+  #scale{padding:26px 16px 18px;position:relative;}
+  .bal{display:flex;flex-direction:column;align-items:center;}
+  .pan{position:relative;width:180px;height:30px;border-radius:50%;border:3px solid var(--ink);
+    background:radial-gradient(ellipse at 40% 35%,#ffffff 0%,#e3e8ec 45%,#9aa7b0 100%);transition:background .2s,box-shadow .2s;}
+  .pan.hot{background:radial-gradient(ellipse at 40% 35%,#fffde7 0%,#fff176 60%,#fbc02d 100%);box-shadow:0 0 0 4px rgba(255,213,79,.5);}
+  .atomBall{position:absolute;border-radius:50%;border:3px solid var(--ink);display:flex;align-items:center;justify-content:center;
+    font-family:Impact,sans-serif;font-size:13px;color:#fff;text-shadow:1px 1px 0 #000;}
+  .atomBall:after{content:"";position:absolute;left:18%;top:16%;width:30%;height:30%;border-radius:50%;background:rgba(255,255,255,.55);}
+  #onPlate{left:50%;bottom:12px;transform:translateX(-50%) scale(0);transition:transform .25s cubic-bezier(.3,1.6,.5,1);}
+  .neck{width:26px;height:18px;background:#90a4ae;border:3px solid var(--ink);border-top:none;border-bottom:none;}
+  .body{width:220px;border:3px solid var(--ink);border-radius:18px 18px 10px 10px;background:#263238;padding:12px 12px 10px;box-shadow:inset 0 -8px 0 #1c262b;}
+  .brand{font-family:Impact,sans-serif;letter-spacing:2px;font-size:12px;color:#90a4ae;text-align:center;margin-bottom:6px;}
+  #screen{font-family:"Courier New",monospace;font-size:17px;font-weight:bold;background:#0f2e1a;color:#69f0ae;
+    border:3px solid var(--ink);border-radius:6px;padding:9px 6px;text-align:center;letter-spacing:.5px;min-height:46px;}
+  .keys{display:flex;justify-content:space-between;margin-top:9px;}
+  .keys span{font-family:Impact,sans-serif;font-size:12px;letter-spacing:1px;background:var(--blue);color:#fff;border:2px solid var(--ink);border-radius:20px;padding:2px 12px;}
+  .keys span.led{background:#fff;color:var(--ink);display:flex;align-items:center;gap:5px;}
+  .keys span.led:before{content:"";width:8px;height:8px;border-radius:50%;background:#43a047;border:1px solid var(--ink);}
+  .bal.flash .body{animation:fl .35s;}
+  @keyframes fl{0%{background:#fff59d}100%{background:#263238}}
+  #weighBtn{margin-top:14px;width:100%;font-size:22px;}
+  #balFx{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:5;}
+  #balRays{position:absolute;left:50%;top:40%;width:600px;height:600px;margin:-300px 0 0 -300px;opacity:0;
+    background:repeating-conic-gradient(from 0deg,#ffd54f 0 10deg,#e53935 10deg 20deg);border-radius:50%;}
+  #balRays.go{animation:rays .9s ease-out forwards;}
+  @keyframes rays{0%{opacity:0;transform:scale(.2) rotate(0)}25%{opacity:.85}100%{opacity:0;transform:scale(1.1) rotate(90deg)}}
+  #balWord{position:absolute;left:50%;top:40%;width:210px;height:150px;margin:-75px 0 0 -105px;
+    background:#fff;display:flex;align-items:center;justify-content:center;transform:scale(0);
+    clip-path:polygon(50% 0,60% 20%,82% 4%,78% 30%,100% 34%,82% 52%,100% 74%,72% 70%,64% 100%,48% 78%,28% 98%,26% 70%,0 74%,16% 50%,0 28%,26% 28%,20% 4%,40% 20%);
+    font-family:Impact,sans-serif;font-size:46px;color:var(--red);letter-spacing:1px;text-shadow:3px 3px 0 var(--ink),-2px -2px 0 var(--yellow);}
+  #balWord.go{animation:word .9s cubic-bezier(.2,1.6,.4,1) forwards;}
+  @keyframes word{0%{transform:scale(0) rotate(-30deg)}35%{transform:scale(1.2) rotate(-8deg)}65%{transform:scale(1) rotate(-12deg)}100%{transform:scale(1.3) rotate(-12deg);opacity:0}}
+  #ghost{position:fixed;z-index:50;pointer-events:none;display:none;transform:translate(-50%,-50%) rotate(-6deg);}
+  #ghost.atomBall{transform:translate(-50%,-50%);box-shadow:3px 3px 0 var(--ink);}
+  @media (max-width:720px){#row{grid-template-columns:minmax(0,1fr);}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <filter id="rough"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="2.5"/></filter>
+  <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1.2" fill="rgba(0,0,0,.18)"/></pattern>
+  <linearGradient id="glass" x1="0" x2="1"><stop offset="0" stop-color="#b3e5fc"/><stop offset="1" stop-color="#4fc3f7"/></linearGradient>
+</svg>
+<div id="ghost"></div>
+
+<div id="page">
+  <h1>LABO DE CRISTALLOGRAPHIE</h1>
+
+  <div class="panel hand">
+    <span class="ptitle">ÉCHANTILLONS</span>
+    <div id="samples"></div>
+  </div>
+
+  <div id="row">
+    <div class="panel" id="stage">
+      <span class="ptitle" id="stageTitle">MICROSCOPE À EFFET TUNNEL</span>
+      <div id="fx"><div class="burst" id="burst">ZZZAP !</div></div>
+
+      <div id="micro" class="center">
+        <svg id="microSvg" width="400" height="330" viewBox="0 0 400 330" class="hand" style="max-width:100%">
+          <rect x="40" y="290" width="320" height="22" fill="#455a64" stroke="#14161c" stroke-width="3"/>
+          <rect x="60" y="312" width="22" height="16" fill="#37474f" stroke="#14161c" stroke-width="3"/>
+          <rect x="318" y="312" width="22" height="16" fill="#37474f" stroke="#14161c" stroke-width="3"/>
+          <path d="M110 290 l8 -8 l-16 -6 l16 -6 l-16 -6 l8 -6 M290 290 l8 -8 l-16 -6 l16 -6 l-16 -6 l8 -6" stroke="#14161c" stroke-width="3" fill="none"/>
+          <rect x="70" y="248" width="260" height="12" fill="#90a4ae" stroke="#14161c" stroke-width="3"/>
+          <path d="M110 248 L110 120 Q110 70 200 70 Q290 70 290 120 L290 248 Z" fill="#cfd8dc" stroke="#14161c" stroke-width="4"/>
+          <path d="M110 248 L110 120 Q110 70 200 70 Q290 70 290 120 L290 248 Z" fill="url(#dots)"/>
+          <rect x="104" y="232" width="192" height="16" fill="#b0bec5" stroke="#14161c" stroke-width="3"/>
+          <rect x="104" y="112" width="192" height="12" fill="#b0bec5" stroke="#14161c" stroke-width="3"/>
+          <circle cx="200" cy="180" r="48" fill="#14161c"/>
+          <circle id="slot" cx="200" cy="180" r="42" fill="url(#glass)" stroke="#14161c" stroke-width="3"/>
+          <rect x="193" y="140" width="14" height="22" fill="#78909c" stroke="#14161c" stroke-width="2"/>
+          <path d="M193 162 L207 162 L200 184 Z" fill="#ffd54f" stroke="#14161c" stroke-width="2"/>
+          <g id="microSample" style="display:none">
+            <rect x="172" y="196" width="56" height="12" stroke="#14161c" stroke-width="2"/>
+            <path d="M200 186 l-4 4 l6 2 l-4 4" stroke="#ff7043" stroke-width="2.5" fill="none" stroke-linecap="round"><animate attributeName="opacity" values="1;0.2;1" dur="0.6s" repeatCount="indefinite"/></path>
+          </g>
+          <text id="slotTxt" x="200" y="222" text-anchor="middle" font-family="Impact" font-size="13" fill="#0d47a1" letter-spacing="1">VIDE</text>
+          <path d="M168 150 Q178 140 190 142" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" opacity=".7"/>
+          <rect x="190" y="40" width="20" height="30" fill="#78909c" stroke="#14161c" stroke-width="3"/>
+          <rect x="178" y="30" width="44" height="12" rx="3" fill="#455a64" stroke="#14161c" stroke-width="3"/>
+          <path d="M290 150 C340 150 340 220 372 220" stroke="#14161c" stroke-width="4" fill="none"/>
+          <circle cx="372" cy="220" r="6" fill="#e53935" stroke="#14161c" stroke-width="3"/>
+          <circle id="led1" cx="132" cy="140" r="6" fill="#b71c1c" stroke="#14161c" stroke-width="2"/>
+          <circle cx="132" cy="160" r="6" fill="#ffd54f" stroke="#14161c" stroke-width="2"/>
+        </svg>
+        <div><button class="btn" id="vizBtn">⚡ VISUALISATION</button></div>
+        <div id="msg"></div>
+      </div>
+
+      <div id="term"></div>
+
+      <div id="vizCard">
+        <div class="top">
+          <span class="tag">ÉCHANTILLON <span id="vizName"></span></span>
+          <div class="btns">
+            <button class="btn small alt" id="rotBtn">⏸ PAUSE</button>
+            <button class="btn small" id="measBtn">📏 MESURER a</button>
+            <button class="btn small alt" id="backBtn" aria-label="retour au microscope">↩</button>
+          </div>
+        </div>
+        <div id="cvWrap">
+          <canvas id="gl"></canvas><canvas id="ov"></canvas>
+          <div id="legend"></div>
+          <div id="reprBox">
+            <button id="reprEcl"><svg width="22" height="16" viewBox="0 0 22 16"><line x1="5" y1="8" x2="17" y2="8" stroke="currentColor" stroke-width="2"/><circle cx="4" cy="8" r="3.5" fill="currentColor"/><circle cx="18" cy="8" r="3.5" fill="currentColor"/></svg>ÉCLATÉE</button>
+            <button id="reprCmp"><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="7" cy="8" r="6.5" fill="currentColor"/><circle cx="15" cy="8" r="6.5" fill="currentColor" opacity=".7"/></svg>COMPACTE</button>
+          </div>
+          <div id="zoomBox"><button id="zoomIn" aria-label="zoomer">+</button><button id="zoomOut" aria-label="dézoomer">&minus;</button></div>
+          <div id="measTerm"></div>
+        </div>
+        <div id="aBadge"></div>
+        <div class="hint">Glisser sur la maille : rotation · glisser un atome vers la balance : pesée</div>
+      </div>
+    </div>
+
+    <div class="panel" id="scale">
+      <span class="ptitle">BALANCE</span>
+      <div class="bal" id="bal">
+        <div class="pan" id="dropZone"><div class="atomBall" id="onPlate"></div></div>
+        <div class="neck"></div>
+        <div class="body">
+          <div class="brand">ATOMIC SCALE</div>
+          <div id="screen">0.000 kg</div>
+          <div class="keys"><span>TARE</span><span class="led">ON</span></div>
+        </div>
+      </div>
+      <button class="btn" id="weighBtn">⚖ PESER !</button>
+      <div id="balFx"><div id="balRays"></div><div id="balWord">POW!</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   PARAMETRES  (?p= JSON -> XOR cle "PBayle-Cristallo#STM" -> base64url)
+   { x:[{t,a,mc,ma,cc,ca,sc,sa}, ...], sym:0|1, meas:0|1, rot:0|1, repr:0|1 }
+   repr : 0 = eclatee (defaut), 1 = compacte
+   Parametres en clair (?sym=1&meas=0&rot=0&repr=1) prioritaires sur ?p=.
+   ===================================================================== */
+const KEY = "PBayle-Cristallo#STM";
+const DEFAULT = {
+  x:[
+    {t:"rocksalt",a:5.62e-10,mc:3.818e-26,ma:5.887e-26,cc:"#0000ff",ca:"#00ff00",sc:"Na",sa:"Cl"},
+    {t:"fluorite",a:5.462e-10,mc:6.655e-26,ma:3.155e-26,cc:"#808090",ca:"#daa520",sc:"Ca",sa:"F"},
+    {t:"blende",a:5.501e-10,mc:1.055e-25,ma:5.887e-26,cc:"#a52a2a",ca:"#00ff00",sc:"Cu",sa:"Cl"}],
+  sym:0, meas:1, rot:1, repr:0 };
+
+function decodeParams(code){
+  try{
+    let b64 = code.replace(/-/g,'+').replace(/_/g,'/');
+    while(b64.length % 4) b64 += '=';
+    const raw = atob(b64), k = new TextEncoder().encode(KEY);
+    const bytes = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) bytes[i] = raw.charCodeAt(i) ^ k[i % k.length];
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }catch(e){ return null; }
+}
+const Q = new URLSearchParams(location.search);
+const CFG = Object.assign({}, DEFAULT, (Q.get('p') && decodeParams(Q.get('p'))) || {});
+['sym','meas','rot','repr'].forEach(k => { if(Q.has(k)) CFG[k] = +Q.get(k); });
+if(!Array.isArray(CFG.x) || !CFG.x.length) CFG.x = DEFAULT.x;
+
+/* contraste cation/anion (meme regle que cod-structure-viewer.html) */
+const FALLBACK_COLORS = ['#00bfff','#ffd700','#00e676','#ffffff','#ff9800','#7c4dff'];
+const hexRgb = h => { h = h.replace('#',''); return [0,2,4].map(i => parseInt(h.substr(i,2),16)); };
+const colDist = (a,b) => { const p = hexRgb(a), q = hexRgb(b); return Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2]); };
+const GEMS = ['#80deea','#ce93d8','#ffcc80','#a5d6a7','#f48fb1'];
+const SAMPLES = CFG.x.map((c,i) => {
+  const s = Object.assign({}, c, {name:'X-'+(i+1), gem:GEMS[i % GEMS.length]});
+  if(colDist(s.cc, s.ca) < 160) s.ca = FALLBACK_COLORS.find(f => colDist(f, s.cc) >= 200) || '#ffffff';
+  return s;
+});
+
+/* format scientifique : 3,82×10⁻²⁶ */
+const SUP = {'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
+function sci(v, d=2){
+  let e = Math.floor(Math.log10(Math.abs(v))), m = v / Math.pow(10,e);
+  if(+m.toFixed(d) >= 10){ m /= 10; e += 1; }
+  return m.toFixed(d).replace('.',',') + '×10' + String(e).split('').map(c => SUP[c]).join('');
+}
+
+const $ = id => document.getElementById(id);
+const gemSvg = (c,s) => `<svg width="${s}" height="${s}" viewBox="0 0 44 44"><polygon points="22,3 40,15 34,40 10,40 4,15" fill="${c}" stroke="#14161c" stroke-width="3"/><polygon points="22,3 30,15 22,40 14,15" fill="rgba(255,255,255,.35)"/><polyline points="4,15 40,15" stroke="#14161c" stroke-width="2" fill="none"/></svg>`;
+const ghost = $('ghost');
+let cur = -1, autoRot = !!CFG.rot, measuring = false, aMeasured = false, onPan = null, repr = CFG.repr ? 'compacte' : 'eclatee';
+if(!CFG.meas) $('measBtn').style.display = 'none';
+$('rotBtn').textContent = autoRot ? '⏸ PAUSE' : '▶ ROTATION';
+
+/* =================== ECHANTILLONS -> MICROSCOPE =================== */
+SAMPLES.forEach((S,k) => {
+  const d = document.createElement('div'); d.className = 'sample'; d.dataset.k = k;
+  d.innerHTML = gemSvg(S.gem,44) + `<div><b>${S.name}</b><small>glisser vers le microscope</small></div>`;
+  $('samples').appendChild(d);
+  d.addEventListener('pointerdown', e => {
+    if(d.classList.contains('in') || $('micro').style.display === 'none') return;
+    d.setPointerCapture(e.pointerId);
+    ghost.className = ''; ghost.innerHTML = gemSvg(S.gem,60);
+    Object.assign(ghost.style,{display:'block',width:'',height:'',background:'',left:e.clientX+'px',top:e.clientY+'px'});
+    d._drag = true;
+  });
+  d.addEventListener('pointermove', e => { if(!d._drag) return;
+    ghost.style.left = e.clientX+'px'; ghost.style.top = e.clientY+'px';
+    $('slot').classList.toggle('hot', overSlot(e.clientX,e.clientY)); });
+  d.addEventListener('pointerup', e => { if(!d._drag) return; d._drag = false; ghost.style.display = 'none';
+    $('slot').classList.remove('hot');
+    if(overSlot(e.clientX,e.clientY)) loadSample(k); });
+});
+function overSlot(x,y){ const r = $('microSvg').getBoundingClientRect();
+  return x>r.left+r.width*.2 && x<r.right-r.width*.2 && y>r.top+r.height*.15 && y<r.bottom-r.height*.2; }
+function loadSample(k){
+  cur = k; document.querySelectorAll('.sample').forEach(s => s.classList.toggle('in', +s.dataset.k === k));
+  const g = $('microSample'); g.style.display = ''; g.querySelector('rect').setAttribute('fill', SAMPLES[k].gem);
+  $('slotTxt').textContent = SAMPLES[k].name; $('led1').setAttribute('fill','#69f0ae'); $('msg').textContent = '';
+  resetScale(); aMeasured = false; $('aBadge').style.display = 'none';
+}
+function resetScale(){ onPan = null; $('screen').textContent = '0.000 kg'; $('onPlate').style.transform = 'translateX(-50%) scale(0)'; }
+
+/* =================== VISUALISATION : terminal puis 3D =================== */
+$('vizBtn').onclick = () => {
+  if(cur < 0){ $('msg').textContent = "Place d'abord un échantillon dans le microscope.";
+    const b = $('vizBtn'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); return; }
+  $('micro').style.display = 'none'; $('stageTitle').textContent = 'ACQUISITION';
+  runTerminal(SAMPLES[cur].name, showViz);
+};
+function runTerminal(name, done){
+  const t = $('term'); t.style.display = 'block'; t.className = 'crt-on'; t.innerHTML = '';
+  const L = [
+    ['$ stm-ctl --load '+name,''],
+    ['[ OK ] pompe turbomoléculaire ........ 2.1e-10 mbar','ok'],
+    ['[ OK ] isolation vibratoire ........... active','ok'],
+    ['[....] approche grossière de la pointe','dim'],
+    ['[ OK ] contact tunnel établi ...... I = 1.24 nA','ok'],
+    ['[....] balayage XY  ','dim','bar'],
+    ['[ OK ] 4096 × 4096 points acquis','ok'],
+    ['[WARN] dérive thermique corrigée','warn'],
+    ['$ reconstruct --mode=3D --cell=conventional',''],
+    ['>> reconstruction de la maille ...','ok']];
+  let i = 0;
+  (function next(){
+    if(i >= L.length){ t.insertAdjacentHTML('beforeend','<span class="cursor"></span>');
+      setTimeout(() => { t.className = 'crt-off'; setTimeout(() => { t.style.display = 'none'; done(); }, 450); }, 700); return; }
+    const [txt,cls,bar] = L[i++]; const line = document.createElement('div'); if(cls) line.className = cls; t.appendChild(line);
+    let c = 0; const typer = setInterval(() => { line.textContent = txt.slice(0, ++c);
+      if(c >= txt.length){ clearInterval(typer);
+        if(bar){ let n = 0; const b = setInterval(() => { line.textContent = txt+'█'.repeat(++n)+'░'.repeat(20-n)+' '+n*5+'%';
+          if(n >= 20){ clearInterval(b); setTimeout(next,120); } }, 45); }
+        else setTimeout(next, txt[0]==='$' ? 260 : 110); } }, txt[0]==='$' ? 28 : 9);
+  })();
+}
+function showViz(){
+  const v = $('vizCard'); v.style.display = 'block'; v.className = 'crt-on'; $('stageTitle').textContent = 'VISUALISATION';
+  $('vizName').textContent = SAMPLES[cur].name;
+  initGL(); onResize(); buildStructure(SAMPLES[cur]);
+  $('aBadge').style.display = aMeasured ? 'block' : 'none';
+  const b = $('burst'); b.classList.remove('go'); void b.offsetWidth; b.classList.add('go');
+}
+$('backBtn').onclick = () => { $('vizCard').style.display = 'none'; $('micro').style.display = 'block'; $('stageTitle').textContent = 'MICROSCOPE À EFFET TUNNEL'; };
+
+/* =================== RENDU 3D (gabarits identiques au viewer COD) =================== */
+const TET4 = [[.25,.25,.25],[.75,.75,.25],[.75,.25,.75],[.25,.75,.75]];
+const TET8 = [[.25,.25,.25],[.25,.25,.75],[.25,.75,.25],[.25,.75,.75],[.75,.25,.25],[.75,.25,.75],[.75,.75,.25],[.75,.75,.75]];
+const EDGE_CENTER = [[.5,0,0],[0,.5,0],[0,0,.5],[.5,1,0],[1,.5,0],[.5,0,1],[0,.5,1],[1,0,.5],[0,1,.5],[.5,1,1],[1,.5,1],[1,1,.5]];
+function completeFCC(){ const c = [];
+  for(let x=0;x<=1;x++) for(let y=0;y<=1;y++) for(let z=0;z<=1;z++) c.push([x,y,z]);
+  return c.concat([[.5,.5,0],[.5,.5,1],[.5,0,.5],[.5,1,.5],[0,.5,.5],[1,.5,.5]]); }
+function buildTemplate(type){
+  if(type === 'rocksalt')     return {catPos:completeFCC(), aniPos:EDGE_CENTER.concat([[.5,.5,.5]]), bondFrac:.51};
+  if(type === 'blende')       return {catPos:completeFCC(), aniPos:TET4, bondFrac:.46};
+  if(type === 'fluorite')     return {catPos:completeFCC(), aniPos:TET8, bondFrac:.46};
+  if(type === 'antifluorite') return {catPos:TET8, aniPos:completeFCC(), bondFrac:.46};
+  return {catPos:[[0,0,0]], aniPos:[[.5,.5,.5]], bondFrac:.6};
+}
+const CELL = 6, HALF = CELL/2;
+let scene, camera, renderer, group, atoms = [], glReady = false;
+let rotX = .42, rotY = .68, camDist = 11, dragAtom = null, rotDrag = null;
+const toScene = p => new THREE.Vector3(p[0]*CELL-HALF, p[1]*CELL-HALF, p[2]*CELL-HALF);
+
+function initGL(){
+  if(glReady) return; glReady = true;
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(42, 1, .1, 1000);
+  renderer = new THREE.WebGLRenderer({canvas:$('gl'), antialias:true});
+  renderer.setClearColor(0x000000, 1);
+  scene.add(new THREE.AmbientLight(0xffffff, .6));
+  const d1 = new THREE.DirectionalLight(0xffffff, .75); d1.position.set(6,9,7); scene.add(d1);
+  const d2 = new THREE.DirectionalLight(0xffffff, .3); d2.position.set(-6,-3,-5); scene.add(d2);
+  group = new THREE.Group(); scene.add(group);
+  animate();
+}
+function onResize(){
+  if(!glReady) return;
+  const w = $('cvWrap').clientWidth, h = $('cvWrap').clientHeight;
+  if(!w || !h) return;
+  camera.aspect = w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h,false);
+  $('gl').style.width = '100%'; $('gl').style.height = '100%';
+  const ov = $('ov'); ov.width = w; ov.height = h;
+}
+function buildStructure(S){
+  while(group.children.length) group.remove(group.children[0]);
+  atoms = [];
+  const tmpl = buildTemplate(S.t);
+  const pos = [];
+  const E = [[[0,0,0],[1,0,0]],[[0,1,0],[1,1,0]],[[0,0,1],[1,0,1]],[[0,1,1],[1,1,1]],[[0,0,0],[0,1,0]],[[1,0,0],[1,1,0]],
+             [[0,0,1],[0,1,1]],[[1,0,1],[1,1,1]],[[0,0,0],[0,0,1]],[[1,0,0],[1,0,1]],[[1,1,0],[1,1,1]],[[0,1,0],[0,1,1]]];
+  E.forEach(([p1,p2]) => { const a = toScene(p1), b = toScene(p2); pos.push(a.x,a.y,a.z,b.x,b.y,b.z); });
+  const eg = new THREE.BufferGeometry(); eg.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  group.add(new THREE.LineSegments(eg, new THREE.LineBasicMaterial({color:0xffffff})));
+  const NN = tmpl.bondFrac * CELL, compact = repr === 'compacte';
+  const rCat = (compact ? .40 : .20) * NN, rAni = (compact ? .58 : .24) * NN;
+  const catMat = new THREE.MeshPhongMaterial({color:S.cc, shininess:70});
+  const aniMat = new THREE.MeshPhongMaterial({color:S.ca, shininess:70});
+  const catGeom = new THREE.SphereGeometry(rCat,24,18), aniGeom = new THREE.SphereGeometry(rAni,24,18);
+  const catScene = tmpl.catPos.map(toScene), aniScene = tmpl.aniPos.map(toScene);
+  catScene.forEach(p => { const m = new THREE.Mesh(catGeom,catMat); m.position.copy(p); m.userData = {t:0}; group.add(m); atoms.push(m); });
+  aniScene.forEach(p => { const m = new THREE.Mesh(aniGeom,aniMat); m.position.copy(p); m.userData = {t:1}; group.add(m); atoms.push(m); });
+  if(!compact){
+    const br = .05*NN, th = NN*1.08;
+    const half = (from,to,color) => { const dir = new THREE.Vector3().subVectors(to,from), len = dir.length();
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(br,br,len,10), new THREE.MeshPhongMaterial({color,shininess:60}));
+      mesh.position.copy(from).addScaledVector(dir,.5); mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize()); group.add(mesh); };
+    catScene.forEach(p1 => aniScene.forEach(p2 => { if(p1.distanceTo(p2) < th){ const mid = new THREE.Vector3().addVectors(p1,p2).multiplyScalar(.5);
+      half(p1,mid,S.cc); half(mid,p2,S.ca); } }));
+  }
+  $('legend').innerHTML = legendChip(S.cc, CFG.sym ? S.sc : '') + legendChip(S.ca, CFG.sym ? S.sa : '');
+}
+function legendChip(c, sym){ return `<span><span class="dot" style="background:${c}"></span>${sym || '&nbsp;'}</span>`; }
+
+function project(v){ const p = v.clone().project(camera), w = $('ov').width, h = $('ov').height;
+  return {x:(p.x+1)/2*w, y:(1-p.y)/2*h}; }
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRot && !dragAtom && !rotDrag && !measuring) rotY += .0035;
+  camera.position.set(camDist*Math.sin(rotY)*Math.cos(rotX), camDist*Math.sin(rotX), camDist*Math.cos(rotY)*Math.cos(rotX));
+  camera.lookAt(0,0,0);
+  renderer.render(scene, camera);
+  const ov = $('ov'), c = ov.getContext('2d'); c.clearRect(0,0,ov.width,ov.height);
+  if(aMeasured) edgeArrow(c, project(toScene([0,0,0])), project(toScene([1,0,0])), ov.width, ov.height);
+}
+
+/* double fleche "a" le long d'une arete */
+function edgeArrow(ctx,A,B,W,H){
+  const dx = B.x-A.x, dy = B.y-A.y, L = Math.hypot(dx,dy) || 1, ux = dx/L, uy = dy/L;
+  let nx = -uy, ny = ux;
+  if(((A.x+B.x)/2-W/2)*nx + ((A.y+B.y)/2-H/2)*ny < 0){ nx = -nx; ny = -ny; }
+  const off = 30, ax = A.x+nx*off, ay = A.y+ny*off, bx = B.x+nx*off, by = B.y+ny*off, h = 12;
+  ctx.save(); ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255,213,79,.55)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(ax,ay); ctx.moveTo(B.x,B.y); ctx.lineTo(bx,by); ctx.stroke(); ctx.setLineDash([]);
+  [['#14161c',7],['#ffd54f',3.5]].forEach(([col,w]) => {
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+    [[ax,ay,1],[bx,by,-1]].forEach(([x,y,sg]) => { ctx.moveTo(x+sg*ux*h+nx*h*.55, y+sg*uy*h+ny*h*.55); ctx.lineTo(x,y);
+      ctx.lineTo(x+sg*ux*h-nx*h*.55, y+sg*uy*h-ny*h*.55); });
+    ctx.stroke(); });
+  const mx = (ax+bx)/2+nx*20, my = (ay+by)/2+ny*20;
+  ctx.font = 'bold 24px Impact'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 5; ctx.strokeStyle = '#14161c'; ctx.strokeText('a',mx,my); ctx.fillStyle = '#ffd54f'; ctx.fillText('a',mx,my);
+  ctx.restore();
+}
+
+/* =================== INTERACTIONS 3D =================== */
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function overPlate(x,y){ const r = $('dropZone').getBoundingClientRect();
+  return x>r.left-25 && x<r.right+25 && y>r.top-60 && y<r.bottom+30; }
+function atomBallStyle(el, t, d){ const S = SAMPLES[cur];
+  el.className = 'atomBall'; el.textContent = CFG.sym ? (t ? S.sa : S.sc) : '';
+  Object.assign(el.style, {width:d+'px', height:d+'px', background:t ? S.ca : S.cc}); }
+$('gl').addEventListener('pointerdown', e => {
+  if(measuring) return;
+  const r = $('gl').getBoundingClientRect();
+  ndc.set((e.clientX-r.left)/r.width*2-1, -((e.clientY-r.top)/r.height)*2+1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(atoms.filter(m => m.visible))[0];
+  $('gl').setPointerCapture(e.pointerId);
+  if(hit){ dragAtom = hit.object; dragAtom.visible = false;
+    atomBallStyle(ghost, dragAtom.userData.t, dragAtom.userData.t ? 40 : 30);
+    Object.assign(ghost.style, {display:'flex', left:e.clientX+'px', top:e.clientY+'px'});
+    $('gl').style.cursor = 'grabbing'; }
+  else rotDrag = {x:e.clientX, y:e.clientY};
+});
+$('gl').addEventListener('pointermove', e => {
+  if(dragAtom){ ghost.style.left = e.clientX+'px'; ghost.style.top = e.clientY+'px';
+    $('dropZone').classList.toggle('hot', overPlate(e.clientX,e.clientY)); }
+  else if(rotDrag){ rotY -= (e.clientX-rotDrag.x)*.008; rotX = Math.max(-1.45, Math.min(1.45, rotX+(e.clientY-rotDrag.y)*.008));
+    rotDrag = {x:e.clientX, y:e.clientY}; }
+});
+$('gl').addEventListener('pointerup', e => {
+  if(dragAtom){
+    if(overPlate(e.clientX,e.clientY)){
+      const t = dragAtom.userData.t, S = SAMPLES[cur], c = $('onPlate');
+      atomBallStyle(c, t, t ? 34 : 26); c.style.transform = 'translateX(-50%) scale(1)';
+      onPan = {m: t ? S.ma : S.mc, sym: t ? S.sa : S.sc}; $('screen').textContent = '- - - kg';
+    }
+    dragAtom.visible = true; dragAtom = null;
+  }
+  rotDrag = null; ghost.style.display = 'none'; $('dropZone').classList.remove('hot'); $('gl').style.cursor = 'grab';
+});
+$('gl').addEventListener('wheel', e => { e.preventDefault(); camDist = Math.max(5, Math.min(30, camDist*(1+e.deltaY*.001))); }, {passive:false});
+function holdZoom(btn, f){ let tm = null; const stop = () => { if(tm){ clearInterval(tm); tm = null; } };
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); camDist = Math.max(5, Math.min(30, camDist*f));
+    stop(); tm = setInterval(() => { camDist = Math.max(5, Math.min(30, camDist*Math.pow(f,.25))); }, 40); });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev => btn.addEventListener(ev, stop)); }
+holdZoom($('zoomIn'), .85); holdZoom($('zoomOut'), 1/.85);
+$('rotBtn').onclick = () => { autoRot = !autoRot; $('rotBtn').textContent = autoRot ? '⏸ PAUSE' : '▶ ROTATION'; };
+function setRepr(r){ repr = r;
+  $('reprEcl').classList.toggle('on', r === 'eclatee'); $('reprCmp').classList.toggle('on', r === 'compacte');
+  if(glReady && cur >= 0) buildStructure(SAMPLES[cur]); }
+$('reprEcl').onclick = () => setRepr('eclatee');
+$('reprCmp').onclick = () => setRepr('compacte');
+setRepr(repr);
+window.addEventListener('resize', onResize);
+
+/* =================== MESURE DU PARAMETRE DE MAILLE =================== */
+$('measBtn').onclick = () => {
+  if(measuring) return; measuring = true;
+  const t = $('measTerm'), S = SAMPLES[cur]; t.style.display = 'block'; t.className = 'crt-on'; t.innerHTML = '';
+  const hex = () => Array.from({length:8}, () => Math.floor(Math.random()*65536).toString(16).padStart(4,'0').toUpperCase()).join(' ');
+  const addr = () => '0x'+(4096+Math.floor(Math.random()*60000)).toString(16).toUpperCase()+'  ';
+  const add = (h,c) => { const d = document.createElement('div'); if(c) d.className = c; d.innerHTML = h; t.appendChild(d);
+    while(t.children.length > 22) t.removeChild(t.firstChild); return d; };
+  const steps = [];
+  steps.push(() => add('$ sudo lattice-probe --target='+S.name+' --mode=OVERDRIVE','ok'));
+  steps.push(() => add('[ OK ] calibration interférométrique laser 632.8 nm'));
+  for(let i=0;i<10;i++) steps.push(() => add(addr()+hex(),'hex'));
+  steps.push(() => add('[!!!] SURCHARGE DU PIÉZO-SCANNER — compensation...','red'));
+  steps.push(() => { const v = $('vizCard'); v.classList.remove('shakeAll'); void v.offsetWidth; v.classList.add('shakeAll'); });
+  for(let i=0;i<6;i++) steps.push(() => add(addr()+hex(),'hex'));
+  steps.push(() => add('[ OK ] FFT 3D … pics de Bragg verrouillés'));
+  steps.push(() => { const d = add('[....] ajustement de la maille  '); let n = 0;
+    const b = setInterval(() => { d.textContent = '[....] ajustement de la maille  '+'▓'.repeat(++n)+'░'.repeat(16-n); if(n >= 16) clearInterval(b); }, 40); });
+  for(let i=0;i<4;i++) steps.push(() => {});
+  steps.push(() => add('[LOCK] paramètre de maille acquis','ok'));
+  steps.push(() => add('a = '+sci(S.a)+' m','big glitch'));
+  let i = 0;
+  (function go(){ if(i < steps.length){ steps[i++](); setTimeout(go, i < 3 ? 350 : 90); }
+    else setTimeout(() => { t.className = 'crt-off'; setTimeout(() => { t.style.display = 'none'; measuring = false; aMeasured = true;
+      const a = $('aBadge'); a.style.display = 'block'; a.textContent = '📏 a = '+sci(S.a)+' m'; }, 450); }, 1600); })();
+};
+
+/* =================== PESEE FACON COMICS =================== */
+const WORDS = ['POW!','BAM!','KAPOW!','WHAM!','ZOK!','BOOM!'];
+$('weighBtn').onclick = () => {
+  const btn = $('weighBtn');
+  if(!onPan){ $('screen').textContent = 'PLATEAU VIDE'; btn.classList.remove('shake'); void btn.offsetWidth; btn.classList.add('shake'); return; }
+  const r = $('balRays'), w = $('balWord');
+  w.textContent = WORDS[Math.floor(Math.random()*WORDS.length)];
+  [r,w].forEach(el => { el.classList.remove('go'); void el.offsetWidth; el.classList.add('go'); });
+  const sc = $('scale'); sc.classList.remove('shakeAll'); void sc.offsetWidth; sc.classList.add('shakeAll');
+  const e = Math.floor(Math.log10(onPan.m));
+  let n = 0; const roll = setInterval(() => {
+    $('screen').textContent = sci((Math.random()*9+1)*Math.pow(10,e))+' kg';
+    if(++n > 14){ clearInterval(roll);
+      $('screen').textContent = (CFG.sym ? onPan.sym+' : ' : '') + sci(onPan.m)+' kg';
+      $('bal').classList.remove('flash'); void $('bal').offsetWidth; $('bal').classList.add('flash'); } }, 55);
+};
+</script>
+</body>
+</html>
