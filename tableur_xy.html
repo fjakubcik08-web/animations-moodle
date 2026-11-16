@@ -66,13 +66,29 @@ tbody tr.row-sel td { background: #eef3fc; }
 .ch:hover .sel-strip { filter: brightness(0.92); }
 
 .sel-strip {
-  height: 6px; background: #d0d0d0;
+  height: 24px; background: #d0d0d0;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  font-size: 11px; font-weight: bold; color: #444;
+  cursor: pointer; user-select: none;
   transition: background 0.15s;
 }
+.sel-box {
+  width: 15px; height: 15px; flex-shrink: 0;
+  border: 2px solid #777; border-radius: 3px; background: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; line-height: 1; color: #fff;
+}
+.ch.sel .sel-strip { color: #fff; }
+.ch.sel .sel-box { border-color: #fff; background: rgba(255,255,255,0.2); }
 .ch.sel-x .sel-strip { background: #185FA5; }
 .ch.sel-y1 .sel-strip { background: #0a7a40; }
 .ch.sel-y2 .sel-strip { background: #b03a2e; }
 .ch.sel-y3 .sel-strip { background: #7d3c98; }
+.ch.sel-y4 .sel-strip { background: #d35400; }
+.ch.sel-y5 .sel-strip { background: #1f618d; }
+.ch.sel-y6 .sel-strip { background: #7b4a2a; }
+.ch.sel-y7 .sel-strip { background: #c2185b; }
+.ch.sel-y8 .sel-strip { background: #117a65; }
 
 .ch-inner { display: flex; flex-direction: column; }
 .ch-row { display: flex; align-items: center; }
@@ -1515,7 +1531,8 @@ function buildTable() {
     // Bande de sélection (clic)
     const strip = document.createElement('div');
     strip.className = 'sel-strip';
-    strip.title = 'Cliquer pour sélectionner la colonne';
+    strip.title = 'Cocher pour tracer cette colonne';
+    strip.innerHTML = '<span class="sel-box"></span><span class="sel-lbl"></span>';
     strip.addEventListener('click', () => toggleCol(c));
     th.appendChild(strip);
 
@@ -1695,13 +1712,20 @@ function refreshHighlight() {
 
   // Headers
   document.querySelectorAll('#sheet thead .ch').forEach(th => {
-    th.classList.remove('sel-x','sel-y1','sel-y2','sel-y3');
+    th.classList.remove('sel', 'sel-x', ...Y_CLASSES.map((_, i) => 'sel-y' + (i+1)));
     const c = +th.dataset.c;
-    if (c === xCol) th.classList.add('sel-x');
+    let lbl = '';
+    if (c === xCol) { th.classList.add('sel', 'sel-x'); lbl = 'X'; }
     else {
       const yi = yCols.indexOf(c);
-      if (yi !== -1) th.classList.add('sel-y' + (yi+1));
+      if (yi !== -1) {
+        th.classList.add('sel', 'sel-y' + (yi+1));
+        lbl = yCols.length > 1 ? 'Y' + (yi+1) : 'Y';
+      }
     }
+    const box = th.querySelector('.sel-box'), sl = th.querySelector('.sel-lbl');
+    if (box) box.textContent = lbl ? '\u2713' : '';
+    if (sl) sl.textContent = lbl;
   });
 
   // Data cells
@@ -1727,7 +1751,7 @@ function updateAxisInfo() {
   const yCols = getYCols();
   const el = document.getElementById('axis-info');
   if (selectedCols.length === 0) {
-    el.innerHTML = '<span class="hint">Cliquez sur les bandes colorées des en-têtes pour sélectionner les colonnes à tracer</span>';
+    el.innerHTML = '<span class="hint">Cochez les cases en haut des colonnes à tracer (la 1re cochée = X)</span>';
     return;
   }
   let html = '';
@@ -3134,7 +3158,7 @@ const HELP_TOPICS = [
     title: 'Tracer un/plusieurs courbes',
     steps: [
       {
-        text: "Cliquez sur les bandes colorées en haut des en-têtes de colonnes : la première colonne cliquée devient l'axe <code>X</code> (bleu), les suivantes deviennent <code>Y1</code> (vert), <code>Y2</code> (rouge) et <code>Y3</code> (violet).",
+        text: "Cochez la case ☐ en haut de chaque colonne à tracer : la <strong>première</strong> colonne cochée devient l'axe <code>X</code> (bleu), les suivantes deviennent <code>Y1</code> (vert), <code>Y2</code> (rouge), <code>Y3</code> (violet), <code>Y4</code> (orange)… La case cochée affiche le rôle de la colonne.",
         img: 'tracer_1_selection'
       },
       {
@@ -3142,7 +3166,7 @@ const HELP_TOPICS = [
         img: 'tracer_2_graphe'
       }
     ],
-    note: `Jusqu'à ${MAX_Y} courbe${MAX_Y > 1 ? 's' : ''} Y peu${MAX_Y > 1 ? 'vent' : 't'} être tracée${MAX_Y > 1 ? 's' : ''} en même temps sur le même axe X. Recliquez sur une bande colorée pour désélectionner une colonne.`
+    note: `Jusqu'à ${MAX_Y} courbe${MAX_Y > 1 ? 's' : ''} Y peu${MAX_Y > 1 ? 'vent' : 't'} être tracée${MAX_Y > 1 ? 's' : ''} en même temps sur le même axe X. Décochez la case pour retirer une colonne du graphique.`
   },
   {
     key: 'stats',
