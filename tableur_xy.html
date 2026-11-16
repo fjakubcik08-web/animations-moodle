@@ -107,6 +107,11 @@ tbody tr.row-sel td { background: #eef3fc; }
 .dc.col-y1 { background: #efffee; }
 .dc.col-y2 { background: #fff0ee; }
 .dc.col-y3 { background: #f8eeff; }
+.dc.col-y4 { background: #fff4e6; }
+.dc.col-y5 { background: #e8f4fd; }
+.dc.col-y6 { background: #f5ede6; }
+.dc.col-y7 { background: #fdeef7; }
+.dc.col-y8 { background: #eef7f7; }
 /* Cellule formule */
 .dc.cell-fx { background: #fffbe6 !important; }
 .dc.cell-fx input { color: #6b4f00; font-style: italic; cursor: default; }
@@ -206,6 +211,11 @@ tbody tr.row-sel td { background: #eef3fc; }
 .tag-y1 { background: #d5f5e3; color: #0a7a40; }
 .tag-y2 { background: #fde8e8; color: #b03a2e; }
 .tag-y3 { background: #f3e8ff; color: #7d3c98; }
+.tag-y4 { background: #fdebd0; color: #d35400; }
+.tag-y5 { background: #d6eaf8; color: #1f618d; }
+.tag-y6 { background: #ede0d4; color: #7b4a2a; }
+.tag-y7 { background: #fadbd8; color: #c2185b; }
+.tag-y8 { background: #d1f2eb; color: #117a65; }
 
 #trace-btn {
   padding: 5px 16px; background: #185FA5; color: #fff;
@@ -685,15 +695,20 @@ let undoStack      = [];          // historique pour Ctrl+Z
 const MAX_UNDO     = 60;
 const _p = new URLSearchParams(location.search);
 let uncertainty = +(_p.get('incertitude') || _p.get('uncertainty') || 5);
+// Nombre max de courbes Y (param ?maxcourbes=, 1..8, défaut 3)
+const MAX_Y = (() => {
+  const v = parseInt(_p.get('maxcourbes') || _p.get('max_courbes') || '', 10);
+  return Number.isFinite(v) ? Math.min(8, Math.max(1, v)) : 3;
+})();
 let chartDrawn = false;
 let chartScale = null;
 let chartSeries = null;   // série de points pour trendlines
 let trendlines  = {};     // { seriesIdx: {slope,intercept,r2,showEq,showR2,fwd,bwd} }
 let _chartCtxSi = null;   // série visée par le clic droit
 
-const Y_COLORS  = ['#0a7a40', '#b03a2e', '#7d3c98'];
-const Y_CLASSES = ['col-y1', 'col-y2', 'col-y3'];
-const TAG_CLS   = ['tag-y1', 'tag-y2', 'tag-y3'];
+const Y_COLORS  = ['#0a7a40', '#b03a2e', '#7d3c98', '#d35400', '#1f618d', '#7b4a2a', '#c2185b', '#117a65'];
+const Y_CLASSES = ['col-y1', 'col-y2', 'col-y3', 'col-y4', 'col-y5', 'col-y6', 'col-y7', 'col-y8'];
+const TAG_CLS   = ['tag-y1', 'tag-y2', 'tag-y3', 'tag-y4', 'tag-y5', 'tag-y6', 'tag-y7', 'tag-y8'];
 
 // ══════════════════════════════════════════
 //  HELPERS DE SÉLECTION
@@ -710,7 +725,7 @@ function getYCols() {
 function toggleCol(c) {
   const idx = selectedCols.indexOf(c);
   if (idx === -1) {
-    if (selectedCols.length >= 4) return showMsg('Maximum 4 colonnes sélectionnées (1 X + 3 Y).', 'err');
+    if (selectedCols.length >= MAX_Y + 1) return showMsg(`Maximum ${MAX_Y + 1} colonnes sélectionnées (1 X + ${MAX_Y} Y).`, 'err');
     selectedCols.push(c);
   } else {
     selectedCols.splice(idx, 1);
@@ -1691,7 +1706,7 @@ function refreshHighlight() {
 
   // Data cells
   document.querySelectorAll('#sheet tbody .dc').forEach(td => {
-    td.classList.remove('col-x','col-y1','col-y2','col-y3');
+    td.classList.remove('col-x', ...Y_CLASSES);
     const c = +td.dataset.c;
     if (c === xCol) td.classList.add('col-x');
     else {
@@ -3127,7 +3142,7 @@ const HELP_TOPICS = [
         img: 'tracer_2_graphe'
       }
     ],
-    note: "Jusqu'à 3 courbes Y peuvent être tracées en même temps sur le même axe X. Recliquez sur une bande colorée pour désélectionner une colonne."
+    note: `Jusqu'à ${MAX_Y} courbe${MAX_Y > 1 ? 's' : ''} Y peu${MAX_Y > 1 ? 'vent' : 't'} être tracée${MAX_Y > 1 ? 's' : ''} en même temps sur le même axe X. Recliquez sur une bande colorée pour désélectionner une colonne.`
   },
   {
     key: 'stats',
