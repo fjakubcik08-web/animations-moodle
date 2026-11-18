@@ -270,6 +270,18 @@ function drawLaser(c){
 /* ---------- Buée ---------- */
 function drawBuee(c,now){
   const b=BUE, st=ST.T;
+  /* boitier de l'appareil : porte la soucoupe, contient chrono et boutons */
+  const bx=662, by=402, bw=276, bh=202;
+  c.beginPath(); wl(c,b.cx-34,b.cy+66,b.cx-44,by,true); wl(c,b.cx+34,b.cy+66,b.cx+44,by,true);
+  ink(c,2); c.stroke();
+  c.beginPath(); c.moveTo(b.cx-34,b.cy+66); c.lineTo(b.cx+34,b.cy+66); c.lineTo(b.cx+44,by); c.lineTo(b.cx-44,by); c.closePath();
+  c.fillStyle="#dcdcdc"; c.fill();
+  wrect(c,bx,by,bw,bh); c.fillStyle="#efefef"; c.fill(); ink(c,2.4); c.stroke();
+  wrect(c,bx+6,by+6,bw-12,bh-12); ink(c,1); c.strokeStyle="#9a9a9a"; c.stroke();
+  for (const [sx,sy] of [[bx+12,by+12],[bx+bw-12,by+12],[bx+12,by+bh-12],[bx+bw-12,by+bh-12]]){
+    c.beginPath(); c.arc(sx,sy,3.5,0,2*Math.PI); c.fillStyle="#bdbdbd"; c.fill(); ink(c,1.2); c.stroke();
+    c.beginPath(); c.moveTo(sx-2.5,sy); c.lineTo(sx+2.5,sy); ink(c,1); c.stroke();
+  }
   wellipse(c,b.cx,b.cy+52,110,24,1.5); c.fillStyle="#efefef"; c.fill(); ink(c,1.6); c.stroke();
   if (st.gem!==null && !(drag && drag.gem===st.gem)){
     drawGem(c,b.cx,b.cy,b.s,GEMS[st.gem].name);
