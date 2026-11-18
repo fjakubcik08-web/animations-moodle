@@ -37,7 +37,7 @@ function decodeP(s){
   for (let i=0;i<bin.length;i++) b[i] = bin.charCodeAt(i) ^ k[i % k.length];
   return JSON.parse(new TextDecoder().decode(b));
 }
-let P = {o:"DSZMV", m:[2.814,3.106,4.522,2.377,3.958], i:"BLT"};
+let P = {o:"DZM", m:[1.204,1.587,0.912], i:"BLT"};
 const Q = new URLSearchParams(location.search);
 if (Q.get("p")) { try { Object.assign(P, decodeP(Q.get("p"))); } catch(e) {} }
 if (Q.get("o")) P.o = Q.get("o").toUpperCase();
