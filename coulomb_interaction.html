@@ -20,6 +20,10 @@
   #pop .t{margin-bottom:4px;}
   #codebox{display:none;margin-top:6px;padding:6px 10px;border:2px solid #2a9d4b;border-radius:6px;background:#f2fbf4;font-size:16px;}
   #codebox b{font-family:Consolas,"Courier New",monospace;font-size:20px;letter-spacing:2px;user-select:all;}
+  #conshelp{display:none;position:relative;gap:10px;align-items:center;margin-bottom:6px;padding:6px 28px 6px 8px;border:2px solid #c07800;border-radius:6px;background:#fff8ec;font-size:14px;}
+  #conshelp ol{margin:4px 0 0 0;padding-left:20px;} #conshelp li{margin:2px 0;}
+  #chClose{position:absolute;top:2px;right:8px;cursor:pointer;font-size:16px;color:#777;}
+  #dupBtn{position:absolute;display:none;z-index:6;font-size:13px;padding:2px 8px;background:#e9f9f0;border-color:#1f9d55;color:#14753f;}
   #help{font-size:13px;color:#555;margin-top:4px;}
 </style>
 </head>
@@ -28,7 +32,7 @@
   <div id="bar">
     <button id="bMes" class="on">📏 Mesurer une distance</button>
     <button id="bFor">➜ Tracer une force</button>
-    <button id="bCon">✏️ Construction</button>
+    <button id="bCon" class="small">❔ Somme des forces</button>
     <button id="bGom">🧽 Gomme</button>
     <button id="bClr" class="small">Effacer tracés</button>
     <button id="bFin">✅ J'ai fini</button>
@@ -37,7 +41,34 @@
     <button id="bZr" class="small" title="Vue initiale">⟲</button>
     <span id="legend"></span>
   </div>
-  <div id="cwrap"><canvas id="cv"></canvas><div id="pop"></div></div>
+  <div id="conshelp">
+    <span id="chClose" title="Masquer">✕</span>
+    <svg viewBox="0 0 200 110" width="190" height="105" style="flex:0 0 190px" aria-hidden="true">
+      <defs>
+        <marker id="hp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7b2fbf"/></marker>
+        <marker id="hg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f9d55"/></marker>
+        <marker id="ht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07800"/></marker>
+      </defs>
+      <circle cx="30" cy="85" r="7" fill="#888"/>
+      <line x1="30" y1="85" x2="110" y2="95" stroke="#7b2fbf" stroke-width="2.5" marker-end="url(#hp)"/>
+      <text x="70" y="106" font-size="11" fill="#7b2fbf">1er vecteur</text>
+      <line x1="30" y1="85" x2="70" y2="30" stroke="#7b2fbf" stroke-width="2.5" marker-end="url(#hp)"/>
+      <text x="6" y="45" font-size="11" fill="#7b2fbf">2e vecteur</text>
+      <line x1="110" y1="95" x2="150" y2="40" stroke="#1f9d55" stroke-width="2.5" marker-end="url(#hg)"/>
+      <text x="140" y="80" font-size="11" fill="#1f9d55">copie</text>
+      <line x1="30" y1="85" x2="148" y2="42" stroke="#c07800" stroke-width="2.5" marker-end="url(#ht)"/>
+      <text x="92" y="52" font-size="11" fill="#c07800">tot</text>
+    </svg>
+    <div>
+      <b>Construire la force totale (méthode « bout à bout »)</b>
+      <ol>
+        <li><b>Dupliquer :</b> passer la souris sur le <u>2e vecteur force</u> : il s'entoure d'un halo, cliquer sur <b>⧉ Dupliquer</b>. Une copie <span style="color:#1f9d55"><b>verte</b></span> (non notée) suit la souris.</li>
+        <li><b>Placer la copie :</b> amener son origine sur la <u>pointe du 1er vecteur</u> (elle s'y accroche) et cliquer pour la poser. Une copie posée se déplace en la faisant glisser.</li>
+        <li><b>Force totale :</b> avec <b>➜ Tracer une force</b>, partir de la particule et aller jusqu'à la <u>pointe verte</u> (elle s'y accroche), puis nommer le vecteur <b>tot</b>.</li>
+      </ol>
+    </div>
+  </div>
+  <div id="cwrap"><canvas id="cv"></canvas><div id="pop"></div><button id="dupBtn">⧉ Dupliquer</button></div>
   <div id="codebox"></div>
   <div id="help"></div>
 </div>
@@ -227,6 +258,7 @@ function measPts(m){ const a=parts[m.a]; const b=m.b!==null?parts[m.b]:{x:m.bx,y
 function forcePts(f){ const p=parts[f.i], k=pxPerNm*P.g; return [X(p.x),Y(p.y),X(p.x)+f.dx*k,Y(p.y)-f.dy*k]; }
 function inBox(b,m){ return b&&m.x>=b.x&&m.x<=b.x+b.w&&m.y>=b.y&&m.y<=b.y+b.h; }
 function pickTip(m){ for(let i=forces.length-1;i>=0;i--){ const q=forcePts(forces[i]); if(Math.hypot(m.x-q[2],m.y-q[3])<14) return i; } return -1; }
+let hoverVec=-1;
 const cvecs=[];   // vecteurs de construction : {x,y (nm, origine), dx,dy (carreaux)}
 function cvecPts(c){ const k=pxPerNm*P.g; return [X(c.x),Y(c.y),X(c.x)+c.dx*k,Y(c.y)-c.dy*k]; }
 function tipsList(excl){ // pointes (écran) des vecteurs, pour l'aimantation
@@ -255,9 +287,16 @@ function consEnd(m,st,excl){ // extrémité d'un vecteur de construction : aiman
   const f=forces[best], Lf=Math.hypot(f.dx,f.dy), eq=Math.abs(L-Lf)<=Math.max(0.08*Lf,0.15), LL=eq?Lf:L;
   return {x:st.x+f.dx/Lf*LL*k, y:st.y-f.dy/Lf*LL*k, src:best, eq};
 }
+function pickCBody(m){ for(let i=cvecs.length-1;i>=0;i--){ if(dSeg(m.x,m.y,...cvecPts(cvecs[i]))<8) return i; } return -1; }
+function pickFBody(m){ // corps d'un vecteur force (hors pointe et hors particule)
+  for(let i=forces.length-1;i>=0;i--){ const q=forcePts(forces[i]);
+    if(dSeg(m.x,m.y,...q)<8 && Math.hypot(m.x-q[2],m.y-q[3])>14 && Math.hypot(m.x-q[0],m.y-q[1])>R_AURA) return i; }
+  return -1;
+}
+function placeTail(ci,px,py){ const c=cvecs[ci], e=snapEnd({x:px,y:py},'c'+ci,true); c.x=iX(e.x); c.y=iY(e.y); }
 function drawCvecs(){
-  cvecs.forEach(c=>{ const q=cvecPts(c); arrow(q[0],q[1],q[2],q[3],'#999',2,[5,4]);
-    if(SHOWLEN){ const np=namePos(q[0],q[1],q[2],q[3]); txt(fr(Math.hypot(c.dx,c.dy),1)+' carr.', np[0]+np[2]*18, np[1]+np[3]*18+4, 12, '#888', 'center'); } });
+  cvecs.forEach((c,ci)=>{ const q=cvecPts(c); arrow(q[0],q[1],q[2],q[3],'#1f9d55',(drag&&(drag.type==='carry'||drag.type==='cmove')&&drag.ci===ci)?3.5:2.5);
+    if(SHOWLEN){ const np=namePos(q[0],q[1],q[2],q[3]); txt(fr(Math.hypot(c.dx,c.dy),1)+' carr.', np[0]+np[2]*18, np[1]+np[3]*18+4, 12, '#1f9d55', 'center'); } });
 }
 function erase(m){
   let best=null, bd=10;
@@ -388,6 +427,9 @@ function draw(){
   drawSupport();
   drawMeas();
   if(P.sol) drawSolution();
+  if(hoverVec>=0 && forces[hoverVec]){ const q=forcePts(forces[hoverVec]);
+    ctx.save(); ctx.globalAlpha=0.3; ctx.strokeStyle='#1f9d55'; ctx.lineWidth=14; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(q[0],q[1]); ctx.lineTo(q[2],q[3]); ctx.stroke(); ctx.restore(); }
   drawCvecs();
   drawForces();
   parts.forEach(drawParticle);
@@ -425,6 +467,9 @@ function draw(){
 function pos(ev){ const r=cv.getBoundingClientRect(); return {x:ev.clientX-r.left, y:ev.clientY-r.top}; }
 cv.addEventListener('pointerdown',ev=>{
   const m=pos(ev); mouse=m; hidePop();
+  if(drag && drag.type==='carry'){ drag=null; draw(); return; }
+  if(P.cons && mode!=='gom'){ const ci=pickCBody(m); if(ci>=0){ cv.setPointerCapture(ev.pointerId); const c=cvecs[ci];
+    drag={type:'cmove',ci,ox:m.x-X(c.x),oy:m.y-Y(c.y)}; dupBtn.style.display='none'; draw(); return; } }
   if(mode==='gom' && erase(m)){ hideCode(); draw(); return; }
   if(mode==='for'){ const ti=pickTip(m); if(ti>=0){ cv.setPointerCapture(ev.pointerId); drag={type:'edit',fi:ti}; draw(); return; } }
   if(mode==='con'){
@@ -445,6 +490,14 @@ cv.addEventListener('pointerdown',ev=>{
 });
 cv.addEventListener('pointermove',ev=>{
   const m=pos(ev); mouse=m;
+  if(drag && drag.type==='carry'){ placeTail(drag.ci,m.x,m.y); draw(); return; }
+  if(drag && drag.type==='cmove'){ placeTail(drag.ci,m.x-drag.ox,m.y-drag.oy); draw(); return; }
+  if(!drag && P.cons && mode!=='gom'){
+    const hv=pickFBody(m);
+    if(hv>=0){ hoverVec=hv; dupBtn.style.left=(m.x+14)+'px'; dupBtn.style.top=(m.y-36)+'px'; dupBtn.style.display='block'; }
+    else if(hoverVec>=0){ const bx=parseFloat(dupBtn.style.left), by=parseFloat(dupBtn.style.top);
+      if(Math.hypot(m.x-bx-40,m.y-by-12)>70){ hoverVec=-1; dupBtn.style.display='none'; } }
+  }
   if(drag && drag.type==='pan'){
     x0=drag.x0-(m.x-drag.sx)/pxPerNm; y0=drag.y0+(m.y-drag.sy)/pxPerNm; clampView(); draw(); return;
   }
@@ -459,12 +512,15 @@ cv.addEventListener('pointermove',ev=>{
   hover = (mode==='gom') ? -1 : pick(m.x,m.y,R_AURA);
   if(mode==='gom') cv.style.cursor='not-allowed';
   else if(drag&&(drag.type==='edit'||drag.type==='cedit') || (mode==='for'&&pickTip(m)>=0) || (mode==='con'&&pickCTip(m)>=0)) cv.style.cursor='grab';
-  else if(mode==='con') cv.style.cursor = (snapEnd(m,null,true).x!==m.x) ? 'crosshair' : 'default';
+  else if(P.cons && mode!=='gom' && pickCBody(m)>=0) cv.style.cursor='move';
+  else if(P.cons && mode!=='gom' && hoverVec>=0) cv.style.cursor='pointer';
   else cv.style.cursor = hover>=0 ? 'crosshair' : 'default';
   draw();
 });
 cv.addEventListener('pointerup',ev=>{
   if(!drag) return; const m=pos(ev);
+  if(drag.type==='carry') return;
+  if(drag.type==='cmove'){ drag=null; draw(); return; }
   if(drag.type==='pan'){ drag=null; cv.style.cursor='default'; return; }
   if(drag.type==='cedit'){
     const c=cvecs[drag.ci]; if(Math.hypot(c.dx,c.dy)<0.3) cvecs.splice(drag.ci,1);
@@ -516,15 +572,24 @@ function openPop(fi){
   pop.style.left=px+'px'; pop.style.top=py+'px';
   setTimeout(()=>inp.focus(),0);
 }
-const btn={mes:bMes,for:bFor,con:bCon,gom:bGom};
-function setMode(m){ hidePop(); mode=m; for(const k in btn) btn[k].classList.toggle('on',k===m); help(); }
-bMes.onclick=()=>setMode('mes'); bFor.onclick=()=>setMode('for'); bGom.onclick=()=>setMode('gom'); bCon.onclick=()=>setMode('con');
+const btn={mes:bMes,for:bFor,gom:bGom};
+const consHelp=document.getElementById('conshelp');
+document.getElementById('chClose').onclick=()=>{ consHelp.style.display='none'; resize(); };
+function setMode(m){ hidePop(); mode=m;
+ for(const k in btn) btn[k].classList.toggle('on',k===m); help(); }
+bMes.onclick=()=>setMode('mes'); bFor.onclick=()=>setMode('for'); bGom.onclick=()=>setMode('gom');
+bCon.onclick=()=>{ consHelp.style.display = consHelp.style.display==='flex' ? 'none' : 'flex'; resize(); };
+dupBtn.onclick=()=>{ if(hoverVec<0) return; const f=forces[hoverVec];
+  cvecs.push({x:0,y:0,dx:f.dx,dy:f.dy}); const ci=cvecs.length-1;
+  const r=parseFloat(dupBtn.style.left), t=parseFloat(dupBtn.style.top);
+  placeTail(ci, r, t+40); drag={type:'carry',ci}; hoverVec=-1; dupBtn.style.display='none'; draw(); };
+window.addEventListener('keydown',e=>{ if(e.key==='Escape' && drag && drag.type==='carry'){ cvecs.splice(drag.ci,1); drag=null; draw(); } });
 if(!P.cons) bCon.style.display='none';
 bClr.onclick=()=>{ hidePop(); hideCode(); meas.length=0; forces.length=0; cvecs.length=0; draw(); };
 
 function help(){
   const h={mes:"Partir du halo d'une particule et tirer jusqu'à une autre particule pour mesurer la distance qui les sépare.",
-           for:"Partir d'une particule et tirer pour tracer un vecteur force (respecter l'échelle), puis écrire son nom. Attraper la pointe d'un vecteur pour modifier sa longueur ou son orientation. Cliquer sur son nom pour le renommer.",
+           for:"Partir d'une particule et tirer pour tracer un vecteur force (respecter l'échelle), puis écrire son nom. Attraper la pointe d'un vecteur pour modifier sa longueur ou son orientation. Cliquer sur son nom pour le renommer."+(P.cons?" Passer la souris sur un vecteur pour le dupliquer (copie verte, non notée).":""),
            con:"Partir de la pointe d'un vecteur (ou d'une particule) et tirer pour tracer un vecteur de construction (gris, non noté). Les extrémités s'aimantent sur les pointes des vecteurs ; près de la direction d'une force, le trait se met parallèle (∥) puis à la même longueur (=).",
            gom:"Cliquer sur une mesure ou un vecteur pour l'effacer."};
   document.getElementById('help').textContent='Survoler une particule pour lire sa charge. '+h[mode]+' Molette : zoom · glisser dans le vide : se déplacer.';
