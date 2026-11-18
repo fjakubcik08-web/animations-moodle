@@ -47,12 +47,13 @@
    ?p=<base64url( XOR( JSON , KEY ) )>
    JSON : { pts:[[x_nm,y_nm,q_en_e],...], sc:N_par_carreau, g:nm_par_carreau,
             W:nm, H:nm, sol:0/1, len:0/1,
-            s:seed 0..65535 du code, tl:tolérance longueur (%), ta:tolérance angle (°) }
+            s:seed 0..65535 du code, tl:tolérance longueur (%), ta:tolérance angle (°),
+            t:indice de la particule étudiée (-1 = toutes les interactions), tot:1 = force totale (nom TOT) attendue }
    Paramètres en clair prioritaires : sol, len
 =============================================== */
 const KEY = "Coulomb-1SPE-P01";
 const E = 1.602e-19, K = 8.99e9;
-const DEF = { pts:[[0.5,0.6,2],[1.3,0.6,-1]], sc:1e-10, g:0.1, W:2.0, H:1.2, sol:0, s:0, tl:10, ta:8 };
+const DEF = { pts:[[0.5,0.6,2],[1.3,0.6,-1]], sc:1e-10, g:0.1, W:2.0, H:1.2, sol:0, s:0, tl:10, ta:8, t:-1, tot:0 };
 
 function decode(s){
   try{
@@ -82,17 +83,23 @@ function makeCode(seed,score,n){
   for(let i=0;i<7;i++){ c+=ALPH[h%32]; h=Math.floor(h/32); if(i===2) h=fnv(c+"|"+h); }
   return c.slice(0,4)+"-"+c.slice(4);
 }
-function expectedVectors(){ // vecteurs attendus en carreaux : force exercée par j sur i
+function expectedVectors(){ // vecteurs attendus en carreaux : force exercée par j sur i (+ force totale)
   const L=[];
-  parts.forEach((pi,i)=>parts.forEach((pj,j)=>{
-    if(i===j) return;
-    const dx=(pi.x-pj.x)*1e-9, dy=(pi.y-pj.y)*1e-9, r=Math.hypot(dx,dy); if(!r) return;
-    const F=K*pi.q*pj.q*E*E/(r*r), Lc=F/P.sc;
-    L.push({i, name:NM(j)+"/"+NM(i), dx:dx/r*Lc, dy:dy/r*Lc});
-  }));
+  parts.forEach((pi,i)=>{
+    if(P.t>=0 && i!==P.t) return;
+    let sx=0, sy=0;
+    parts.forEach((pj,j)=>{
+      if(i===j) return;
+      const dx=(pi.x-pj.x)*1e-9, dy=(pi.y-pj.y)*1e-9, r=Math.hypot(dx,dy); if(!r) return;
+      const F=K*pi.q*pj.q*E*E/(r*r), Lc=F/P.sc;
+      L.push({i, name:NM(j)+"/"+NM(i), dx:dx/r*Lc, dy:dy/r*Lc});
+      sx+=dx/r*Lc; sy+=dy/r*Lc;
+    });
+    if(P.tot && P.t>=0) L.push({i, name:"TOT", dx:sx, dy:sy});
+  });
   return L;
 }
-function normName(s){ return (s||"").toUpperCase().replace(/\s+/g,"").replace(/\\/g,"/"); }
+function normName(s){ s=(s||"").toUpperCase().replace(/\s+/g,"").replace(/\\/g,"/"); return (s==="TOTAL"||s==="TOTALE")?"TOT":s; }
 function scoreDrawing(){
   const exp=expectedVectors(), used=new Set(); let ok=0;
   exp.forEach(e=>{
@@ -302,14 +309,13 @@ function namePos(x1,y1,x2,y2){ // milieu du vecteur + normale côté gauche
   const L=Math.hypot(x2-x1,y2-y1)||1;
   return [(x1+x2)/2,(y1+y2)/2,(y2-y1)/L,-(x2-x1)/L];
 }
-function drawSupport(){ // droites support (gris clair pointillé) pendant le tracé d'un vecteur
-  if(!drag || (drag.type!=='for' && drag.type!=='edit')) return;
-  const i = drag.type==='for' ? drag.i : forces[drag.fi].i, pi=parts[i];
+function drawSupport(){ // prolongement (gris clair pointillé) du vecteur en cours de tracé, pour viser
+  if(!drag || !mouse || (drag.type!=='for' && drag.type!=='edit')) return;
+  const pi = parts[drag.type==='for' ? drag.i : forces[drag.fi].i];
+  const x1=X(pi.x), y1=Y(pi.y), dx=mouse.x-x1, dy=mouse.y-y1, L=Math.hypot(dx,dy); if(L<5) return;
   const big = 4*(CW+CH);
   ctx.save(); ctx.strokeStyle='#bbb'; ctx.lineWidth=1.5; ctx.setLineDash([6,6]);
-  parts.forEach((pj,j)=>{ if(j===i) return;
-    const x1=X(pi.x), y1=Y(pi.y), dx=X(pj.x)-x1, dy=Y(pj.y)-y1, L=Math.hypot(dx,dy); if(!L) return;
-    ctx.beginPath(); ctx.moveTo(x1-dx/L*big,y1-dy/L*big); ctx.lineTo(x1+dx/L*big,y1+dy/L*big); ctx.stroke(); });
+  ctx.beginPath(); ctx.moveTo(x1-dx/L*big,y1-dy/L*big); ctx.lineTo(x1+dx/L*big,y1+dy/L*big); ctx.stroke();
   ctx.restore();
 }
 function drawForces(){
@@ -318,23 +324,17 @@ function drawForces(){
     const p=parts[f.i], x1=X(p.x), y1=Y(p.y);
     arrow(x1,y1,x1+f.dx*k,y1-f.dy*k,'#7b2fbf',3);
     const L=Math.hypot(f.dx,f.dy), ex=x1+f.dx*k, ey=y1-f.dy*k;
-    const sub=f.name||'…';
+    const sub=f.name?(normName(f.name)==='TOT'?'tot':f.name):'…';
     f.box = vecName(sub, namePos(x1,y1,ex,ey), '#7b2fbf', SHOWLEN?14:0);
     if(SHOWLEN) txt(fr(L,1)+' carr.',f.box.x,f.box.y+f.box.h+14,12,'#7b2fbf');
   });
 }
 function drawSolution(){
   const k=pxPerNm*P.g;
-  parts.forEach((pi,i)=>{
-    parts.forEach((pj,j)=>{
-      if(i===j) return;
-      const dx=(pi.x-pj.x)*1e-9, dy=(pi.y-pj.y)*1e-9, r=Math.hypot(dx,dy); if(r===0) return;
-      const F = K*pi.q*pj.q*E*E/(r*r);           // >0 répulsif
-      const ux=dx/r, uy=dy/r, Lc=F/P.sc;          // longueur en carreaux (signée)
-      const ex=X(pi.x)+ux*Lc*k, ey=Y(pi.y)-uy*Lc*k;
-      arrow(X(pi.x),Y(pi.y),ex,ey,'#888',2.5,[6,4]);
-      vecName(NM(j)+'/'+NM(i), namePos(X(pi.x),Y(pi.y),ex,ey), '#888');
-    });
+  expectedVectors().forEach(e=>{
+    const p=parts[e.i], x1=X(p.x), y1=Y(p.y), ex=x1+e.dx*k, ey=y1-e.dy*k;
+    arrow(x1,y1,ex,ey, e.name==='TOT'?'#555':'#888', 2.5,[6,4]);
+    vecName(e.name==='TOT'?'tot':e.name, namePos(x1,y1,ex,ey), e.name==='TOT'?'#555':'#888');
   });
 }
 function draw(){
