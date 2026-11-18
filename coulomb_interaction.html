@@ -104,7 +104,7 @@ if(Q.get('sol')!==null) P.sol = +Q.get('sol');
 if(Q.get('len')!==null) P.len = +Q.get('len');
 if(Q.get('cons')!==null) P.cons = +Q.get('cons');
 window.__decode = decode; // pour test round-trip
-window.__test = ()=>({code:(sc,n)=>makeCode(P.s,sc,n), score:scoreDrawing, exp:expectedVectors, forces});
+window.__test = ()=>({code:(sc,n)=>makeCode(P.s,sc,n), score:scoreDrawing, exp:expectedVectors, forces, cvecs:(typeof cvecs!=='undefined'?cvecs:[])});
 
 const parts = P.pts.map(a=>({x:+a[0], y:+a[1], q:+a[2]}));
 const NM = i => String.fromCharCode(65+i);
@@ -320,8 +320,16 @@ function drawAxes(){
   const g=P.g, xa=iX(M.l), xb=iX(CW-M.r), ya=iY(CH-M.b), yb=iY(M.t);
   const L=M.l, R=CW-M.r, T=M.t, B=CH-M.b;
   ctx.save(); ctx.beginPath(); ctx.rect(L,T,R-L,B-T); ctx.clip();
-  for(let i=Math.ceil(xa/g);i*g<=xb;i++) wline(X(i*g),T,X(i*g),B,'#e3e3e3',1,0.5);
-  for(let j=Math.ceil(ya/g);j*g<=yb;j++) wline(L,Y(j*g),R,Y(j*g),'#e3e3e3',1,0.5);
+  // fond « grands carreaux » (Seyès) : lignes fines horizontales tous les 1/4 de carreau, carreaux en violet
+  ctx.fillStyle='#fffefa'; ctx.fillRect(L,T,R-L,B-T);
+  const sub=g/4;
+  if(sub*pxPerNm>=4){ ctx.save(); ctx.strokeStyle='#cddcf2'; ctx.lineWidth=0.8; ctx.beginPath();
+    for(let j=Math.ceil(ya/sub);j*sub<=yb;j++){ if(j%4===0) continue; const y=Math.round(Y(j*sub))+0.5; ctx.moveTo(L,y); ctx.lineTo(R,y); }
+    ctx.stroke(); ctx.restore(); }
+  ctx.save(); ctx.strokeStyle='#b3a9de'; ctx.lineWidth=1.1; ctx.beginPath();
+  for(let i=Math.ceil(xa/g);i*g<=xb;i++){ const x=Math.round(X(i*g))+0.5; ctx.moveTo(x,T); ctx.lineTo(x,B); }
+  for(let j=Math.ceil(ya/g);j*g<=yb;j++){ const y=Math.round(Y(j*g))+0.5; ctx.moveTo(L,y); ctx.lineTo(R,y); }
+  ctx.stroke(); ctx.restore();
   // vrais axes passant par O
   if(ya<=0&&yb>=0) arrow(L,Y(0),R-2,Y(0),'#222',2.2);
   if(xa<=0&&xb>=0) arrow(X(0),B,X(0),T+2,'#222',2.2);
