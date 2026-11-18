@@ -28,6 +28,7 @@
   <div id="bar">
     <button id="bMes" class="on">📏 Mesurer une distance</button>
     <button id="bFor">➜ Tracer une force</button>
+    <button id="bCon">✏️ Construction</button>
     <button id="bGom">🧽 Gomme</button>
     <button id="bClr" class="small">Effacer tracés</button>
     <button id="bFin">✅ J'ai fini</button>
@@ -48,12 +49,13 @@
    JSON : { pts:[[x_nm,y_nm,q_en_e],...], sc:N_par_carreau, g:nm_par_carreau,
             W:nm, H:nm, sol:0/1, len:0/1,
             s:seed 0..65535 du code, tl:tolérance longueur (%), ta:tolérance angle (°),
-            t:indice de la particule étudiée (-1 = toutes les interactions), tot:1 = force totale (nom TOT) attendue }
-   Paramètres en clair prioritaires : sol, len
+            t:indice de la particule étudiée (-1 = toutes les interactions), tot:1 = force totale (nom TOT) attendue,
+            cons:1 = bouton Construction (vecteurs de construction, non notés) }
+   Paramètres en clair prioritaires : sol, len, cons
 =============================================== */
 const KEY = "Coulomb-1SPE-P01";
 const E = 1.602e-19, K = 8.99e9;
-const DEF = { pts:[[0.5,0.6,2],[1.3,0.6,-1]], sc:1e-10, g:0.1, W:2.0, H:1.2, sol:0, s:0, tl:10, ta:8, t:-1, tot:0 };
+const DEF = { pts:[[0.5,0.6,2],[1.3,0.6,-1]], sc:1e-10, g:0.1, W:2.0, H:1.2, sol:0, s:0, tl:10, ta:8, t:-1, tot:0, cons:0 };
 
 function decode(s){
   try{
@@ -69,6 +71,7 @@ let P = Object.assign({}, DEF);
 if(Q.get('p')){ const d = decode(Q.get('p')); if(d) Object.assign(P, d); }
 if(Q.get('sol')!==null) P.sol = +Q.get('sol');
 if(Q.get('len')!==null) P.len = +Q.get('len');
+if(Q.get('cons')!==null) P.cons = +Q.get('cons');
 window.__decode = decode; // pour test round-trip
 window.__test = ()=>({code:(sc,n)=>makeCode(P.s,sc,n), score:scoreDrawing, exp:expectedVectors, forces});
 
@@ -224,12 +227,31 @@ function measPts(m){ const a=parts[m.a]; const b=m.b!==null?parts[m.b]:{x:m.bx,y
 function forcePts(f){ const p=parts[f.i], k=pxPerNm*P.g; return [X(p.x),Y(p.y),X(p.x)+f.dx*k,Y(p.y)-f.dy*k]; }
 function inBox(b,m){ return b&&m.x>=b.x&&m.x<=b.x+b.w&&m.y>=b.y&&m.y<=b.y+b.h; }
 function pickTip(m){ for(let i=forces.length-1;i>=0;i--){ const q=forcePts(forces[i]); if(Math.hypot(m.x-q[2],m.y-q[3])<14) return i; } return -1; }
+const cvecs=[];   // vecteurs de construction : {x,y (nm, origine), dx,dy (carreaux)}
+function cvecPts(c){ const k=pxPerNm*P.g; return [X(c.x),Y(c.y),X(c.x)+c.dx*k,Y(c.y)-c.dy*k]; }
+function tipsList(excl){ // pointes (écran) des vecteurs, pour l'aimantation
+  const L=[];
+  forces.forEach((f,i)=>{ if(excl!=='f'+i){ const q=forcePts(f); L.push([q[2],q[3]]); } });
+  cvecs.forEach((c,i)=>{ if(excl!=='c'+i){ const q=cvecPts(c); L.push([q[2],q[3]]); } });
+  return L;
+}
+function snapEnd(m,excl,withParts){ // aimante une extrémité sur une pointe (ou une particule)
+  let best=null, bd=11;
+  tipsList(excl).forEach(p=>{ const d=Math.hypot(m.x-p[0],m.y-p[1]); if(d<bd){bd=d;best={x:p[0],y:p[1]};} });
+  if(withParts) parts.forEach(p=>{ const d=Math.hypot(m.x-X(p.x),m.y-Y(p.y)); if(d<bd){bd=d;best={x:X(p.x),y:Y(p.y)};} });
+  return best||{x:m.x,y:m.y};
+}
+function pickCTip(m){ for(let i=cvecs.length-1;i>=0;i--){ const q=cvecPts(cvecs[i]); if(Math.hypot(m.x-q[2],m.y-q[3])<12) return i; } return -1; }
+function drawCvecs(){
+  cvecs.forEach(c=>{ const q=cvecPts(c); arrow(q[0],q[1],q[2],q[3],'#999',2,[5,4]); });
+}
 function erase(m){
   let best=null, bd=10;
+  cvecs.forEach((c,i)=>{ const d=dSeg(m.x,m.y,...cvecPts(c)); if(d<bd){bd=d;best=['c',i];} });
   forces.forEach((f,i)=>{ const q=forcePts(f); const d=inBox(f.box,m)?0:dSeg(m.x,m.y,...q); if(d<bd){bd=d;best=['f',i];} });
   meas.forEach((mm,i)=>{ const d=dSeg(m.x,m.y,...measPts(mm)); if(d<bd){bd=d;best=['m',i];} });
   if(!best) return false;
-  (best[0]==='f'?forces:meas).splice(best[1],1); return true;
+  ({f:forces,m:meas,c:cvecs})[best[0]].splice(best[1],1); return true;
 }
 function pick(px,py,rad){
   let best=-1,bd=1e9;
@@ -309,10 +331,18 @@ function namePos(x1,y1,x2,y2){ // milieu du vecteur + normale côté gauche
   const L=Math.hypot(x2-x1,y2-y1)||1;
   return [(x1+x2)/2,(y1+y2)/2,(y2-y1)/L,-(x2-x1)/L];
 }
+function dragStart(){ // origine (écran) du vecteur en cours de tracé, ou null
+  if(!drag) return null;
+  if(drag.type==='for') return {x:X(parts[drag.i].x),y:Y(parts[drag.i].y)};
+  if(drag.type==='edit'){ const p=parts[forces[drag.fi].i]; return {x:X(p.x),y:Y(p.y)}; }
+  if(drag.type==='cons') return {x:X(drag.sx),y:Y(drag.sy)};
+  if(drag.type==='cedit'){ const c=cvecs[drag.ci]; return {x:X(c.x),y:Y(c.y)}; }
+  return null;
+}
 function drawSupport(){ // prolongement (gris clair pointillé) du vecteur en cours de tracé, pour viser
-  if(!drag || !mouse || (drag.type!=='for' && drag.type!=='edit')) return;
-  const pi = parts[drag.type==='for' ? drag.i : forces[drag.fi].i];
-  const x1=X(pi.x), y1=Y(pi.y), dx=mouse.x-x1, dy=mouse.y-y1, L=Math.hypot(dx,dy); if(L<5) return;
+  const st=dragStart(); if(!st || !mouse) return;
+  const e = (drag.type==='cons') ? snapEnd(mouse,null,true) : (drag.end||mouse);
+  const x1=st.x, y1=st.y, dx=e.x-x1, dy=e.y-y1, L=Math.hypot(dx,dy); if(L<5) return;
   const big = 4*(CW+CH);
   ctx.save(); ctx.strokeStyle='#bbb'; ctx.lineWidth=1.5; ctx.setLineDash([6,6]);
   ctx.beginPath(); ctx.moveTo(x1-dx/L*big,y1-dy/L*big); ctx.lineTo(x1+dx/L*big,y1+dy/L*big); ctx.stroke();
@@ -344,6 +374,7 @@ function draw(){
   drawSupport();
   drawMeas();
   if(P.sol) drawSolution();
+  drawCvecs();
   drawForces();
   parts.forEach(drawParticle);
   ctx.restore();
@@ -354,10 +385,13 @@ function draw(){
       const bx=t>=0&&t!==drag.i?parts[t].x:iX(mouse.x), by=t>=0&&t!==drag.i?parts[t].y:iY(mouse.y);
       seg(a.x,a.y,bx,by,'#2a9d4b', t>=0&&t!==drag.i? NM(drag.i)+NM(t) : 'd');
     } else if(drag.type==='for'){
-      const p=parts[drag.i], k=pxPerNm*P.g;
-      const dx=(mouse.x-X(p.x))/k, dy=-(mouse.y-Y(p.y))/k;
-      arrow(X(p.x),Y(p.y),mouse.x,mouse.y,'#7b2fbf',3);
-      if(SHOWLEN) txt(fr(Math.hypot(dx,dy),1)+' carr.',mouse.x+8,mouse.y-8,13,'#7b2fbf');
+      const p=parts[drag.i], k=pxPerNm*P.g, e=snapEnd(mouse,null,false);
+      const dx=(e.x-X(p.x))/k, dy=-(e.y-Y(p.y))/k;
+      arrow(X(p.x),Y(p.y),e.x,e.y,'#7b2fbf',3);
+      if(SHOWLEN) txt(fr(Math.hypot(dx,dy),1)+' carr.',e.x+8,e.y-8,13,'#7b2fbf');
+    } else if(drag.type==='cons'){
+      const e=snapEnd(mouse,null,true);
+      arrow(X(drag.sx),Y(drag.sy),e.x,e.y,'#999',2,[5,4]);
     }
   }
   if(hover>=0 && !drag){ /* étiquette charge */
@@ -372,6 +406,13 @@ cv.addEventListener('pointerdown',ev=>{
   const m=pos(ev); mouse=m; hidePop();
   if(mode==='gom' && erase(m)){ hideCode(); draw(); return; }
   if(mode==='for'){ const ti=pickTip(m); if(ti>=0){ cv.setPointerCapture(ev.pointerId); drag={type:'edit',fi:ti}; draw(); return; } }
+  if(mode==='con'){
+    cv.setPointerCapture(ev.pointerId);
+    const ci=pickCTip(m); if(ci>=0){ drag={type:'cedit',ci}; draw(); return; }
+    const st=snapEnd(m,null,true);
+    if(st.x!==m.x||st.y!==m.y){ drag={type:'cons',sx:iX(st.x),sy:iY(st.y)}; draw(); return; }
+    drag={type:'pan',sx:m.x,sy:m.y,x0,y0}; cv.style.cursor='grabbing'; return;
+  }
   const fi=forces.findIndex(f=>inBox(f.box,m));
   if(fi>=0){ openPop(fi); return; }
   const i=mode==='gom'?-1:pick(m.x,m.y,R_AURA);
@@ -387,27 +428,38 @@ cv.addEventListener('pointermove',ev=>{
     x0=drag.x0-(m.x-drag.sx)/pxPerNm; y0=drag.y0+(m.y-drag.sy)/pxPerNm; clampView(); draw(); return;
   }
   if(drag && drag.type==='edit'){
-    const f=forces[drag.fi], p=parts[f.i], k=pxPerNm*P.g;
-    f.dx=(m.x-X(p.x))/k; f.dy=-(m.y-Y(p.y))/k;
+    const f=forces[drag.fi], p=parts[f.i], k=pxPerNm*P.g, e=snapEnd(m,'f'+drag.fi,false);
+    f.dx=(e.x-X(p.x))/k; f.dy=-(e.y-Y(p.y))/k;
+  }
+  if(drag && drag.type==='cedit'){
+    const c=cvecs[drag.ci], k=pxPerNm*P.g, e=snapEnd(m,'c'+drag.ci,true);
+    c.dx=(e.x-X(c.x))/k; c.dy=-(e.y-Y(c.y))/k;
   }
   hover = (mode==='gom') ? -1 : pick(m.x,m.y,R_AURA);
   if(mode==='gom') cv.style.cursor='not-allowed';
-  else if(drag&&drag.type==='edit' || (mode==='for'&&pickTip(m)>=0)) cv.style.cursor='grab';
+  else if(drag&&(drag.type==='edit'||drag.type==='cedit') || (mode==='for'&&pickTip(m)>=0) || (mode==='con'&&pickCTip(m)>=0)) cv.style.cursor='grab';
+  else if(mode==='con') cv.style.cursor = (snapEnd(m,null,true).x!==m.x) ? 'crosshair' : 'default';
   else cv.style.cursor = hover>=0 ? 'crosshair' : 'default';
   draw();
 });
 cv.addEventListener('pointerup',ev=>{
   if(!drag) return; const m=pos(ev);
   if(drag.type==='pan'){ drag=null; cv.style.cursor='default'; return; }
-  if(drag.type==='edit'){ hideCode();
+  if(drag.type==='cedit'){
+    const c=cvecs[drag.ci]; if(Math.hypot(c.dx,c.dy)<0.3) cvecs.splice(drag.ci,1);
+  } else if(drag.type==='cons'){
+    const e=snapEnd(m,null,true), k=pxPerNm*P.g;
+    const dx=(e.x-X(drag.sx))/k, dy=-(e.y-Y(drag.sy))/k;
+    if(Math.hypot(dx,dy)>0.3) cvecs.push({x:drag.sx,y:drag.sy,dx,dy});
+  } else if(drag.type==='edit'){ hideCode();
     const f=forces[drag.fi]; if(Math.hypot(f.dx,f.dy)<0.3) forces.splice(drag.fi,1);
   } else if(drag.type==='mes'){
     const t=pick(m.x,m.y,R_AURA);
     if(t>=0 && t!==drag.i) meas.push({a:drag.i,b:t});
     else if(Math.hypot(m.x-X(parts[drag.i].x),m.y-Y(parts[drag.i].y))>R_AURA) meas.push({a:drag.i,b:null,bx:iX(m.x),by:iY(m.y)});
   } else if(drag.type==='for'){
-    const p=parts[drag.i], k=pxPerNm*P.g;
-    const dx=(m.x-X(p.x))/k, dy=-(m.y-Y(p.y))/k;
+    const p=parts[drag.i], k=pxPerNm*P.g, e=snapEnd(m,null,false);
+    const dx=(e.x-X(p.x))/k, dy=-(e.y-Y(p.y))/k;
     if(Math.hypot(dx,dy)>0.3){ forces.push({i:drag.i,dx,dy,name:''}); hideCode(); drag=null; draw(); openPop(forces.length-1); return; }
   }
   drag=null; draw();
@@ -443,14 +495,16 @@ function openPop(fi){
   pop.style.left=px+'px'; pop.style.top=py+'px';
   setTimeout(()=>inp.focus(),0);
 }
-const btn={mes:bMes,for:bFor,gom:bGom};
+const btn={mes:bMes,for:bFor,con:bCon,gom:bGom};
 function setMode(m){ hidePop(); mode=m; for(const k in btn) btn[k].classList.toggle('on',k===m); help(); }
-bMes.onclick=()=>setMode('mes'); bFor.onclick=()=>setMode('for'); bGom.onclick=()=>setMode('gom');
-bClr.onclick=()=>{ hidePop(); hideCode(); meas.length=0; forces.length=0; draw(); };
+bMes.onclick=()=>setMode('mes'); bFor.onclick=()=>setMode('for'); bGom.onclick=()=>setMode('gom'); bCon.onclick=()=>setMode('con');
+if(!P.cons) bCon.style.display='none';
+bClr.onclick=()=>{ hidePop(); hideCode(); meas.length=0; forces.length=0; cvecs.length=0; draw(); };
 
 function help(){
   const h={mes:"Partir du halo d'une particule et tirer jusqu'à une autre particule pour mesurer la distance qui les sépare.",
            for:"Partir d'une particule et tirer pour tracer un vecteur force (respecter l'échelle), puis écrire son nom. Attraper la pointe d'un vecteur pour modifier sa longueur ou son orientation. Cliquer sur son nom pour le renommer.",
+           con:"Partir de la pointe d'un vecteur (ou d'une particule) et tirer pour tracer un vecteur de construction (gris, non noté). Les extrémités s'aimantent sur les pointes des vecteurs.",
            gom:"Cliquer sur une mesure ou un vecteur pour l'effacer."};
   document.getElementById('help').textContent='Survoler une particule pour lire sa charge. '+h[mode]+' Molette : zoom · glisser dans le vide : se déplacer.';
 }
