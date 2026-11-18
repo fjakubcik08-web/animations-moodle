@@ -18,6 +18,8 @@
   #pop{position:absolute;display:none;background:#fff;border:2px solid #222;border-radius:6px 9px 7px 10px;padding:6px 8px;font-size:15px;box-shadow:2px 3px 0 #0002;z-index:5;}
   #pop button{font-size:14px;padding:2px 9px;margin:2px;}
   #pop .t{margin-bottom:4px;}
+  #codebox{display:none;margin-top:6px;padding:6px 10px;border:2px solid #2a9d4b;border-radius:6px;background:#f2fbf4;font-size:16px;}
+  #codebox b{font-family:Consolas,"Courier New",monospace;font-size:20px;letter-spacing:2px;user-select:all;}
   #help{font-size:13px;color:#555;margin-top:4px;}
 </style>
 </head>
@@ -28,12 +30,14 @@
     <button id="bFor">➜ Tracer une force</button>
     <button id="bGom">🧽 Gomme</button>
     <button id="bClr" class="small">Effacer tracés</button>
+    <button id="bFin">✅ J'ai fini</button>
     <button id="bZp" class="small" title="Zoomer">🔍+</button>
     <button id="bZm" class="small" title="Dézoomer">🔍−</button>
     <button id="bZr" class="small" title="Vue initiale">⟲</button>
     <span id="legend"></span>
   </div>
   <div id="cwrap"><canvas id="cv"></canvas><div id="pop"></div></div>
+  <div id="codebox"></div>
   <div id="help"></div>
 </div>
 <script>
@@ -42,12 +46,13 @@
 /* ================= Paramètres =================
    ?p=<base64url( XOR( JSON , KEY ) )>
    JSON : { pts:[[x_nm,y_nm,q_en_e],...], sc:N_par_carreau, g:nm_par_carreau,
-            W:nm, H:nm, sol:0/1, len:0/1 }
+            W:nm, H:nm, sol:0/1, len:0/1,
+            s:seed 0..65535 du code, tl:tolérance longueur (%), ta:tolérance angle (°) }
    Paramètres en clair prioritaires : sol, len
 =============================================== */
 const KEY = "Coulomb-1SPE-P01";
 const E = 1.602e-19, K = 8.99e9;
-const DEF = { pts:[[0.5,0.6,2],[1.3,0.6,-1]], sc:1e-10, g:0.1, W:2.0, H:1.2, sol:0 };
+const DEF = { pts:[[0.5,0.6,2],[1.3,0.6,-1]], sc:1e-10, g:0.1, W:2.0, H:1.2, sol:0, s:0, tl:10, ta:8 };
 
 function decode(s){
   try{
@@ -64,9 +69,44 @@ if(Q.get('p')){ const d = decode(Q.get('p')); if(d) Object.assign(P, d); }
 if(Q.get('sol')!==null) P.sol = +Q.get('sol');
 if(Q.get('len')!==null) P.len = +Q.get('len');
 window.__decode = decode; // pour test round-trip
+window.__test = ()=>({code:(sc,n)=>makeCode(P.s,sc,n), score:scoreDrawing, exp:expectedVectors, forces});
 
 const parts = P.pts.map(a=>({x:+a[0], y:+a[1], q:+a[2]}));
 const NM = i => String.fromCharCode(65+i);
+
+/* ================= Code de fin ================= */
+const ALPH = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+function fnv(str){ let h=2166136261>>>0; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return h>>>0; }
+function makeCode(seed,score,n){
+  let h=fnv(KEY+"|"+seed+"|"+score+"|"+n), c="";
+  for(let i=0;i<7;i++){ c+=ALPH[h%32]; h=Math.floor(h/32); if(i===2) h=fnv(c+"|"+h); }
+  return c.slice(0,4)+"-"+c.slice(4);
+}
+function expectedVectors(){ // vecteurs attendus en carreaux : force exercée par j sur i
+  const L=[];
+  parts.forEach((pi,i)=>parts.forEach((pj,j)=>{
+    if(i===j) return;
+    const dx=(pi.x-pj.x)*1e-9, dy=(pi.y-pj.y)*1e-9, r=Math.hypot(dx,dy); if(!r) return;
+    const F=K*pi.q*pj.q*E*E/(r*r), Lc=F/P.sc;
+    L.push({i, name:NM(j)+"/"+NM(i), dx:dx/r*Lc, dy:dy/r*Lc});
+  }));
+  return L;
+}
+function normName(s){ return (s||"").toUpperCase().replace(/\s+/g,"").replace(/\\/g,"/"); }
+function scoreDrawing(){
+  const exp=expectedVectors(), used=new Set(); let ok=0;
+  exp.forEach(e=>{
+    const Le=Math.hypot(e.dx,e.dy), ae=Math.atan2(e.dy,e.dx);
+    const k=forces.findIndex((f,idx)=>{
+      if(used.has(idx)||f.i!==e.i||normName(f.name)!==e.name) return false;
+      const Lf=Math.hypot(f.dx,f.dy); let da=Math.abs(Math.atan2(f.dy,f.dx)-ae)*180/Math.PI; if(da>180) da=360-da;
+      return Math.abs(Lf-Le)<=Math.max(P.tl/100*Le,0.2) && da<=P.ta;
+    });
+    if(k>=0){ used.add(k); ok++; }
+  });
+  const extra=Math.max(0,forces.length-exp.length); // pénalise seulement les vecteurs en trop
+  return {score:Math.max(0,ok-extra), n:exp.length};
+}
 
 /* ================= Canvas / repère ================= */
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
@@ -244,20 +284,33 @@ function seg(x1,y1,x2,y2,col,nm){
   ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillRect(mx-w/2,my-26,w,20);
   txt(s,mx,my-11,14,col,'center');
 }
-function vecName(sub,x,y,col){
+function vecName(sub,np,col,extraH){
+  // np = [mx,my,nx,ny] : milieu du vecteur + normale (côté gauche) ; le nom est posé à côté, sans toucher le trait
   ctx.save(); ctx.font='italic 18px system-ui,"Segoe UI",Roboto,Arial,sans-serif'; const wF=ctx.measureText('F').width;
   ctx.font='13px system-ui,"Segoe UI",Roboto,Arial,sans-serif'; const wS=ctx.measureText(sub).width; ctx.restore();
-  const w=wF+wS+4;
+  const w=wF+wS+4, h=32+(extraH||0);
+  const off=8+(Math.abs(np[2])*(w+4)+Math.abs(np[3])*h)/2;
+  const cx=np[0]+np[2]*off, cy=np[1]+np[3]*off;
+  const x=cx-w/2, y=cy-h/2+24;
   ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fillRect(x-2,y-24,w+4,32);
   txt('F',x,y,18,col); txt(sub,x+wF+2,y+5,13,col);
   arrow(x,y-17,x+wF+1,y-17,col,1.5);
   return {x:x-2,y:y-24,w:w+4,h:32};
 }
-function namePos(x1,y1,x2,y2){ // milieu du vecteur, décalé perpendiculairement (côté haut)
-  const L=Math.hypot(x2-x1,y2-y1)||1; let nx=-(y2-y1)/L, ny=(x2-x1)/L;
-  if(ny>0||(ny===0&&nx<0)){nx=-nx;ny=-ny;}
-  const mx=(x1+x2)/2+nx*20, my=(y1+y2)/2+ny*20;
-  return [mx-14, my+8];
+function namePos(x1,y1,x2,y2){ // milieu du vecteur + normale côté gauche
+  // deux vecteurs opposés sur la même droite ont ainsi leurs noms de part et d'autre
+  const L=Math.hypot(x2-x1,y2-y1)||1;
+  return [(x1+x2)/2,(y1+y2)/2,(y2-y1)/L,-(x2-x1)/L];
+}
+function drawSupport(){ // droites support (gris clair pointillé) pendant le tracé d'un vecteur
+  if(!drag || (drag.type!=='for' && drag.type!=='edit')) return;
+  const i = drag.type==='for' ? drag.i : forces[drag.fi].i, pi=parts[i];
+  const big = 4*(CW+CH);
+  ctx.save(); ctx.strokeStyle='#bbb'; ctx.lineWidth=1.5; ctx.setLineDash([6,6]);
+  parts.forEach((pj,j)=>{ if(j===i) return;
+    const x1=X(pi.x), y1=Y(pi.y), dx=X(pj.x)-x1, dy=Y(pj.y)-y1, L=Math.hypot(dx,dy); if(!L) return;
+    ctx.beginPath(); ctx.moveTo(x1-dx/L*big,y1-dy/L*big); ctx.lineTo(x1+dx/L*big,y1+dy/L*big); ctx.stroke(); });
+  ctx.restore();
 }
 function drawForces(){
   const k = pxPerNm*P.g; // px par carreau
@@ -266,7 +319,7 @@ function drawForces(){
     arrow(x1,y1,x1+f.dx*k,y1-f.dy*k,'#7b2fbf',3);
     const L=Math.hypot(f.dx,f.dy), ex=x1+f.dx*k, ey=y1-f.dy*k;
     const sub=f.name||'…';
-    const np=namePos(x1,y1,ex,ey); f.box = vecName(sub, np[0], np[1], '#7b2fbf');
+    f.box = vecName(sub, namePos(x1,y1,ex,ey), '#7b2fbf', SHOWLEN?14:0);
     if(SHOWLEN) txt(fr(L,1)+' carr.',f.box.x,f.box.y+f.box.h+14,12,'#7b2fbf');
   });
 }
@@ -280,7 +333,7 @@ function drawSolution(){
       const ux=dx/r, uy=dy/r, Lc=F/P.sc;          // longueur en carreaux (signée)
       const ex=X(pi.x)+ux*Lc*k, ey=Y(pi.y)-uy*Lc*k;
       arrow(X(pi.x),Y(pi.y),ex,ey,'#888',2.5,[6,4]);
-      const np=namePos(X(pi.x),Y(pi.y),ex,ey); const o=(i<j)?0:-34; vecName(NM(j)+'/'+NM(i), np[0], np[1]+o, '#888');
+      vecName(NM(j)+'/'+NM(i), namePos(X(pi.x),Y(pi.y),ex,ey), '#888');
     });
   });
 }
@@ -288,6 +341,7 @@ function draw(){
   ctx.clearRect(0,0,CW,CH);
   drawAxes();
   ctx.save(); ctx.beginPath(); ctx.rect(M.l-R_AURA,M.t,CW-M.l-M.r+R_AURA,CH-M.t-M.b+R_AURA); ctx.clip();
+  drawSupport();
   drawMeas();
   if(P.sol) drawSolution();
   drawForces();
@@ -316,7 +370,7 @@ function draw(){
 function pos(ev){ const r=cv.getBoundingClientRect(); return {x:ev.clientX-r.left, y:ev.clientY-r.top}; }
 cv.addEventListener('pointerdown',ev=>{
   const m=pos(ev); mouse=m; hidePop();
-  if(mode==='gom' && erase(m)){ draw(); return; }
+  if(mode==='gom' && erase(m)){ hideCode(); draw(); return; }
   if(mode==='for'){ const ti=pickTip(m); if(ti>=0){ cv.setPointerCapture(ev.pointerId); drag={type:'edit',fi:ti}; draw(); return; } }
   const fi=forces.findIndex(f=>inBox(f.box,m));
   if(fi>=0){ openPop(fi); return; }
@@ -345,7 +399,7 @@ cv.addEventListener('pointermove',ev=>{
 cv.addEventListener('pointerup',ev=>{
   if(!drag) return; const m=pos(ev);
   if(drag.type==='pan'){ drag=null; cv.style.cursor='default'; return; }
-  if(drag.type==='edit'){
+  if(drag.type==='edit'){ hideCode();
     const f=forces[drag.fi]; if(Math.hypot(f.dx,f.dy)<0.3) forces.splice(drag.fi,1);
   } else if(drag.type==='mes'){
     const t=pick(m.x,m.y,R_AURA);
@@ -354,7 +408,7 @@ cv.addEventListener('pointerup',ev=>{
   } else if(drag.type==='for'){
     const p=parts[drag.i], k=pxPerNm*P.g;
     const dx=(m.x-X(p.x))/k, dy=-(m.y-Y(p.y))/k;
-    if(Math.hypot(dx,dy)>0.3){ forces.push({i:drag.i,dx,dy,name:''}); drag=null; draw(); openPop(forces.length-1); return; }
+    if(Math.hypot(dx,dy)>0.3){ forces.push({i:drag.i,dx,dy,name:''}); hideCode(); drag=null; draw(); openPop(forces.length-1); return; }
   }
   drag=null; draw();
 });
@@ -364,6 +418,10 @@ bZm.onclick=()=>{ hidePop(); zoomAt(1/1.3,M.l+PW()/2,M.t+PH()/2); };
 bZr.onclick=()=>{ hidePop(); resetView(); };
 cv.addEventListener('pointerleave',()=>{ if(!drag){hover=-1;mouse=null;draw();} });
 
+const codebox=document.getElementById('codebox');
+bFin.onclick=()=>{ hidePop(); const r=scoreDrawing();
+  codebox.innerHTML="Code à recopier dans Moodle : <b>"+makeCode(P.s,r.score,r.n)+"</b>"; codebox.style.display='block'; };
+function hideCode(){ codebox.style.display='none'; }
 const pop=document.getElementById('pop');
 function hidePop(){ pop.style.display='none'; }
 function openPop(fi){
@@ -373,11 +431,11 @@ function openPop(fi){
   const inp=document.createElement('input'); inp.type='text'; inp.maxLength=6; inp.value=f.name||'';
   inp.style.cssText='width:60px;font:inherit;font-size:15px;border:1.5px solid #222;border-radius:4px;padding:2px 4px;';
   const ok=document.createElement('button'); ok.textContent='OK';
-  const valid=()=>{ f.name=inp.value.trim().toUpperCase(); hidePop(); draw(); };
+  const valid=()=>{ hideCode(); f.name=inp.value.trim().toUpperCase(); hidePop(); draw(); };
   ok.onclick=valid; inp.onkeydown=e=>{ if(e.key==='Enter') valid(); if(e.key==='Escape'){hidePop();draw();} };
   pop.appendChild(lab); pop.appendChild(inp); pop.appendChild(ok);
   const del=document.createElement('button'); del.textContent='🗑'; del.title='Supprimer ce vecteur';
-  del.onclick=()=>{ forces.splice(fi,1); hidePop(); draw(); }; pop.appendChild(del);
+  del.onclick=()=>{ hideCode(); forces.splice(fi,1); hidePop(); draw(); }; pop.appendChild(del);
   pop.style.display='block';
   let px=b.x+b.w+6, py=b.y;
   if(px+pop.offsetWidth>CW) px=Math.max(0,b.x-pop.offsetWidth-6);
@@ -388,7 +446,7 @@ function openPop(fi){
 const btn={mes:bMes,for:bFor,gom:bGom};
 function setMode(m){ hidePop(); mode=m; for(const k in btn) btn[k].classList.toggle('on',k===m); help(); }
 bMes.onclick=()=>setMode('mes'); bFor.onclick=()=>setMode('for'); bGom.onclick=()=>setMode('gom');
-bClr.onclick=()=>{ hidePop(); meas.length=0; forces.length=0; draw(); };
+bClr.onclick=()=>{ hidePop(); hideCode(); meas.length=0; forces.length=0; draw(); };
 
 function help(){
   const h={mes:"Partir du halo d'une particule et tirer jusqu'à une autre particule pour mesurer la distance qui les sépare.",
