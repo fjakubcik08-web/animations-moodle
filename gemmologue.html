@@ -92,6 +92,9 @@ function btn(st, x, y, w, h, label, fn, on){ BTN.push({st, x, y, w, h, label, fn
 btn("B", 222, 445, 82, 34, "dans l'air", ()=>{ if(balMode!=="air"&&ST.B.gem!==null){ balMoveT=NOW(); drips(BAL.cx,BAL.waterY); dispRoll=NOW(); panKick=NOW()+480; boom(BAL.cx+20,BAL.panY+70,"HOP !","#ffe600",0.7,-0.15); } balMode="air"; }, ()=>balMode==="air");
 btn("B", 222, 488, 82, 34, "dans l'eau", ()=>{ if(balMode!=="eau"&&ST.B.gem!==null){ balMoveT=NOW(); splash(BAL.cx,BAL.waterY,300); dispRoll=NOW(); panKick=NOW()+300; setTimeout(()=>{ boom(BAL.cx+10,BAL.waterY-60,"PLOUF !","#5fd0ff",0.75,0.12); shake(); },300); } balMode="eau"; }, ()=>balMode==="eau");
 btn("L", 335, 566, 100, 34, "🔍 loupe", ()=>{ loupe=!loupe; if(loupe) boom(400,515,"ZOOM !","#b6ff6a",0.6,-0.1); }, ()=>loupe);
+btn("T", 670, 560, 80, 34, "▶ départ", ()=>{ if(!chrono.run){ chrono.run=true; chrono.t0=performance.now(); chronoKick=performance.now(); } });
+btn("T", 760, 560, 80, 34, "■ stop", ()=>{ if(chrono.run){ chrono.acc += performance.now()-chrono.t0; chrono.run=false; chronoKick=performance.now(); } });
+btn("T", 850, 560, 80, 34, "↺ zéro", ()=>{ chrono.run=false; chrono.acc=0; });
 btn("T", 670, 422, 260, 36, "💨 souffler sur la pierre", ()=>{
   if (ST.T.gem===null) return;
   fogStart = performance.now(); fogDur = GEMS[ST.T.gem].mat.t*1000; fogStart += 420; chrono.run=false; chrono.acc=0; breath(); setTimeout(()=>boom(BUE.cx+60,BUE.cy-95,"FFFOUUU !","#d8f0ff",0.65,0.1),120);
