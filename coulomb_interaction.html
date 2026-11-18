@@ -242,8 +242,22 @@ function snapEnd(m,excl,withParts){ // aimante une extrémité sur une pointe (o
   return best||{x:m.x,y:m.y};
 }
 function pickCTip(m){ for(let i=cvecs.length-1;i>=0;i--){ const q=cvecPts(cvecs[i]); if(Math.hypot(m.x-q[2],m.y-q[3])<12) return i; } return -1; }
+function consEnd(m,st,excl){ // extrémité d'un vecteur de construction : aimant pointe/particule, sinon parallèle + même longueur qu'une force
+  const e=snapEnd(m,excl,true);
+  if(e.x!==m.x||e.y!==m.y) return {x:e.x,y:e.y,src:-1,eq:false};
+  const k=pxPerNm*P.g, vx=(m.x-st.x)/k, vy=-(m.y-st.y)/k, L=Math.hypot(vx,vy);
+  if(L<0.3) return {x:m.x,y:m.y,src:-1,eq:false};
+  let best=-1, bd=4;   // tolérance d'aimantation en degrés
+  forces.forEach((f,i)=>{ const Lf=Math.hypot(f.dx,f.dy); if(Lf<0.1) return;
+    let da=Math.abs(Math.atan2(vy,vx)-Math.atan2(f.dy,f.dx))*180/Math.PI; if(da>180) da=360-da;
+    if(da<bd){bd=da;best=i;} });
+  if(best<0) return {x:m.x,y:m.y,src:-1,eq:false};
+  const f=forces[best], Lf=Math.hypot(f.dx,f.dy), eq=Math.abs(L-Lf)<=Math.max(0.08*Lf,0.15), LL=eq?Lf:L;
+  return {x:st.x+f.dx/Lf*LL*k, y:st.y-f.dy/Lf*LL*k, src:best, eq};
+}
 function drawCvecs(){
-  cvecs.forEach(c=>{ const q=cvecPts(c); arrow(q[0],q[1],q[2],q[3],'#999',2,[5,4]); });
+  cvecs.forEach(c=>{ const q=cvecPts(c); arrow(q[0],q[1],q[2],q[3],'#999',2,[5,4]);
+    if(SHOWLEN){ const np=namePos(q[0],q[1],q[2],q[3]); txt(fr(Math.hypot(c.dx,c.dy),1)+' carr.', np[0]+np[2]*18, np[1]+np[3]*18+4, 12, '#888', 'center'); } });
 }
 function erase(m){
   let best=null, bd=10;
@@ -341,7 +355,7 @@ function dragStart(){ // origine (écran) du vecteur en cours de tracé, ou null
 }
 function drawSupport(){ // prolongement (gris clair pointillé) du vecteur en cours de tracé, pour viser
   const st=dragStart(); if(!st || !mouse) return;
-  const e = (drag.type==='cons') ? snapEnd(mouse,null,true) : (drag.end||mouse);
+  const e = (drag.type==='cons'||drag.type==='cedit') ? consEnd(mouse,st,drag.type==='cedit'?'c'+drag.ci:null) : mouse;
   const x1=st.x, y1=st.y, dx=e.x-x1, dy=e.y-y1, L=Math.hypot(dx,dy); if(L<5) return;
   const big = 4*(CW+CH);
   ctx.save(); ctx.strokeStyle='#bbb'; ctx.lineWidth=1.5; ctx.setLineDash([6,6]);
@@ -389,9 +403,16 @@ function draw(){
       const dx=(e.x-X(p.x))/k, dy=-(e.y-Y(p.y))/k;
       arrow(X(p.x),Y(p.y),e.x,e.y,'#7b2fbf',3);
       if(SHOWLEN) txt(fr(Math.hypot(dx,dy),1)+' carr.',e.x+8,e.y-8,13,'#7b2fbf');
-    } else if(drag.type==='cons'){
-      const e=snapEnd(mouse,null,true);
-      arrow(X(drag.sx),Y(drag.sy),e.x,e.y,'#999',2,[5,4]);
+    } else if(drag.type==='cons' || drag.type==='cedit'){
+      const st=dragStart(), e=consEnd(mouse,st,drag.type==='cedit'?'c'+drag.ci:null);
+      if(drag.type==='cons') arrow(st.x,st.y,e.x,e.y,'#999',2,[5,4]);
+      if(SHOWLEN && drag.type==='cons'){ const k=pxPerNm*P.g; txt(fr(Math.hypot(e.x-st.x,e.y-st.y)/k,1)+' carr.', e.x+10, e.y+18, 13, '#777'); }
+      if(e.src>=0){ const q=forcePts(forces[e.src]);
+        ctx.save(); ctx.globalAlpha=0.25; ctx.strokeStyle='#f0a000'; ctx.lineWidth=9; ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(q[0],q[1]); ctx.lineTo(q[2],q[3]); ctx.stroke(); ctx.restore();
+        const nm=forces[e.src].name?(normName(forces[e.src].name)==='TOT'?'tot':forces[e.src].name):'…';
+        txt((e.eq?'= ':'∥ ')+'F '+nm, e.x+10, e.y-10, 14, '#c07800');
+      }
     }
   }
   if(hover>=0 && !drag){ /* étiquette charge */
@@ -432,7 +453,7 @@ cv.addEventListener('pointermove',ev=>{
     f.dx=(e.x-X(p.x))/k; f.dy=-(e.y-Y(p.y))/k;
   }
   if(drag && drag.type==='cedit'){
-    const c=cvecs[drag.ci], k=pxPerNm*P.g, e=snapEnd(m,'c'+drag.ci,true);
+    const c=cvecs[drag.ci], k=pxPerNm*P.g, e=consEnd(m,{x:X(c.x),y:Y(c.y)},'c'+drag.ci);
     c.dx=(e.x-X(c.x))/k; c.dy=-(e.y-Y(c.y))/k;
   }
   hover = (mode==='gom') ? -1 : pick(m.x,m.y,R_AURA);
@@ -448,7 +469,7 @@ cv.addEventListener('pointerup',ev=>{
   if(drag.type==='cedit'){
     const c=cvecs[drag.ci]; if(Math.hypot(c.dx,c.dy)<0.3) cvecs.splice(drag.ci,1);
   } else if(drag.type==='cons'){
-    const e=snapEnd(m,null,true), k=pxPerNm*P.g;
+    const e=consEnd(m,{x:X(drag.sx),y:Y(drag.sy)},null), k=pxPerNm*P.g;
     const dx=(e.x-X(drag.sx))/k, dy=-(e.y-Y(drag.sy))/k;
     if(Math.hypot(dx,dy)>0.3) cvecs.push({x:drag.sx,y:drag.sy,dx,dy});
   } else if(drag.type==='edit'){ hideCode();
@@ -504,7 +525,7 @@ bClr.onclick=()=>{ hidePop(); hideCode(); meas.length=0; forces.length=0; cvecs.
 function help(){
   const h={mes:"Partir du halo d'une particule et tirer jusqu'à une autre particule pour mesurer la distance qui les sépare.",
            for:"Partir d'une particule et tirer pour tracer un vecteur force (respecter l'échelle), puis écrire son nom. Attraper la pointe d'un vecteur pour modifier sa longueur ou son orientation. Cliquer sur son nom pour le renommer.",
-           con:"Partir de la pointe d'un vecteur (ou d'une particule) et tirer pour tracer un vecteur de construction (gris, non noté). Les extrémités s'aimantent sur les pointes des vecteurs.",
+           con:"Partir de la pointe d'un vecteur (ou d'une particule) et tirer pour tracer un vecteur de construction (gris, non noté). Les extrémités s'aimantent sur les pointes des vecteurs ; près de la direction d'une force, le trait se met parallèle (∥) puis à la même longueur (=).",
            gom:"Cliquer sur une mesure ou un vecteur pour l'effacer."};
   document.getElementById('help').textContent='Survoler une particule pour lire sa charge. '+h[mode]+' Molette : zoom · glisser dans le vide : se déplacer.';
 }
