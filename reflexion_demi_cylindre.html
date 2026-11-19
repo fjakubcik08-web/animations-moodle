@@ -6,7 +6,7 @@
 <title>Réflexion sur un demi-cylindre</title>
 <style>
   html,body{margin:0;padding:0;background:#fdfdf8;overflow-x:hidden;overflow-y:auto;}
-  body{font-family:"Humor Sans","xkcd Script","Comic Neue","Comic Sans MS","Chalkboard SE","Segoe Print",cursive;color:#222;}
+  body{font-family:"Comic Sans MS","Comic Neue","Chalkboard SE","Segoe Print",cursive;color:#222;}
   #wrap{max-width:960px;margin:0 auto;padding:6px;}
   canvas{display:block;width:100%;height:auto;touch-action:none;cursor:grab;}
   canvas.drag{cursor:grabbing;}
@@ -102,7 +102,7 @@ function warc(c,x,y,r,a0,a1,amp,seed){
     const px=x+rr*Math.cos(a), py=y+rr*Math.sin(a); k?c.lineTo(px,py):c.moveTo(px,py); }
 }
 function wtext(c,s,x,y,size,align,col){
-  c.font=size+'px "Humor Sans","xkcd Script","Comic Neue","Comic Sans MS","Chalkboard SE","Segoe Print",cursive';
+  c.font=size+'px "Comic Sans MS","Comic Neue","Chalkboard SE","Segoe Print",cursive';
   c.textAlign=align||"center"; c.textBaseline="middle"; c.fillStyle=col||"#222"; c.fillText(s,x,y);
 }
 
@@ -219,7 +219,7 @@ function scene(c){
 }
 
 function wrap(c,s,w,size){
-  c.font=size+'px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  c.font=size+'px "Comic Sans MS","Comic Neue",cursive';
   const out=[]; let cur="";
   s.split(" ").forEach(m=>{ const t=cur?cur+" "+m:m; if(c.measureText(t).width>w && cur){ out.push(cur); cur=m; } else cur=t; });
   if(cur) out.push(cur); return out;
