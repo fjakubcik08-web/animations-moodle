@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Réflexion sur un demi-cylindre</title>
+<style>
+  html,body{margin:0;padding:0;background:#fdfdf8;overflow-x:hidden;overflow-y:auto;}
+  body{font-family:"Humor Sans","xkcd Script","Comic Neue","Comic Sans MS","Chalkboard SE","Segoe Print",cursive;color:#222;}
+  #wrap{max-width:960px;margin:0 auto;padding:6px;}
+  canvas{display:block;width:100%;height:auto;touch-action:none;cursor:grab;}
+  canvas.drag{cursor:grabbing;}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin-top:6px;}
+  .grp{display:flex;align-items:center;gap:6px;padding:5px 10px;border:2px solid #222;border-radius:14px 10px 16px 9px;background:#fff;}
+  button{font-family:inherit;font-size:15px;background:#fff;color:#222;border:2px solid #222;
+         border-radius:12px 9px 13px 8px;padding:5px 11px;cursor:pointer;box-shadow:2px 2px 0 #222;}
+  button:active{transform:translate(2px,2px);box-shadow:none;}
+  button.on{background:#ffe9a8;}
+  button:disabled{opacity:.4;cursor:default;}
+  input[type=range]{width:170px;accent-color:#2a6fb0;}
+  .lbl{font-size:15px;}
+  b{font-size:16px;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div class="bar">
+    <div class="grp" id="gn">
+      <span class="lbl">Indice n =</span><b id="nv">1.00</b>
+      <button id="nm">−</button>
+      <input type="range" id="n" min="1" max="2" step="0.01" value="1">
+      <button id="np">+</button>
+    </div>
+    <div class="grp">
+      <button id="m1">◀ −1°</button>
+      <button id="p1">+1° ▶</button>
+    </div>
+    <button id="loupe">🔍 Loupe</button>
+    <button id="reset">↺ Recommencer</button>
+  </div>
+</div>
+<script>
+(function(){
+"use strict";
+/* ---------- Paramètres (JSON -> XOR -> base64url dans ?p=) ---------- */
+const KEY = "PBayle-Reflexion#dc7";
+const DEF = {n:1.00, ln:0, i:40, t2:2, mv:1, si:1, lp:1};
+function decodeP(s){
+  try{
+    s = s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="=";
+    const bin = atob(s), k = new TextEncoder().encode(KEY);
+    const b = new Uint8Array(bin.length);
+    for(let j=0;j<bin.length;j++) b[j] = bin.charCodeAt(j) ^ k[j%k.length];
+    return JSON.parse(new TextDecoder().decode(b));
+  }catch(e){ return {}; }
+}
+const Q = new URLSearchParams(location.search);
+const P = Object.assign({}, DEF, Q.get("p") ? decodeP(Q.get("p")) : {});
+for(const k of Object.keys(DEF)) if(Q.has(k)) P[k] = parseFloat(Q.get(k));   // clair > codé
+
+/* ---------- Canvas ---------- */
+const W=960, H=660, CX=480, CY=300, RD=250, RC=190, RL=280;
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+const sc=document.createElement("canvas"), sx=sc.getContext("2d");
+let dpr=1;
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.width=sc.width=W*dpr; cv.height=sc.height=H*dpr;
+  draw();
+}
+
+/* ---------- État ---------- */
+let st = { a:0, n:1, loupe:false, drag:false, tir:false };
+function setA(deg){ st.a=Math.max(-89,Math.min(89,Math.round(deg))); }
+function init(){
+  setA(-(P.i||40)); st.n=Math.max(1,Math.min(2,+P.n||1)); st.loupe=false; st.tir=false;
+  nIn.value=st.n; nv.textContent=st.n.toFixed(2); loupeB.classList.remove("on");
+  say("Attrape le laser et fais-le tourner autour du disque !");
+}
+
+/* ---------- Trait "fait main" (xkcd) ---------- */
+function hash(x){ x=Math.sin(x*127.1+311.7)*43758.5453; return x-Math.floor(x); }
+function noise(t){ const i=Math.floor(t), f=t-i, u=f*f*(3-2*f); return (hash(i)*(1-u)+hash(i+1)*u)*2-1; }
+function wpath(c,pts,amp,seed){
+  amp=amp||1.3; seed=seed||0;
+  c.beginPath();
+  for(let s=0;s<pts.length-1;s++){
+    const [x1,y1]=pts[s],[x2,y2]=pts[s+1], L=Math.hypot(x2-x1,y2-y1)||1;
+    const nx=-(y2-y1)/L, ny=(x2-x1)/L, n=Math.max(2,Math.round(L/9));
+    for(let k=0;k<=n;k++){
+      const t=k/n, o=amp*noise(seed+s*13.7+t*L/38);
+      const x=x1+(x2-x1)*t+nx*o, y=y1+(y2-y1)*t+ny*o;
+      (s===0&&k===0)?c.moveTo(x,y):c.lineTo(x,y);
+    }
+  }
+}
+function wline(c,x1,y1,x2,y2,amp,seed){ wpath(c,[[x1,y1],[x2,y2]],amp,seed); c.stroke(); }
+function warc(c,x,y,r,a0,a1,amp,seed){
+  const n=Math.max(12,Math.round(Math.abs(a1-a0)*r/7)); c.beginPath();
+  for(let k=0;k<=n;k++){ const a=a0+(a1-a0)*k/n, rr=r+(amp||1.3)*noise((seed||0)+k*0.35);
+    const px=x+rr*Math.cos(a), py=y+rr*Math.sin(a); k?c.lineTo(px,py):c.moveTo(px,py); }
+}
+function wtext(c,s,x,y,size,align,col){
+  c.font=size+'px "Humor Sans","xkcd Script","Comic Neue","Comic Sans MS","Chalkboard SE","Segoe Print",cursive';
+  c.textAlign=align||"center"; c.textBaseline="middle"; c.fillStyle=col||"#222"; c.fillText(s,x,y);
+}
+
+/* ---------- Bulle du bonhomme ---------- */
+let bubble="", bubbleT=0;
+function say(s){ bubble=s; bubbleT=performance.now(); }
+const IDLE=["Mesure toujours les angles à partir de la NORMALE (les pointillés) !",
+            "Un degré, c'est un petit trait. Ouvre l'œil… ou la loupe.",
+            "Note bien tes mesures, la science n'a pas de mémoire.",
+            "Pew pew ! 🔴"];
+let idleK=0;
+
+/* ---------- Physique ---------- */
+const rad=d=>d*Math.PI/180;
+function physics(){
+  // air (n=1) -> verre (n) : sin i1 = n sin i2, pas de réflexion totale
+  const a=rad(st.a), i1=Math.abs(a), n=st.n, a2=Math.asin(Math.sin(i1)/n);
+  const c1=Math.cos(i1), c2=Math.cos(a2);
+  const rs=((c1-n*c2)/(c1+n*c2))**2, rp=((n*c1-c2)/(n*c1+c2))**2, R=(rs+rp)/2;
+  return {a,i1,tir:false,R,a2};
+}
+
+/* ---------- Dessin ---------- */
+function ray(c,x1,y1,x2,y2,alpha,w){
+  c.save(); c.globalAlpha=alpha; c.lineCap="round";
+  c.strokeStyle="rgba(255,60,60,0.28)"; c.lineWidth=(w||3)+4; c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+  c.strokeStyle="#e0161b"; c.lineWidth=w||3; c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+  c.restore();
+}
+function spot(c,x,y,alpha){ c.save(); c.globalAlpha=alpha; c.strokeStyle="rgba(255,30,30,0.7)"; c.lineWidth=1.5;
+  c.beginPath(); c.arc(x,y,7,0,7); c.stroke(); c.restore(); }
+function arrowMid(c,x1,y1,x2,y2,alpha){
+  const mx=x1+(x2-x1)*0.55, my=y1+(y2-y1)*0.55, an=Math.atan2(y2-y1,x2-x1);
+  c.save(); c.globalAlpha=alpha; c.fillStyle="#e0161b"; c.translate(mx,my); c.rotate(an);
+  c.beginPath(); c.moveTo(9,0); c.lineTo(-7,-7); c.lineTo(-7,7); c.closePath(); c.fill(); c.restore();
+}
+
+function scene(c){
+  c.setTransform(dpr,0,0,dpr,0,0);
+  c.fillStyle="#fdfdf8"; c.fillRect(0,0,W,H);
+  c.lineJoin="round"; c.lineCap="round";
+
+  /* titre */
+  wtext(c,"Le labo d'optique",22,30,24,"left");
+  c.strokeStyle="#222"; c.lineWidth=2; wline(c,22,47,200,45,1.2,5);
+
+  /* disque gradué */
+  c.fillStyle="#ffffff"; c.beginPath(); c.arc(CX,CY,RD,0,7); c.fill();
+  c.strokeStyle="#222"; c.lineWidth=2.5; warc(c,CX,CY,RD,0,2*Math.PI,1.4,1); c.stroke();
+  c.lineWidth=1.3; warc(c,CX,CY,RD-40,0,2*Math.PI,0.9,9); c.stroke();
+  /* graduations (traits droits = précis) */
+  for(let d=0; d<360; d++){
+    const t=rad(d), L=(d%10===0)?18:(d%5===0)?11:6;
+    c.lineWidth=(d%10===0)?1.6:(d%5===0)?1.2:0.8; c.strokeStyle="#222";
+    c.beginPath(); c.moveTo(CX+Math.sin(t)*RD,CY-Math.cos(t)*RD);
+    c.lineTo(CX+Math.sin(t)*(RD-L),CY-Math.cos(t)*(RD-L)); c.stroke();
+    if(d%10===0){ const q=d%180, v=q<=90?q:180-q;
+      wtext(c,String(v),CX+Math.sin(t)*(RD-30),CY-Math.cos(t)*(RD-30),13); }
+  }
+
+  /* demi-cylindre (verre, en haut, face plane tournée vers le laser) */
+  c.fillStyle="rgba(150,200,240,0.45)";
+  c.beginPath(); c.moveTo(CX-RC,CY); c.arc(CX,CY,RC,Math.PI,2*Math.PI,false); c.closePath(); c.fill();
+  c.strokeStyle="#2a6fb0"; c.lineWidth=2.5;
+  warc(c,CX,CY,RC,Math.PI,2*Math.PI,1.2,3); c.stroke();
+  c.lineWidth=3; wline(c,CX-RC-2,CY,CX+RC+2,CY,0.8,7);
+  wtext(c,"verre",CX+95,CY-RC*0.55,17,"center","#2a6fb0");
+  wtext(c,"n = "+st.n.toFixed(2),CX+95,CY-RC*0.55+20,15,"center","#2a6fb0");
+  wtext(c,"air",CX-110,CY+150,17,"center","#888");
+
+  /* normale */
+  c.save(); c.setLineDash([8,7]); c.strokeStyle="#555"; c.lineWidth=1.5;
+  c.beginPath(); c.moveTo(CX,CY-RD+40); c.lineTo(CX,CY+RD-40); c.stroke(); c.restore();
+  c.save(); c.translate(CX+9,CY-RD+70); c.rotate(-Math.PI/2); wtext(c,"normale",0,0,13,"center","#555"); c.restore();
+
+  /* rayons */
+  const ph=physics(), sa=Math.sin(ph.a), ca=Math.cos(ph.a);
+  const Lx=CX+RL*sa, Ly=CY+RL*ca;
+  ray(c,Lx,Ly,CX,CY,1,3.2); arrowMid(c,Lx,Ly,CX,CY,1);
+  const ar=0.55+0.45*Math.sqrt(ph.R);
+  const Rx=CX-(RD-3)*sa, Ry=CY+(RD-3)*ca;
+  ray(c,CX,CY,Rx,Ry,ar,2.2); arrowMid(c,CX,CY,Rx,Ry,ar); spot(c,Rx,Ry,ar);
+  if(P.t2 && !ph.tir){   // t2 : 0 = aucun, 1 = trait plein, 2 = pointillés discrets
+    const sg=st.a<0?1:-1, Tx=CX+sg*(RD-3)*Math.sin(ph.a2), Ty=CY-(RD-3)*Math.cos(ph.a2);
+    if(P.t2==2){
+      c.save(); c.setLineDash([7,7]); c.strokeStyle="rgba(224,22,27,0.55)"; c.lineWidth=1.8;
+      c.beginPath(); c.moveTo(CX,CY); c.lineTo(Tx,Ty); c.stroke(); c.restore();
+    } else {
+      const at=0.35+0.65*(1-ph.R);
+      ray(c,CX,CY,Tx,Ty,at,3.2); arrowMid(c,CX,CY,Tx,Ty,at); spot(c,Tx,Ty,at);
+    }
+  }
+  /* arcs i1 et r (sans valeur pour r) */
+  if(Math.abs(st.a)>=4){
+    c.strokeStyle="#7a3fb0"; c.lineWidth=1.6;
+    const r1=62, base=Math.PI/2;
+    const aI=base-ph.a, aR=base+ph.a;
+    warc(c,CX,CY,r1,Math.min(base,aI),Math.max(base,aI),0.6,11); c.stroke();
+    warc(c,CX,CY,r1+14,Math.min(base,aR),Math.max(base,aR),0.6,12); c.stroke();
+    const mI=(base+aI)/2, mR=(base+aR)/2;
+    wtext(c,"i₁",CX+(r1-16)*Math.cos(mI),CY+(r1-16)*Math.sin(mI),15,"center","#7a3fb0");
+    wtext(c,"r",CX+(r1+30)*Math.cos(mR),CY+(r1+30)*Math.sin(mR),15,"center","#7a3fb0");
+  }
+  /* laser */
+  c.save(); c.translate(Lx,Ly); c.rotate(Math.atan2(CY-Ly,CX-Lx));
+  c.fillStyle="#3b3b3b"; c.fillRect(-58,-13,58,26);
+  c.strokeStyle="#111"; c.lineWidth=2; wpath(c,[[-58,-13],[0,-13],[0,13],[-58,13],[-58,-13]],0.9,21); c.stroke();
+  c.fillStyle="#ffcc00"; c.fillRect(-46,-6,12,12);
+  c.fillStyle="#e0161b"; c.beginPath(); c.arc(-1,0,3,0,7); c.fill();
+  c.restore();
+  if(P.si){ const ox=Lx+(Lx<CX?-62:62), oy=Ly-18;
+    wtext(c,"i₁ = "+Math.abs(st.a)+"°",ox,oy,17,"center","#7a3fb0"); }
+
+}
+
+function wrap(c,s,w,size){
+  c.font=size+'px "Humor Sans","Comic Neue","Comic Sans MS",cursive';
+  const out=[]; let cur="";
+  s.split(" ").forEach(m=>{ const t=cur?cur+" "+m:m; if(c.measureText(t).width>w && cur){ out.push(cur); cur=m; } else cur=t; });
+  if(cur) out.push(cur); return out;
+}
+
+function draw(){
+  scene(sx);
+  ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(sc,0,0);
+  if(st.loupe) loupe();
+}
+function loupe(){
+  const ph=physics(), Rr=RD-17;
+  const px=CX-Rr*Math.sin(ph.a), py=CY+Rr*Math.cos(ph.a);
+  const LR=100, Z=3.5, half=LR/Z, LY=CY+215, LX=(px<CX)?118:W-118;   // en bas (milieu 1), côté rayon réfléchi
+  ctx.save(); ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.save(); ctx.beginPath(); ctx.arc(LX,LY,LR,0,7); ctx.clip();
+  ctx.drawImage(sc,(px-half)*dpr,(py-half)*dpr,2*half*dpr,2*half*dpr,LX-LR,LY-LR,2*LR,2*LR);
+  ctx.restore();
+  ctx.strokeStyle="#222"; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(LX,LY,LR,0,7); ctx.stroke();
+  ctx.lineWidth=9; wline(ctx,LX-LR*0.72,LY+LR*0.72,LX-LR*1.05,LY+LR*1.05,0.6,51);
+  wtext(ctx,"loupe ×3,5 (rayon réfléchi)",LX,LY+LR+20,14);
+  ctx.restore();
+}
+
+/* ---------- Interaction ---------- */
+function pos(e){ const r=cv.getBoundingClientRect(); return [(e.clientX-r.left)*W/r.width,(e.clientY-r.top)*H/r.height]; }
+function aim(x,y){
+  if(y<CY+5) y=CY+5;
+  setA(Math.atan2(x-CX,y-CY)*180/Math.PI);   // >0 : laser à droite
+  const ph=physics();
+  if(ph.tir && !st.tir){ st.tir=true; say("Hé ! Plus rien ne sort côté air ?! 🤯"); }
+  if(!ph.tir) st.tir=false;
+}
+cv.addEventListener("pointerdown",e=>{
+  if(!P.mv) return; const [x,y]=pos(e);
+  if(y<CY-20) return;
+  st.drag=true; cv.classList.add("drag"); cv.setPointerCapture(e.pointerId); aim(x,y); draw();
+});
+cv.addEventListener("pointermove",e=>{ if(!st.drag) return; const [x,y]=pos(e); aim(x,y); draw(); });
+const up=()=>{ if(st.drag){ st.drag=false; cv.classList.remove("drag"); if(Math.random()<0.25) say("Pew pew ! 🔴"); draw(); } };
+cv.addEventListener("pointerup",up); cv.addEventListener("pointercancel",up);
+
+const nIn=document.getElementById("n"), nv=document.getElementById("nv"), loupeB=document.getElementById("loupe");
+function setN(v){ st.n=Math.round(Math.max(1,Math.min(2,v))*100)/100; nIn.value=st.n; nv.textContent=st.n.toFixed(2);
+  const ph=physics(); if(ph.tir && !st.tir){ st.tir=true; say("Hé ! Plus rien ne sort côté air ?! 🤯"); } if(!ph.tir) st.tir=false; draw(); }
+nIn.addEventListener("input",()=>setN(+nIn.value));
+nIn.addEventListener("change",()=>say("Nouveau verre, nouvelle vie."));
+document.getElementById("nm").onclick=()=>setN(st.n-0.01);
+document.getElementById("np").onclick=()=>setN(st.n+0.01);
+function step(d){ if(!P.mv) return; const s=st.a<0?-1:1; setA(st.a+ (st.a===0?d:s*d));
+  const ph=physics(); if(ph.tir&&!st.tir){st.tir=true; say("Hé ! Plus rien ne sort côté air ?! 🤯");} if(!ph.tir) st.tir=false; draw(); }
+document.getElementById("m1").onclick=()=>step(-1);
+document.getElementById("p1").onclick=()=>step(+1);
+loupeB.onclick=()=>{ st.loupe=!st.loupe; loupeB.classList.toggle("on",st.loupe);
+  if(st.loupe) say("Avec la loupe, on lit au degré près."); draw(); };
+document.getElementById("reset").onclick=()=>{ init(); draw(); };
+window.addEventListener("keydown",e=>{ if(e.key==="ArrowLeft"){step(-1);e.preventDefault();} if(e.key==="ArrowRight"){step(1);e.preventDefault();} });
+
+if(P.ln){ nIn.disabled=true; document.getElementById("nm").disabled=true; document.getElementById("np").disabled=true; }
+if(!P.mv){ ["m1","p1"].forEach(id=>document.getElementById(id).disabled=true); cv.style.cursor="default"; }
+if(!P.lp) loupeB.style.display="none";
+
+window.addEventListener("resize",resize);
+init(); resize();
+})();
+</script>
+</body>
+</html>
