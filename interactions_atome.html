@@ -77,7 +77,7 @@ function decodeP(s){
   for(let i=0;i<bin.length;i++) b[i] = bin.charCodeAt(i) ^ k[i%k.length];
   return JSON.parse(new TextDecoder().decode(b));
 }
-const P = {n:"fer", s:"Fe", A:56, Z:26, r:126, m:9.352e-26, st:0, cst:1};
+const P = {n:"fer", s:"Fe", A:56, Z:26, r:126, m:9.352e-26, d:1.6, st:0, cst:1};
 (function(){
   const q = new URLSearchParams(location.search);
   if(q.get('p')){ try{ Object.assign(P, decodeP(q.get('p'))); }catch(e){ console.warn('param p invalide'); } }
@@ -100,7 +100,7 @@ const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 let CW=800, CH=480, DPR=1;
 function resize(){
   DPR = Math.min(2, window.devicePixelRatio||1);
-  CW = cv.parentElement.clientWidth; CH = Math.round(Math.max(300, Math.min(CW*0.6, 560)));
+  CW = cv.parentElement.clientWidth; CH = Math.round(Math.max(380, Math.min(CW*0.62, 560)));
   cv.width = Math.round(CW*DPR); cv.height = Math.round(CH*DPR); cv.style.height = CH+'px';
   computeStations();
 }
@@ -119,7 +119,7 @@ let stLog = [];
 function computeStations(){
   const asp = CH/CW;
   stLog = [ Math.max(1.3, 0.8/asp), Math.max(0.2, 0.175/asp), 20*R_AT,
-            Math.max(5.2*R_AT, 3.4*R_AT/asp), Math.max(4.6*R_N, 4.0*R_N/asp) ].map(Math.log10);
+            Math.max(5.2*R_AT, 3.4*R_AT/asp), Math.max(5.5*R_N, 5.0*R_N/asp) ].map(Math.log10);
 }
 let lw = 0, anim = null, burst = null;
 const LWMAX = () => stLog[0]+0.25, LWMIN = () => stLog[4]-0.6;
@@ -204,7 +204,8 @@ const NUC = (()=>{ const A=Math.max(1,Math.round(P.A)), Z=Math.max(0,Math.min(A,
 
 /* ---------- scène ---------- */
 let s=1, T=0;
-const X = x => CW/2 + x*s, Y = y => CH/2 - y*s;
+let OFFX = 0;
+const X = x => CW/2 + OFFX + x*s, Y = y => CH/2 - y*s;
 const FLASK = [[-0.014,0.078],[-0.012,0.072],[-0.012,0.035],[-0.056,-0.054],[-0.05,-0.06],[0.05,-0.06],[0.056,-0.054],[0.012,0.035],[0.012,0.072],[0.014,0.078]];
 const LIQ = [[-0.023,0.012],[-0.056,-0.054],[-0.05,-0.06],[0.05,-0.06],[0.056,-0.054],[0.023,0.012]];
 const SUB = '#8fb6e0';
@@ -350,12 +351,43 @@ function electron(x,y,big){
   ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.stroke();
   ctx.fillStyle=INK; ctx.font=`700 ${big?13:10}px ${FC}`; ctx.textAlign='center'; ctx.fillText('−',x,y+(big?4.5:3.5));
 }
+/* paire de protons voisins pour la cote d (la plus à l'extérieur possible) */
+const RN_U = Math.min(0.6, 1.12/Math.sqrt(Math.max(1,P.A)));
+const PAIR = (()=>{ const pr = NUC.filter(n=>n[2]); let best=null, bs=-1;
+  for(let i=0;i<pr.length;i++) for(let j=i+1;j<pr.length;j++){
+    const dd = Math.hypot(pr[i][0]-pr[j][0], pr[i][1]-pr[j][1]); if(dd > 2.5*RN_U) continue;
+    const mr = Math.hypot((pr[i][0]+pr[j][0])/2, (pr[i][1]+pr[j][1])/2); const mx=(pr[i][0]+pr[j][0])/2, my=(pr[i][1]+pr[j][1])/2; const sc = Math.min(mr, 0.85) + 0.4*(mx+my)/Math.SQRT2 - 2*Math.abs(dd-2*RN_U);
+    if(sc>bs){ bs=sc; best=[pr[i],pr[j]]; } }
+  return best; })();
 function drawNucleus(a){
   const nr = R_N*s; if(nr<4 || a<=0.005) return; const cx=X(0), cy=Y(0);
   const rn = Math.max(1.5, Math.min(0.6*nr, nr/Math.sqrt(Math.max(1,P.A))*1.12));
   ctx.save(); ctx.globalAlpha=a;
   for(const [x,y,p] of NUC){ const jx=Math.sin(T*3+x*40)*0.04*rn, jy=Math.cos(T*2.6+y*40)*0.04*rn;
     ctx.drawImage(p?SPR_P:SPR_N, cx+x*nr-rn+jx, cy-y*nr-rn+jy, 2*rn, 2*rn); }
+  // loupe sur deux protons voisins + cote d
+  const la = sm(40,80,nr);
+  if(PAIR && +P.d>0 && la>0.01){
+    ctx.globalAlpha = a*la;
+    const [p1,p2] = PAIR, x1=cx+p1[0]*nr, y1=cy-p1[1]*nr, x2=cx+p2[0]*nr, y2=cy-p2[1]*nr;
+    for(const [x,y] of [[x1,y1],[x2,y2]]) ctx.drawImage(SPR_P, x-rn, y-rn, 2*rn, 2*rn);
+    const mx=(x1+x2)/2, my=(y1+y2)/2, hr = Math.hypot(x2-x1,y2-y1)/2+rn+4;
+    ctx.strokeStyle='#ffb300'; ctx.lineWidth=3.5; ctx.beginPath(); ctx.arc(mx,my,hr,0,7); ctx.stroke();
+    const LR = Math.min(70, CW*0.11), lx = CW-LR-16, ly = 54+LR;
+    const ux = mx-lx, uy = my-ly, un = Math.hypot(ux,uy)||1;
+    ctx.strokeStyle='#ffb300'; ctx.lineWidth=3; ctx.beginPath();
+    ctx.moveTo(lx+ux/un*LR, ly+uy/un*LR); ctx.lineTo(mx-ux/un*hr, my-uy/un*hr); ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.strokeStyle=INK; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(lx,ly,LR,0,7); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle='#ffb300'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(lx,ly,LR-5,0,7); ctx.stroke();
+    const pr = LR*0.34, dx = LR*0.44;
+    ctx.drawImage(SPR_P, lx-dx-pr, ly+8-pr, 2*pr, 2*pr); ctx.drawImage(SPR_P, lx+dx-pr, ly+8-pr, 2*pr, 2*pr);
+    ctx.strokeStyle='#fff'; ctx.lineWidth=7; ctx.beginPath(); ctx.moveTo(lx-dx,ly+8); ctx.lineTo(lx+dx,ly+8); ctx.stroke();
+    ctx.fillStyle='#fff'; arrowHead(lx+dx+2,ly+8,0,14); arrowHead(lx-dx-2,ly+8,Math.PI,14);
+    ctx.strokeStyle=INK; ctx.lineWidth=2.6; ctx.beginPath(); ctx.moveTo(lx-dx+6,ly+8); ctx.lineTo(lx+dx-6,ly+8); ctx.stroke();
+    ctx.fillStyle=INK; arrowHead(lx+dx,ly+8,0,10); arrowHead(lx-dx,ly+8,Math.PI,10);
+    ctx.font=`700 italic 22px ${FC}`; ctx.textAlign='center'; ctx.lineWidth=5; ctx.strokeStyle='#fff'; ctx.lineJoin='round';
+    ctx.strokeText('d',lx,ly-pr-2); ctx.fillText('d',lx,ly-pr-2);
+  }
   ctx.restore();
 }
 function drawCaption(){
@@ -379,21 +411,27 @@ function drawCaption(){
     ctx.font=`400 26px ${FB}`; ctx.textAlign='left'; ctx.lineWidth=5; ctx.strokeStyle='#fff';
     ctx.strokeText('CELUI-LÀ !',cx+rp*2.4,cy-rp*2.35); ctx.fillText('CELUI-LÀ !',cx+rp*2.4,cy-rp*2.35); ctx.restore(); }
 }
-function dataBox(i, label, segs){
+function dataBox(i, rows){
   const a = 1-sm(0.2,0.45,Math.abs(lw-stLog[i])); if(a<0.01) return;
   ctx.save(); ctx.globalAlpha=a; ctx.textBaseline='alphabetic';
-  ctx.font=`700 16px ${FC}`; const w1 = ctx.measureText(label).width;
-  ctx.font=`700 22px ${FC}`; let w2=0; for(const [tx,k] of segs){ ctx.font=`700 ${k==='n'?22:15}px ${FC}`; w2+=ctx.measureText(tx).width; }
-  const w = Math.max(w1,w2)+28, h = 66, x = 12, y = CH-h-12;
+  let w=0;
+  for(const [label,segs] of rows){ ctx.font=`700 16px ${FC}`; let w2=0;
+    for(const [tx,k] of segs){ ctx.font=`700 ${k==='n'?22:15}px ${FC}`; w2+=ctx.measureText(tx).width; }
+    ctx.font=`700 16px ${FC}`; w=Math.max(w, ctx.measureText(label).width, w2); }
+  w += 28; const rh = 58, h = rows.length*rh+8, x = 12, y = CH-h-12;
   ctx.fillStyle='#fff'; ctx.strokeStyle=INK; ctx.lineWidth=3; ctx.fillRect(x,y,w,h); ctx.strokeRect(x,y,w,h);
   ctx.fillStyle='#ffe14d'; ctx.fillRect(x,y,7,h);
-  ctx.fillStyle=INK; ctx.font=`700 16px ${FC}`; ctx.textAlign='left'; ctx.fillText(label,x+17,y+24);
-  rich(segs,x+17,y+52,22,'left');
+  rows.forEach(([label,segs],k)=>{ const yy = y+k*rh;
+    if(k){ ctx.strokeStyle='#bbb'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x+14,yy+3); ctx.lineTo(x+w-10,yy+3); ctx.stroke(); }
+    ctx.fillStyle=INK; ctx.font=`700 16px ${FC}`; ctx.textAlign='left'; ctx.fillText(label,x+17,yy+24);
+    rich(segs,x+17,yy+51,22,'left'); });
   ctx.restore();
 }
 function drawData(){
-  dataBox(3, "Rayon de l'atome :", [['r = '+fr(P.r,0)+' pm','n']]);
-  dataBox(4, "Masse du noyau :", [['m = ','n'],...sciSegs(P.m,2),[' kg','n']]);
+  dataBox(3, [["Rayon de l'atome :", [['r = '+fr(P.r,0)+' pm','n']]]]);
+  const rows = [["Masse du noyau :", [['m = ','n'],...sciSegs(P.m,2),[' kg','n']]]];
+  if(PAIR && +P.d>0) rows.push(["Distance entre deux protons voisins :", [['d = '+fr(+P.d,1)+' fm','n']]]);
+  dataBox(4, rows);
 }
 function drawScale(){
   const target = Math.min(150, CW*0.18)/s, e = Math.floor(Math.log10(target));
@@ -426,6 +464,7 @@ function frame(now){
   if(anim){ const u = Math.min(1,(now-anim.t0)/anim.dur), e = u<0.5? 4*u*u*u : 1-(-2*u+2)**3/2;
     lw = anim.from + (anim.to-anim.from)*e; if(u>=1) anim=null; }
   const W = 10**lw; s = CW/W;
+  OFFX = CW*0.1*(1-sm(stLog[4]+0.1, stLog[4]+0.8, lw));
   ctx.setTransform(DPR,0,0,DPR,0,0);
   drawPaper();
   const rp = R_AT*s;
