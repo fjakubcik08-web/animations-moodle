@@ -36,7 +36,7 @@
 "use strict";
 /* ---------- Paramètres (JSON -> XOR -> base64url dans ?p=) ----------
    {"e":[{"n":"c","u":"m/s","v":254381937,"d":12,"s":1}, ...]}
-   n : nom, u : unité, v : valeur mesurée, d : incertitude, s : pas d'une graduation (défaut 1) */
+   n : nom, u : unité, v : valeur mesurée, d : incertitude, s : pas d'une graduation (défaut 1), k : numéro affiché (option) */
 const KEY="PBayle-PlusMoins#pm";
 const DEF={e:[{n:"m",u:"g",v:100,d:8,s:1}]};
 function decodeP(s){
@@ -75,11 +75,12 @@ function Ruler(idx,E){
   const f=v=>{ const t=(+v).toFixed(DEC), [a,b]=t.split("."); return a.replace(/\B(?=(\d{3})+(?!\d))/g," ")+(b?","+b:""); };
   const fi=i=>f(i*ST);
   const card=document.createElement("div"); card.className="card";
-  card.innerHTML='<h3>📌 Étiquette '+(idx+1)+' : <b>'+esc(E.n)+' = ('+f(E.v)+' ± '+f(E.d)+') '+esc(E.u)+'</b></h3>'+
+  const num=(E.k!==undefined?E.k:idx+1);
+  card.innerHTML='<h3>📌 '+num+') <b>'+esc(E.n)+'</b> (en '+esc(E.u)+')</h3>'+
     '<canvas></canvas>'+
     '<div class="bar"><div class="grp"><button class="kL">[ borne basse</button><button class="kH">borne haute ]</button></div>'+
     '<div class="grp"><button class="m1">◀ −'+fi(1)+'</button><button class="p1">+'+fi(1)+' ▶</button></div>'+
-    '<div class="codeBox">Code '+(idx+1)+' :<span class="code">—</span></div></div>';
+    '<div class="codeBox">Code '+num+' :<span class="code">—</span></div></div>';
   document.getElementById("cards").appendChild(card);
   const cv=card.querySelector("canvas"), c=cv.getContext("2d");
   let IMIN,IMAX,st;
@@ -123,7 +124,7 @@ function Ruler(idx,E){
       c.beginPath(); c.moveTo(x,RY); c.lineTo(x,RY+(big?18:md?11:6)); c.stroke();
       if(big) txt(c,fi(i),x,RY+32,14);
     }
-    txt(c,"("+E.u+")",X1+12,RY+32,13,"right","#666");
+    txt(c,"graduations en "+E.u,X1+10,14,13,"right","#888");
     bracket(i2x(st.L),st.L<=st.H,st.sel==="L");
     bracket(i2x(st.H),st.H<st.L,st.sel==="H");
     txt(c,fi(st.L),i2x(st.L),RY+56,14,"center","#2a6fb0");
