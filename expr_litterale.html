@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expression littérale</title>
+<style>
+  html, body { margin:0; padding:0; overflow-x:hidden; overflow-y:auto; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+         color:#1d2733; background:#f4f7fb; font-size:15px; }
+  .wrap { max-width:900px; margin:0 auto; padding:10px; }
+  .bandeau { background:#1f5f9e; color:#fff; border-radius:8px; padding:8px 14px;
+             font-weight:600; font-size:15px; display:flex; justify-content:space-between;
+             align-items:center; gap:10px; flex-wrap:wrap; }
+  .bandeau small { font-weight:400; opacity:.85; }
+  .vars { margin:8px 2px 0; color:#3a4a5c; font-size:14px; }
+  .item { background:#fff; border:1px solid #d5dde8; border-radius:8px; padding:10px 12px;
+          margin-top:10px; }
+  .ligne { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .lab { font-family: "Cambria Math", "Times New Roman", serif; font-size:19px;
+         white-space:nowrap; }
+  .lab.exprde { font-family:system-ui, sans-serif; font-size:15px; color:#3a4a5c; }
+  .lab.exprde i { font-family:"Cambria Math","Times New Roman",serif; font-size:18px; color:#14324f; }
+  .ligne input.expr { flex:1; min-width:220px; font-family: Consolas, "Courier New", monospace;
+         font-size:16px; padding:7px 9px; border:1px solid #b9c6d6; border-radius:6px; }
+  .ligne input.expr:focus { outline:2px solid #7fb0e3; border-color:#1f5f9e; }
+  input.expr.ok { background:#e8f7ec; border-color:#3c9d5d; }
+  input.expr.ko { background:#fdecec; border-color:#c94a4a; }
+  .preview { margin:8px 2px 2px; min-height:30px; line-height:1.9; font-family:"Cambria Math","Times New Roman",serif;
+             font-size:20px; color:#14324f; }
+  .preview .err { font-family:system-ui, sans-serif; font-size:13px; color:#b23b3b; }
+  .preview .hint { font-family:system-ui, sans-serif; font-size:13px; color:#8a97a6; }
+  .frac { display:inline-flex; flex-direction:column; vertical-align:middle; text-align:center;
+          margin:0 3px; font-size:.92em; }
+  .frac > span:first-child { border-bottom:1px solid currentColor; padding:0 3px; }
+  .frac > span:last-child { padding:0 3px; }
+  .rad { border-top:1px solid currentColor; padding:0 2px; margin-left:1px; }
+  sub, sup { font-size:.7em; }
+  .codezone { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; }
+  .codezone label { font-size:13px; color:#3a4a5c; }
+  .codezone input { font-family:Consolas, monospace; font-size:15px; width:120px; padding:5px 7px;
+          border:1px dashed #1f5f9e; border-radius:6px; background:#f0f6fc; color:#14324f;
+          letter-spacing:1px; }
+  button { font:inherit; font-size:14px; cursor:pointer; border-radius:6px; border:1px solid #1f5f9e;
+           background:#fff; color:#1f5f9e; padding:5px 10px; }
+  button:hover { background:#eaf2fb; }
+  button.main { background:#1f5f9e; color:#fff; padding:7px 18px; font-weight:600; }
+  button.main:hover { background:#174c80; }
+  .kbd { display:inline-flex; gap:4px; }
+  .kbd button { padding:3px 8px; font-family:"Cambria Math", serif; font-size:16px; }
+  .vars .chip { font-family:"Cambria Math","Times New Roman",serif; font-size:17px; padding:2px 12px;
+           margin:2px 3px; border-radius:14px; background:#eaf2fb; border-color:#9dbfe3; }
+  .vars .chip:hover { background:#d4e6f8; }
+  .vars .chip.lhs { background:#fff4e0; border-color:#e0b46a; color:#7a4b00; }
+  .vars .chip.lhs:hover { background:#ffe8bf; }
+  .actions { margin-top:12px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  #statut { font-size:14px; color:#3a4a5c; }
+  .aide { margin-top:10px; font-size:13px; color:#5b6878; background:#fff; border:1px solid #e1e7ef;
+          border-radius:8px; padding:6px 10px; }
+  .aide summary { cursor:pointer; color:#1f5f9e; }
+  .aide code { background:#eef3f9; padding:0 4px; border-radius:3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bandeau"><span>Expression littérale</span><small>écris ton expression puis valide</small></div>
+  <div id="vars" class="vars" style="display:none"></div>
+  <div id="lhsbar" class="vars" style="display:none"></div>
+  <div id="items"></div>
+  <div class="actions">
+    <button class="main" id="btn-valider" type="button">Valider</button>
+    <span id="statut"></span>
+  </div>
+  <details class="aide">
+    <summary>Comment écrire ?</summary>
+    Multiplication : <code>*</code> ou <code>.</code> (ex : <code>v0.cos(alpha).t</code>) ·
+    division : <code>/</code> · puissance : <code>^</code> ou <code>²</code> (ex : <code>t^2</code>) ·
+    fonctions : <code>cos( )</code> <code>sin( )</code> <code>tan( )</code> <code>sqrt( )</code>
+    <code>exp( )</code> <code>ln( )</code> · virgule ou point décimal acceptés.<br>
+    Utilise des parenthèses en cas de doute : <code>(a+b)/2</code>.
+  </details>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   expr_litterale.html -- saisie d'expressions litterales, verification
+   par substitution numerique (jamais symbolique), alias de variables,
+   code de verification a recopier dans Moodle.
+   Parametres : ?p=<JSON -> XOR cle EXPR_KEY -> base64url>
+   ===================================================================== */
+
+/* ---------- decodage XOR + base64url ---------- */
+const EXPR_KEY = "PBayle-ExprLitt#v2026";
+function b64urlDecodeToBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const b = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+  return b;
+}
+function decodeParams(code) {
+  const x = b64urlDecodeToBytes(code);
+  const kb = new TextEncoder().encode(EXPR_KEY);
+  const out = new Uint8Array(x.length);
+  for (let i = 0; i < x.length; i++) out[i] = x[i] ^ kb[i % kb.length];
+  return JSON.parse(new TextDecoder('utf-8').decode(out));
+}
+
+/* ---------- hash6 (miroir exact de FJmoodl.py) ---------- */
+function hash6(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  let b36;
+  if (h === 0) b36 = '0';
+  else {
+    const A = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", d = [];
+    let n = h;
+    while (n) { d.push(A[n % 36]); n = Math.floor(n / 36); }
+    b36 = d.reverse().join('');
+  }
+  return b36.padStart(6, '0').slice(0, 6);
+}
+
+/* ---------- parametres ---------- */
+const qs = new URLSearchParams(location.search);
+let P = null;
+try { P = decodeParams(qs.get('p') || ''); } catch (e) { P = null; }
+if (!P) {
+  // valeurs de secours (test local) : tir parabolique, vx et vy
+  // vx = v0*cos(alpha) ; vy = -g*t + v0*sin(alpha)
+  const pts = [[12, 0.6, 9.3, 0.7], [7.5, 1.1, 6.1, 1.9], [18, 0.35, 11.2, 0.4],
+               [9.2, 0.85, 8.4, 2.6], [15.3, 1.25, 7.7, 1.2]];
+  P = {
+    v: [{ n: "v0", a: ["vi", "vini", "v_0", "v_i", "v_ini", "V0", "Vi", "Vini"] },
+        { n: "alpha", a: ["alfa"] },
+        { n: "g", a: [] },
+        { n: "t", a: [] }],
+    p: pts,
+    it: [{ h: ["vx", "v_x", "Vx"], e: pts.map(q => q[0] * Math.cos(q[1])) },
+         { h: ["vy", "v_y", "Vy"], e: pts.map(q => -q[2] * q[3] + q[0] * Math.sin(q[1])) }],
+    s: "demo", fb: 1, sv: 1, lr: 1
+  };
+}
+// parametres en clair prioritaires (tests locaux)
+for (const k of ["fb", "sv", "lr"]) if (qs.has(k)) P[k] = parseInt(qs.get(k), 10) || 0;
+const TOL = P.tol || 1e-6;
+
+/* ---------- noms, alias, affichage ---------- */
+const GREEK = { alpha: 'α', alfa: 'α', beta: 'β', gamma: 'γ', delta: 'δ', theta: 'θ', teta: 'θ',
+  lambda: 'λ', mu: 'μ', rho: 'ρ', sigma: 'σ', tau: 'τ', phi: 'φ', omega: 'ω', epsilon: 'ε', eta: 'η' };
+const GREEK_UP = { Delta: 'Δ', Omega: 'Ω', Phi: 'Φ', Theta: 'Θ' };
+function autoDisplay(name) {
+  // "v0" -> v<sub>0</sub>, "v_ini" -> v<sub>ini</sub>, "alpha" -> α, "theta1" -> θ<sub>1</sub>
+  let m = name.match(/^([^_]+)_(.+)$/) || name.match(/^(.*?[^0-9])([0-9]+)$/);
+  let base = m ? m[1] : name, idx = m ? m[2] : '';
+  base = GREEK[base] || GREEK_UP[base] || base;
+  return idx ? `<i>${base}</i><sub>${idx}</sub>` : `<i>${base}</i>`;
+}
+const VARS = P.v.map(v => {
+  const names = [v.n, ...(v.a || [])];
+  // lettre grecque ajoutee comme alias automatiquement (alpha -> α)
+  names.slice().forEach(nm => { const g = GREEK[nm] || GREEK_UP[nm]; if (g && !names.includes(g)) names.push(g); });
+  return { names, disp: v.d || autoDisplay(v.n), greek: names.find(x => /^[α-ωΑ-Ω]$/.test(x)) };
+});
+const ALIAS = new Map();
+VARS.forEach((v, i) => v.names.forEach(nm => ALIAS.set(nm, i)));
+const FUNCS = { sin: Math.sin, cos: Math.cos, tan: Math.tan, exp: Math.exp, ln: Math.log,
+  log: Math.log10, sqrt: Math.sqrt, racine: Math.sqrt, abs: Math.abs,
+  arcsin: Math.asin, arccos: Math.acos, arctan: Math.atan, asin: Math.asin, acos: Math.acos, atan: Math.atan };
+const CONSTS = { pi: Math.PI, 'π': Math.PI, e: Math.E };   // e cede la place a une grandeur nommee e
+
+/* ---------- normalisation de la saisie ---------- */
+const SUBDIG = "₀₁₂₃₄₅₆₇₈₉";
+function normalize(s) {
+  return s.replace(/[₀-₉]/g, c => String(SUBDIG.indexOf(c)))
+          .replace(/²/g, '^2').replace(/³/g, '^3')
+          .replace(/[×·∙⋅]/g, '*').replace(/[−–]/g, '-').replace(/÷/g, '/')
+          .replace(/√/g, 'sqrt').replace(/\[/g, '(').replace(/\]/g, ')');
+}
+
+/* ---------- tokenizer ---------- */
+const isDig = c => c >= '0' && c <= '9';
+function tokenize(s) {
+  const T = []; let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (/\s/.test(c)) { i++; continue; }
+    // nombre : 12 / 0.5 / 0,5 / .5 / 1.5e-3
+    if (isDig(c) || ((c === '.' || c === ',') && isDig(s[i + 1] || '') && !(i > 0 && /[\p{L}\p{N}_)]/u.test(s[i - 1])))) {
+      let j = i;
+      while (j < s.length && isDig(s[j])) j++;
+      if ((s[j] === '.' || s[j] === ',') && isDig(s[j + 1] || '')) { j++; while (j < s.length && isDig(s[j])) j++; }
+      if (s[j] === 'e' || s[j] === 'E') {
+        let k = j + 1; if (s[k] === '+' || s[k] === '-') k++;
+        if (isDig(s[k] || '') && !/[\p{L}]/u.test(s[k + 1] || '')) { while (k < s.length && isDig(s[k])) k++; j = k; }
+      }
+      const raw = s.slice(i, j).replace(',', '.');
+      T.push({ t: 'NUM', v: parseFloat(raw), raw: s.slice(i, j) }); i = j; continue;
+    }
+    if (/[\p{L}_]/u.test(c)) {
+      let j = i; while (j < s.length && /[\p{L}\p{N}_]/u.test(s[j])) j++;
+      T.push({ t: 'ID', v: s.slice(i, j) }); i = j; continue;
+    }
+    if (c === '*' && s[i + 1] === '*') { T.push({ t: '^' }); i += 2; continue; }
+    if (c === '.' || c === ',') { T.push({ t: '*', dot: true }); i++; continue; } // "." = multiplication
+    if ('+-*/^()'.includes(c)) { T.push({ t: c }); i++; continue; }
+    throw new Error(`caractère non reconnu : « ${c} »`);
+  }
+  return T;
+}
+
+/* decoupe un identifiant inconnu en produit de variables connues : "v0t" -> v0·t */
+function splitId(id) {
+  const n = id.length, best = new Array(n + 1).fill(null); best[0] = [];
+  for (let i = 0; i < n; i++) {
+    if (!best[i]) continue;
+    for (let j = n; j > i; j--) {
+      const part = id.slice(i, j);
+      if ((ALIAS.has(part) || CONSTS.hasOwnProperty(part)) && (!best[j] || best[j].length > best[i].length + 1))
+        best[j] = [...best[i], part];
+    }
+  }
+  return best[n];
+}
+
+/* ---------- parser -> arbre ---------- */
+function parse(str) {
+  const T = tokenize(str); let pos = 0;
+  const peek = () => T[pos], next = () => T[pos++];
+  const startsAtom = t => t && (t.t === 'NUM' || t.t === 'ID' || t.t === '(');
+  function leaf(name) {
+    if (ALIAS.has(name)) return { k: 'var', i: ALIAS.get(name) };
+    if (CONSTS.hasOwnProperty(name)) return { k: 'const', n: name };
+    return null;
+  }
+  function atom() {
+    const t = next();
+    if (!t) throw new Error('expression incomplète');
+    if (t.t === 'NUM') return { k: 'num', v: t.v, raw: t.raw };
+    if (t.t === '(') {
+      const e = addSub();
+      if (!peek() || peek().t !== ')') throw new Error('parenthèse « ) » manquante');
+      next(); return { k: 'par', a: e };
+    }
+    if (t.t === 'ID') {
+      const name = t.v;
+      if (FUNCS.hasOwnProperty(name) && !ALIAS.has(name)) {
+        let arg;
+        if (peek() && peek().t === '(') { next(); arg = addSub();
+          if (!peek() || peek().t !== ')') throw new Error('parenthèse « ) » manquante'); next(); }
+        else if (startsAtom(peek())) arg = power();       // cos alpha
+        else throw new Error(`${name} doit être suivi de son argument : ${name}( … )`);
+        return { k: 'fn', f: name, a: arg };
+      }
+      const l = leaf(name); if (l) return l;
+      // "v0sin(alpha)" -> v0 · sin(alpha)
+      if (peek() && peek().t === '(') {
+        for (const f of Object.keys(FUNCS)) {
+          if (name.length > f.length && name.endsWith(f)) {
+            const pre = splitId(name.slice(0, -f.length));
+            if (pre) {
+              next(); const arg = addSub();
+              if (!peek() || peek().t !== ')') throw new Error('parenthèse « ) » manquante'); next();
+              let e = leaf(pre[0]);
+              for (let q = 1; q < pre.length; q++) e = { k: 'bin', op: '*', a: e, b: leaf(pre[q]) };
+              return { k: 'bin', op: '*', a: e, b: { k: 'fn', f, a: arg } };
+            }
+          }
+        }
+      }
+      const parts = splitId(name);
+      if (parts && parts.length > 1) {
+        let e = leaf(parts[0]);
+        for (let q = 1; q < parts.length; q++) e = { k: 'bin', op: '*', a: e, b: leaf(parts[q]) };
+        return e;
+      }
+      throw new Error(`grandeur inconnue : « ${name} »`);
+    }
+    if (t.t === ')') throw new Error('parenthèse « ) » en trop');
+    throw new Error(`« ${t.t} » mal placé`);
+  }
+  function power() {
+    const b = atom();
+    if (peek() && peek().t === '^') { next(); return { k: 'pow', a: b, b: unary() }; }
+    return b;
+  }
+  function unary() {
+    if (peek() && peek().t === '-') { next(); return { k: 'neg', a: unary() }; }
+    if (peek() && peek().t === '+') { next(); return unary(); }
+    return power();
+  }
+  function mulDiv() {
+    let v = unary();
+    for (;;) {
+      const t = peek();
+      if (t && t.t === '*') { next(); v = { k: 'bin', op: '*', a: v, b: unary() }; }
+      else if (t && t.t === '/') { next(); v = { k: 'bin', op: '/', a: v, b: unary() }; }
+      else if (startsAtom(t)) { v = { k: 'bin', op: '*', a: v, b: power(), imp: true }; }
+      else break;
+    }
+    return v;
+  }
+  function addSub() {
+    let v = mulDiv();
+    while (peek() && (peek().t === '+' || peek().t === '-')) {
+      const op = next().t; v = { k: 'bin', op, a: v, b: mulDiv() };
+    }
+    return v;
+  }
+  if (!T.length) throw new Error('vide');
+  const r = addSub();
+  if (pos < T.length) throw new Error(peek().t === ')' ? 'parenthèse « ) » en trop' : 'expression mal formée');
+  return r;
+}
+
+function evalTree(n, x) {
+  switch (n.k) {
+    case 'num': return n.v;
+    case 'var': return x[n.i];
+    case 'const': return CONSTS[n.n];
+    case 'par': return evalTree(n.a, x);
+    case 'neg': return -evalTree(n.a, x);
+    case 'fn': return FUNCS[n.f](evalTree(n.a, x));
+    case 'pow': return Math.pow(evalTree(n.a, x), evalTree(n.b, x));
+    case 'bin': {
+      const a = evalTree(n.a, x), b = evalTree(n.b, x);
+      return n.op === '+' ? a + b : n.op === '-' ? a - b : n.op === '*' ? a * b : a / b;
+    }
+  }
+  return NaN;
+}
+
+/* ---------- rendu "joli" de l'expression tapee ---------- */
+function prec(n) {
+  if (n.k === 'bin') return (n.op === '+' || n.op === '-') ? 1 : 2;
+  if (n.k === 'neg') return 1.5;
+  if (n.k === 'pow') return 3;
+  return 4;
+}
+const wrap = h => `(${h})`;
+let SUP = 0;   // >0 quand on rend un exposant
+function render(n) {
+  switch (n.k) {
+    case 'num': return n.raw.replace('.', ',');
+    case 'var': return VARS[n.i].disp;
+    case 'const': return n.n === 'e' ? '<i>e</i>' : 'π';
+    case 'par': return n.a.k === 'bin' && n.a.op === '/' ? render(n.a) : wrap(render(n.a));
+    case 'neg': return '−' + (prec(n.a) <= 1.5 ? wrap(render(n.a)) : render(n.a));
+    case 'fn':
+      if (n.f === 'sqrt' || n.f === 'racine') return `√<span class="rad">${render(unpar(n.a))}</span>`;
+      return `${n.f}${wrap(render(unpar(n.a)))}`;
+    case 'pow': {
+      const a = unpar(n.a);
+      const b = prec(a) < 4 || a.k === 'fn' ? wrap(render(a)) : render(a);
+      SUP++; const ex = render(unpar(n.b)); SUP--;
+      return `${b}<sup>${ex}</sup>`;
+    }
+    case 'bin': {
+      if (n.op === '/' && SUP) {      // dans un exposant : fraction en ligne, e^(−t/τ)
+        const fa = prec(unpar(n.a)) < 1.5 ? wrap(render(unpar(n.a))) : render(unpar(n.a));
+        const fb = prec(unpar(n.b)) < 3 ? wrap(render(unpar(n.b))) : render(unpar(n.b));
+        return `${fa}/${fb}`;
+      }
+      if (n.op === '/') return `<span class="frac"><span>${render(unpar(n.a))}</span><span>${render(unpar(n.b))}</span></span>`;
+      const A = render(n.a);
+      if (n.op === '+') return `${A} + ${render(n.b)}`;
+      if (n.op === '-') return `${A} − ${prec(n.b) <= 1.5 ? wrap(render(n.b)) : render(n.b)}`;
+      const L = prec(n.a) < 1.5 ? wrap(A) : A;
+      const R = prec(n.b) <= 2 && !(n.b.k === 'bin' && n.b.op === '/') ? wrap(render(n.b)) : render(n.b);
+      const juxt = n.a.k === 'num' && (n.b.k === 'var' || n.b.k === 'const');
+      return juxt ? `${L}${R}` : `${L}·${R}`;
+    }
+  }
+  return '?';
+}
+const unpar = n => (n.k === 'par' ? n.a : n);
+
+/* ---------- analyse d'une saisie : membre de gauche + droite ---------- */
+function analyse(raw, item) {
+  const s = normalize(raw.trim());
+  if (!s) return { empty: true };
+  const parts = s.split('=');
+  if (parts.length > 2) return { err: 'un seul signe « = » est permis' };
+  let lhs = null, rhs = s;
+  if (parts.length === 2) { lhs = parts[0].replace(/\s+/g, ''); rhs = parts[1]; }
+  if (P.lr && lhs === null) return { err: 'écris la relation complète : grandeur = expression' };
+  if (lhs !== null && !lhs) return { err: 'il manque la grandeur avant « = »' };
+  let tree;
+  try { tree = parse(rhs); } catch (e) { return { err: e.message, lhs }; }
+  const lhsOk = lhs === null ? !P.lr : item.h.includes(lhs);
+  return { tree, lhs, lhsOk };
+}
+function lhsDisplay(name) {
+  // "vx" -> v<sub>x</sub> (grandeur + composante), sinon regle generale
+  const m = name.match(/^([a-zA-Z])([a-zA-Z])$/);
+  return m && !GREEK[name] ? `<i>${m[1]}</i><sub>${m[2]}</sub>` : autoDisplay(name);
+}
+function lhsHtml(lhs, item) {
+  if (!lhs) return '';
+  return item.h.includes(lhs) && item.l ? item.l : lhsDisplay(lhs);
+}
+
+/* ---------- construction de l'interface ---------- */
+const itemsEl = document.getElementById('items');
+const ROWS = [];
+let lastInput = null;   // dernier champ actif : c'est la que s'inserent les grandeurs cliquees
+function insertAt(inp, txt, smart) {
+  const a = inp.selectionStart ?? inp.value.length, z = inp.selectionEnd ?? a;
+  let before = inp.value.slice(0, a);
+  // grandeur collee a une autre -> on ajoute le "." de multiplication
+  if (smart && /[\p{L}\p{N}_)]\s*$/u.test(before) && !/=\s*$/.test(before)) txt = '.' + txt;
+  inp.value = before + txt + inp.value.slice(z);
+  inp.focus(); inp.setSelectionRange(a + txt.length, a + txt.length);
+  inp.dispatchEvent(new Event('input'));
+}
+if (P.sv) {
+  const el = document.getElementById('vars');
+  el.style.display = '';
+  el.innerHTML = 'Grandeurs utilisables : ';
+  VARS.forEach(v => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.innerHTML = v.disp;
+    b.title = 'insérer ' + (v.greek || v.names[0]);
+    b.addEventListener('mousedown', e => e.preventDefault());   // garde le focus du champ
+    b.addEventListener('click', () => {
+      const inp = lastInput || (ROWS[0] && ROWS[0].inp);
+      if (inp) insertAt(inp, v.greek || v.names[0], true);
+    });
+    el.appendChild(b);
+  });
+}
+if (P.sv && P.lr) {
+  // grandeur(s) a exprimer : un clic ecrit "vx = " en debut de champ
+  const el = document.getElementById('lhsbar');
+  el.style.display = '';
+  el.innerHTML = P.it.length > 1 ? 'Grandeurs à exprimer : ' : 'Grandeur à exprimer : ';
+  P.it.forEach((item, idx) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip lhs'; b.innerHTML = item.l || lhsDisplay(item.h[0]);
+    b.title = 'écrire ' + item.h[0] + ' = …';
+    b.addEventListener('mousedown', e => e.preventDefault());
+    b.addEventListener('click', () => {
+      const inp = lastInput || (ROWS[idx] && ROWS[idx].inp);
+      if (!inp) return;
+      if (inp.value.includes('=')) { insertAt(inp, item.h[0], false); return; }
+      inp.value = item.h[0] + ' = ' + inp.value.replace(/^\s+/, '');
+      inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
+      inp.dispatchEvent(new Event('input'));
+    });
+    el.appendChild(b);
+  });
+}
+const greekBtns = P.sv ? [] : VARS.filter(v => v.greek).map(v => v.greek);
+
+P.it.forEach((item, idx) => {
+  const box = document.createElement('div'); box.className = 'item';
+  const line = document.createElement('div'); line.className = 'ligne';
+  if (!P.lr) {
+    const lab = document.createElement('span'); lab.className = 'lab';
+    lab.innerHTML = (item.l || lhsDisplay(item.h[0])) + ' =';
+    line.appendChild(lab);
+  } else {
+    const lab = document.createElement('span'); lab.className = 'lab exprde';
+    lab.innerHTML = 'Expression de ' + (item.l || lhsDisplay(item.h[0])) + ' :';
+    line.appendChild(lab);
+  }
+  const inp = document.createElement('input');
+  inp.className = 'expr'; inp.type = 'text'; inp.autocomplete = 'off'; inp.spellcheck = false;
+  inp.placeholder = P.lr ? 'grandeur = expression' : 'expression';
+  line.appendChild(inp);
+  if (greekBtns.length) {
+    const k = document.createElement('span'); k.className = 'kbd';
+    greekBtns.forEach(g => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = g;
+      b.title = 'insérer ' + g;
+      b.addEventListener('mousedown', e => e.preventDefault());
+      b.addEventListener('click', () => insertAt(inp, g, false));
+      k.appendChild(b);
+    });
+    line.appendChild(k);
+  }
+  box.appendChild(line);
+  const prev = document.createElement('div'); prev.className = 'preview';
+  prev.innerHTML = '<span class="hint">l’aperçu de ton expression s’affiche ici</span>';
+  box.appendChild(prev);
+  const cz = document.createElement('div'); cz.className = 'codezone'; cz.style.display = 'none';
+  cz.innerHTML = `<label>Code ${P.it.length > 1 ? 'de ' + (item.l || lhsDisplay(item.h[0])) + ' ' : ''}à recopier :</label>`;
+  const codeIn = document.createElement('input'); codeIn.readOnly = true;
+  const cbtn = document.createElement('button'); cbtn.type = 'button'; cbtn.textContent = 'Copier';
+  cbtn.addEventListener('click', () => {
+    codeIn.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+    if (navigator.clipboard) navigator.clipboard.writeText(codeIn.value).catch(() => {});
+    cbtn.textContent = 'Copié !'; setTimeout(() => (cbtn.textContent = 'Copier'), 1200);
+  });
+  cz.appendChild(codeIn); cz.appendChild(cbtn);
+  box.appendChild(cz);
+  itemsEl.appendChild(box);
+
+  function upd() {
+    inp.classList.remove('ok', 'ko');
+    cz.style.display = 'none';               // un code ne correspond qu'a une saisie validee
+    const r = analyse(inp.value, item);
+    if (r.empty) { prev.innerHTML = '<span class="hint">l’aperçu de ton expression s’affiche ici</span>'; return; }
+    if (r.err) { prev.innerHTML = `<span class="err">⚠ ${r.err}</span>`; return; }
+    prev.innerHTML = '<span>' + (r.lhs ? lhsHtml(r.lhs, item) + '&nbsp;=&nbsp;' : (P.lr ? '' : (item.l || lhsDisplay(item.h[0])) + '&nbsp;=&nbsp;')) + render(r.tree) + '</span>';
+  }
+  inp.addEventListener('input', upd);
+  inp.addEventListener('focus', () => { lastInput = inp; });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-valider').click(); });
+  ROWS.push({ item, inp, cz, codeIn });
+});
+
+/* ---------- validation et codes ---------- */
+function check(r, item) {
+  if (!r.tree) return { ok: false, vals: [] };
+  const vals = P.p.map(x => { try { return evalTree(r.tree, x); } catch (e) { return NaN; } });
+  const scale = Math.max(...item.e.map(Math.abs), 1e-300);
+  const ok = r.lhsOk && vals.every((v, k) =>
+    isFinite(v) && Math.abs(v - item.e[k]) <= TOL * Math.max(Math.abs(item.e[k]), 1e-3 * scale));
+  return { ok, vals };
+}
+document.getElementById('btn-valider').addEventListener('click', () => {
+  let nOk = 0;
+  ROWS.forEach((row, i) => {
+    const r = analyse(row.inp.value, row.item);
+    const { ok, vals } = check(r, row.item);
+    // le code correspond TOUJOURS a ce qui est tape : juste -> code attendu,
+    // faux -> code derive des valeurs obtenues (different). Moodle note.
+    const code = ok
+      ? hash6(`${P.s}|${i}|OK`)
+      : hash6(`${P.s}|${i}|` + (r.lhs || '') + '|' + (r.empty ? 'vide' : r.err ? 'err:' + normalize(row.inp.value) :
+          vals.map(v => isFinite(v) ? v.toPrecision(9) : 'NaN').join(';')));
+    row.codeIn.value = `E${i + 1}-${code}`;
+    row.cz.style.display = '';
+    if (P.fb) { row.inp.classList.remove('ok', 'ko'); if (!r.empty) row.inp.classList.add(ok ? 'ok' : 'ko'); }
+    if (ok) nOk++;
+  });
+  document.getElementById('statut').textContent =
+    P.fb ? `${nOk} / ${ROWS.length} expression(s) correcte(s)` : 'Codes générés : recopie-les dans Moodle.';
+});
+</script>
+</body>
+</html>
