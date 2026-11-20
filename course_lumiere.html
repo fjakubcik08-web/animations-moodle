@@ -72,9 +72,21 @@
     background-size:8px 8px;border-radius:2px;z-index:2;}
 
   .lane .label{
-    position:absolute;top:6px;left:10px;font-size:13px;color:var(--sub);z-index:5;
-    text-shadow:0 1px 3px #000;
+    position:absolute;top:11px;left:40px;z-index:5;
+    font-size:13px;font-weight:700;color:#fff;letter-spacing:.3px;
+    padding:3px 12px 3px 10px;border-radius:999px;
+    background:var(--labelBg,#6f5fd8);
+    border:1.5px solid rgba(255,255,255,.55);
+    box-shadow:0 2px 6px rgba(0,0,0,.45), 0 0 10px var(--labelGlow,rgba(111,95,216,.6));
+    text-shadow:0 1px 2px rgba(0,0,0,.6);
   }
+  .lane .label::before{
+    content:'';display:inline-block;width:8px;height:8px;border-radius:50%;
+    margin-right:7px;vertical-align:1px;background:#fff;box-shadow:0 0 6px #fff;
+  }
+  .laneVide .label{--labelBg:linear-gradient(90deg,#6f5fd8,#3b2fa0);--labelGlow:rgba(158,140,255,.7);}
+  .laneM1 .label{--labelBg:linear-gradient(90deg,#2f8fe0,#1b5fa8);--labelGlow:rgba(47,143,224,.7);}
+  .laneM2 .label{--labelBg:linear-gradient(90deg,#e0642f,#a83f15);--labelGlow:rgba(224,100,47,.7);}
   .lane .chrono{
     position:absolute;top:6px;right:10px;background:#0c1220cc;border:1px solid var(--line);
     border-radius:5px;padding:4px 11px;font-variant-numeric:tabular-nums;font-size:16px;
@@ -229,11 +241,13 @@ const cVal = P.c    !== undefined ? Number(P.c)    : 299792458; // vitesse de la
 const label1 = P.nom1 || P.label1 || 'Lumière dans l\'eau';
 const label2 = P.nom2 || P.label2 || 'Lumière dans le verre';
 const showM2 = P.showM2 !== undefined ? !!P.showM2 : true;
+const showVide = P.showVide !== undefined ? !!P.showVide : true; // défaut true : anciens tests inchangés
 
 document.getElementById('labelM1').textContent = label1;
 document.getElementById('labelM2').textContent = label2;
 document.getElementById('distVal').textContent = dUm + ' µm';
 if(!showM2) document.getElementById('laneM2').classList.add('hidden');
+if(!showVide) document.getElementById('laneVide').classList.add('hidden');
 
 // ── Physique ──
 const c = cVal; // m/s (paramétrable via ?c=...)
@@ -519,13 +533,18 @@ btn.addEventListener('click', () => {
   document.getElementById('laneM1').classList.remove('arrived');
   document.getElementById('laneM2').classList.remove('arrived');
 
-  runLane({laneId:'laneVide', barId:'barVide', world:geomVide.world, maxScroll:geomVide.maxScroll, finishX:geomVide.finishX, durationMs:durVide, t_final_fs:t_vide_fs, chronoId:'chronoVide', fx:FX_VIDE});
+  if(showVide){
+    runLane({laneId:'laneVide', barId:'barVide', world:geomVide.world, maxScroll:geomVide.maxScroll, finishX:geomVide.finishX, durationMs:durVide, t_final_fs:t_vide_fs, chronoId:'chronoVide', fx:FX_VIDE});
+  }
   runLane({laneId:'laneM1', barId:'barM1', world:geomM1.world, maxScroll:geomM1.maxScroll, finishX:geomM1.finishX, durationMs:dur1, t_final_fs:t1_fs, chronoId:'chronoM1', fx:{colors:themeM1.fxColors, text:themeM1.fxText}});
   if(showM2){
     runLane({laneId:'laneM2', barId:'barM2', world:geomM2.world, maxScroll:geomM2.maxScroll, finishX:geomM2.finishX, durationMs:dur2, t_final_fs:t2_fs, chronoId:'chronoM2', fx:{colors:themeM2.fxColors, text:themeM2.fxText}});
   }
 
-  const maxDur = showM2 ? Math.max(durVide, dur1, dur2) : Math.max(durVide, dur1);
+  const durs = [dur1];
+  if(showVide) durs.push(durVide);
+  if(showM2) durs.push(dur2);
+  const maxDur = Math.max(...durs);
   setTimeout(() => { btn.disabled = false; }, maxDur + 100);
 });
 
