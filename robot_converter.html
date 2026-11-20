@@ -211,7 +211,8 @@
     ["Gy","dose absorbée","_ m µ",1],
     ["Sv","dose efficace","_ m µ",1],
     ["dB","niveau sonore","",1],
-    ["K","température","_ m",1]
+    ["K","température","_ m",1],
+    ["°C","température","",1,"T (en K) = θ (en °C) + 273,15"]
   ];
   const UNITS = {}, DUP=[];
   for(const [b,dim,pref,pow,link] of FAM){
@@ -237,6 +238,7 @@
     if(/^(UA|AU|au|u\.a\.?)$/.test(u)) u="ua";
     if(/^(a\.l\.?|AL)$/.test(u)) u="al";
     if(/^(A°|angstr[oö]m)$/i.test(u)) u="Å";
+    if(/^(º|°|deg)?C°?$/i.test(u) && u!=="C" && u!=="c") u="°C";
     if(u==="l"||u==="ℓ") u="L";
     if(/^(ans?|années?)$/.test(u)) u="an";
     if(/^(jours?|d)$/.test(u)) u="j";
