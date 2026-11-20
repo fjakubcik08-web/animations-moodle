@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TP Réfraction — Demi-cylindre</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  background:#111;
+  font-family:'Rajdhani','Segoe UI',Arial,sans-serif;
+  overflow-x:hidden;
+  overflow-y:auto;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  user-select:none;
+  color:#ccc;
+}
+h1{
+  font-size:1rem;
+  font-weight:700;
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  color:#666;
+  margin-bottom:18px;
+  text-align:center;
+}
+.layout{
+  display:flex;
+  flex-direction:row;
+  gap:30px;
+  align-items:flex-start;
+  justify-content:center;
+  flex-wrap:nowrap;
+}
+canvas{
+  display:block;
+  cursor:crosshair;
+  flex-shrink:0;
+  filter:drop-shadow(0 0 22px rgba(0,0,0,.9));
+}
+.panel{
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+  width:220px;
+  flex-shrink:0;
+  padding-top:10px;
+}
+.card{
+  background:#1a1a1a;
+  border:1px solid #2a2a2a;
+  border-radius:10px;
+  padding:14px 16px;
+}
+.card-title{
+  font-size:.62rem;
+  font-weight:700;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:#555;
+  margin-bottom:10px;
+}
+input[type=range]{
+  -webkit-appearance:none;
+  width:100%;height:3px;
+  border-radius:2px;
+  background:linear-gradient(to right,#c33 calc(var(--pct,39)*1%),#222 0);
+  outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:14px;height:14px;border-radius:50%;
+  background:#e33;border:2px solid #111;cursor:pointer;
+}
+.step-row{display:flex;gap:8px;margin-top:12px;}
+.step-btn{
+  flex:1;background:#0c0c0c;border:1px solid #333;border-radius:6px;
+  color:#ddd;font-family:inherit;font-size:.85rem;font-weight:700;
+  padding:6px 0;cursor:pointer;letter-spacing:.05em;
+}
+.step-btn:hover{border-color:#e33;color:#fff;}
+.step-btn:active{transform:scale(.96);}
+.hint-txt{
+  font-size:.6rem;color:#383838;
+  text-align:center;line-height:1.6;letter-spacing:.05em;
+}
+</style>
+</head>
+<body>
+<h1>TP — Réfraction · Demi-cylindre</h1>
+<div class="layout">
+  <canvas id="c" width="560" height="560"></canvas>
+  <div class="panel">
+    <div class="card">
+      <div class="card-title">Rayon incident</div>
+      <input type="range" id="angsl" min="0" max="89" step="1" value="35">
+      <div class="step-row">
+        <button class="step-btn" id="btnMinus">◀ −1°</button>
+        <button class="step-btn" id="btnPlus">+1° ▶</button>
+      </div>
+    </div>
+    <p class="hint-txt">Glisser le point rouge,<br>utiliser le slider ou les boutons ±1°</p>
+
+
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════
+   SETUP CANVAS
+════════════════════════════════════════ */
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const S  = canvas.width;   // 560
+const R  = S / 2;          // 280
+const CX = R, CY = R;
+
+/* ════════════════════════════════════════
+   PARAMÈTRES (URL)
+   ?p=...  : JSON {n2, i1} chiffré XOR (clé ci-dessous) + base64url
+   n2      : indice du milieu 2 (défaut 1.33)
+   i1      : angle d'incidence de départ en degrés (défaut 35)
+   Les paramètres en clair (?n2=1.5&i1=40) écrasent ceux de p (tests locaux).
+════════════════════════════════════════ */
+const XOR_KEY = "FJ-quelestcemilieu";
+function xorCipher(str,key){
+  let out="";
+  for(let i=0;i<str.length;i++) out+=String.fromCharCode(str.charCodeAt(i)^key.charCodeAt(i%key.length));
+  return out;
+}
+function encodeParams(obj){
+  return btoa(xorCipher(JSON.stringify(obj),XOR_KEY)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+function decodeParams(enc){
+  try{
+    let b64=enc.replace(/-/g,"+").replace(/_/g,"/");
+    while(b64.length%4) b64+="=";
+    return JSON.parse(xorCipher(atob(b64),XOR_KEY));
+  }catch(e){ return null; }
+}
+window.encodeSimParams = encodeParams; // console : encodeSimParams({n2:1.5,i1:30})
+
+const PARAMS = {n2:1.33, i1:35};
+const qs = new URLSearchParams(location.search);
+if(qs.has("p")){ const d=decodeParams(qs.get("p")); if(d) Object.assign(PARAMS,d); }
+if(qs.has("n2")) PARAMS.n2=parseFloat(qs.get("n2"));
+if(qs.has("i1")) PARAMS.i1=parseFloat(qs.get("i1"));
+
+let n2     = (isFinite(PARAMS.n2) && PARAMS.n2>=1) ? Number(PARAMS.n2) : 1.33;
+let theta1 = isFinite(PARAMS.i1) ? Math.max(0,Math.min(89,Math.round(Number(PARAMS.i1)))) : 35;
+let drag   = false;
+
+// Teinte aléatoire du milieu 2 (HSL hue, tirée au démarrage)
+// 0=rouge-feu, 120=vert, 180=cyan, 200=bleu, 270=violet, 300=magenta
+const HUE_PRESETS = [0, 15, 30, 120, 160, 195, 210, 260, 290, 320];
+const medHue = HUE_PRESETS[Math.floor(Math.random()*HUE_PRESETS.length)];
+// Paramètres couleur dérivés de la teinte
+const medC = {
+  h: medHue,
+  bg0: `hsla(${medHue},100%,48%,0.75)`,
+  bg1: `hsla(${medHue},90%,28%,0.55)`,
+  bg2: `hsla(${medHue},80%,14%,0.38)`,
+  bg3: `hsla(${medHue},70%,5%,0.12)`,
+  base: `hsla(${medHue},80%,8%,0.35)`,
+  flame0: (a,hue) => `hsla(${medHue+hue},100%,82%,${a*0.95})`,
+  flame1: (a,hue) => `hsla(${medHue+hue-12},100%,55%,${a*0.75})`,
+  bub: (a) => `hsla(${medHue+30},80%,70%,${a*0.72})`,
+  bubR: (a) => `hsla(${medHue+60},100%,90%,${a*0.5})`,
+  glow0: `hsla(${medHue},100%,50%,`,
+  glow1: `hsla(${medHue+20},100%,70%,`,
+};
+
+const toRad = d => d * Math.PI / 180;
+const toDeg = r => r * 180 / Math.PI;
+const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
+
+/* ════════════════════════════════════════
+   PARTICULES FEU + BULLES (offscreen)
+════════════════════════════════════════ */
+const off  = document.createElement('canvas');
+off.width  = S; off.height = S;
+const offCtx = off.getContext('2d');
+const CR = R * 0.76;  // rayon du demi-cylindre
+
+function rnd(a,b){return a+Math.random()*(b-a);}
+
+// ── Point aléatoire dans le demi-disque inférieur ──
+function rndSemi(){
+  for(;;){
+    const x=CX+rnd(-CR,CR), y=CY+rnd(0,CR);
+    if((x-CX)**2+(y-CY)**2<CR*CR) return {x,y};
+  }
+}
+
+// ── Flammes ──
+const NFIRE=60;
+const fire=[];
+function resetFire(p){
+  const b=rndSemi();
+  p.x=b.x; p.y=b.y;
+  p.vx=rnd(-0.4,0.4); p.vy=rnd(-2.4,-0.8);
+  p.maxL=rnd(0.5,1.2); p.life=rnd(0,p.maxL);
+  p.sz=rnd(5,16); p.hue=rnd(0,45);
+}
+for(let i=0;i<NFIRE;i++){fire.push({});resetFire(fire[i]);}
+
+// ── Bulles ──
+const NBUB=22;
+const bub=[];
+function resetBub(p){
+  const b=rndSemi();
+  p.x=b.x; p.y=Math.max(b.y,CY+10);
+  p.vx=rnd(-0.2,0.2); p.vy=rnd(-1.2,-0.35);
+  p.maxL=rnd(0.8,1.8); p.life=rnd(0,p.maxL);
+  p.r=rnd(2,7);
+}
+for(let i=0;i<NBUB;i++){bub.push({});resetBub(bub[i]);}
+
+// ── Vapeur (interface) ──
+const NSTM=18;
+const stm=[];
+function resetStm(p){
+  p.x=CX+rnd(-CR*0.75,CR*0.75);
+  p.y=CY+rnd(2,20);
+  p.vx=rnd(-0.3,0.3); p.vy=rnd(-0.7,-0.2);
+  p.maxL=rnd(0.6,1.3); p.life=rnd(0,p.maxL);
+  p.sz=rnd(8,24);
+}
+for(let i=0;i<NSTM;i++){stm.push({});resetStm(stm[i]);}
+
+function drawParticles(dt,t){
+  offCtx.clearRect(0,0,S,S);
+  offCtx.save();
+
+  // Clip demi-disque inférieur
+  offCtx.beginPath();
+  offCtx.arc(CX,CY,CR,0,Math.PI);
+  offCtx.closePath();
+  offCtx.clip();
+
+  // Fond pulsant — teinte aléatoire
+  const pulse=0.5+0.5*Math.sin(t*2.1);
+  const bg=offCtx.createRadialGradient(
+    CX+Math.sin(t)*10, CY+CR*0.38+Math.cos(t*1.6)*8, 8,
+    CX, CY, CR
+  );
+  bg.addColorStop(0,  medC.bg0);
+  bg.addColorStop(0.3,medC.bg1);
+  bg.addColorStop(0.7,medC.bg2);
+  bg.addColorStop(1,  medC.bg3);
+  offCtx.fillStyle=bg;
+  offCtx.fillRect(0,CY,S,S);
+
+  // Flammes
+  for(const p of fire){
+    p.life-=dt*rnd(0.6,0.9);
+    if(p.life<=0){resetFire(p);continue;}
+    p.x+=p.vx+Math.sin(t*3+p.y*0.02)*0.3;
+    p.y+=p.vy;
+    if(p.y<CY){p.life=0;continue;}
+    const a=p.life/p.maxL;
+    const sz=p.sz*(0.3+0.7*a);
+    const hue=p.hue+(1-a)*55;
+    const g=offCtx.createRadialGradient(p.x,p.y,0,p.x,p.y,sz);
+    g.addColorStop(0,  medC.flame0(a,hue));
+    g.addColorStop(0.4,medC.flame1(a,hue));
+    g.addColorStop(1,  `hsla(${medC.h+hue-25},100%,28%,0)`);
+    offCtx.beginPath();
+    offCtx.arc(p.x,p.y,sz,0,Math.PI*2);
+    offCtx.fillStyle=g;
+    offCtx.fill();
+  }
+
+  // Vapeur
+  for(const p of stm){
+    p.life-=dt*0.5;
+    if(p.life<=0){resetStm(p);continue;}
+    p.x+=p.vx; p.y+=p.vy;
+    if(p.y<CY+2){p.life=0;continue;}
+    const a=Math.min(1,p.life/p.maxL)*0.2;
+    const g=offCtx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.sz);
+    g.addColorStop(0,`rgba(255,230,180,${a})`);
+    g.addColorStop(1,`rgba(255,200,120,0)`);
+    offCtx.beginPath();
+    offCtx.arc(p.x,p.y,p.sz,0,Math.PI*2);
+    offCtx.fillStyle=g;
+    offCtx.fill();
+  }
+
+  // Bulles
+  for(const p of bub){
+    p.life-=dt*0.42;
+    if(p.life<=0){resetBub(p);continue;}
+    p.x+=p.vx+Math.sin(t*2+p.x*0.02)*0.18;
+    p.y+=p.vy;
+    if(p.y<CY+p.r){p.life=0;continue;}
+    const a=Math.min(1,p.life/p.maxL);
+    offCtx.beginPath();
+    offCtx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    offCtx.strokeStyle=medC.bub(a);
+    offCtx.lineWidth=1.2;
+    offCtx.stroke();
+    offCtx.beginPath();
+    offCtx.arc(p.x-p.r*0.3,p.y-p.r*0.3,p.r*0.28,0,Math.PI*2);
+    offCtx.fillStyle=medC.bubR(a);
+    offCtx.fill();
+  }
+
+  // Lueur pulsante à l'interface
+  const gA=0.16+0.12*Math.sin(t*4.3);
+  const ig=offCtx.createLinearGradient(CX-CR,CY,CX+CR,CY);
+  ig.addColorStop(0,  `${medC.glow0}0)`);
+  ig.addColorStop(0.2,`${medC.glow0}${gA})`);
+  ig.addColorStop(0.5,`${medC.glow1}${gA*1.5})`);
+  ig.addColorStop(0.8,`${medC.glow0}${gA})`);
+  ig.addColorStop(1,  `${medC.glow0}0)`);
+  offCtx.fillStyle=ig;
+  offCtx.fillRect(CX-CR,CY-7,CR*2,14);
+
+  offCtx.restore();
+}
+
+/* ════════════════════════════════════════
+   DRAW SCÈNE (disque + rayons)
+════════════════════════════════════════ */
+function drawScene(){
+  ctx.clearRect(0,0,S,S);
+
+  const sinA2 = Math.sin(toRad(theta1))/n2;
+  const tir   = Math.abs(sinA2)>1;
+  const th2   = tir ? null : toDeg(Math.asin(sinA2));
+  const a1r   = toRad(theta1);
+
+  // Fond disque gris
+  const dg=ctx.createRadialGradient(CX,CY,R*0.45,CX,CY,R);
+  dg.addColorStop(0,'#e2e2da');
+  dg.addColorStop(1,'#c6c6be');
+  ctx.beginPath();
+  ctx.arc(CX,CY,R-1,0,Math.PI*2);
+  ctx.fillStyle=dg;
+  ctx.fill();
+
+  // Demi-cylindre (couleur de base, les particules seront superposées)
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(CX,CY,CR,0,Math.PI);
+  ctx.closePath();
+  ctx.fillStyle=medC.base;
+  ctx.fill();
+  ctx.restore();
+
+  // Graduations
+  drawGrad();
+
+  // Interface horizontale
+  ctx.save();
+  ctx.strokeStyle='rgba(0,0,0,.18)';
+  ctx.lineWidth=1.2;
+  ctx.beginPath();
+  ctx.moveTo(CX-CR,CY); ctx.lineTo(CX+CR,CY);
+  ctx.stroke();
+  ctx.restore();
+
+  // Normale pointillée
+  ctx.save();
+  ctx.strokeStyle='rgba(0,0,0,.22)';
+  ctx.lineWidth=1;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath();
+  ctx.moveTo(CX,CY-R*0.9); ctx.lineTo(CX,CY+R*0.9);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Arcs d'angle
+  const arcR=R*0.17;
+  ctx.save();
+  ctx.fillStyle='rgba(210,70,0,.13)';
+  ctx.beginPath();
+  ctx.moveTo(CX,CY);
+  ctx.arc(CX,CY,arcR,-Math.PI/2,-Math.PI/2+a1r,false);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='rgba(210,70,0,.45)';ctx.lineWidth=1;ctx.stroke();
+  ctx.restore();
+
+  if(!tir && th2!==null){
+    const a2r=toRad(th2);
+    ctx.save();
+    ctx.fillStyle='rgba(25,130,255,.12)';
+    ctx.beginPath();
+    ctx.moveTo(CX,CY);
+    ctx.arc(CX,CY,arcR,Math.PI/2,Math.PI/2-a2r,true);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='rgba(25,130,255,.4)';ctx.lineWidth=1;ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── Rayons — jusqu'au bord du disque gradué ──
+  const rayR=R-4;
+
+  // Incident
+  const ix=CX-rayR*Math.sin(a1r);
+  const iy=CY-rayR*Math.cos(a1r);
+  laser(ctx,ix,iy,CX,CY,'#ff2200',2.5,16);
+  arrowHead(ctx,ix,iy,CX,CY,'#ff2200');
+
+  // Réfléchi
+  const rrx=CX+rayR*Math.sin(a1r);
+  const rry=CY-rayR*Math.cos(a1r);
+
+  if(!tir && th2!==null){
+    const a2r=toRad(th2);
+    const tx=CX+rayR*Math.sin(a2r);
+    const ty=CY+rayR*Math.cos(a2r);
+    laser(ctx,CX,CY,tx,ty,'#ff2200',2.5,16);
+    arrowHead(ctx,CX,CY,tx,ty,'#ff2200');
+    laser(ctx,CX,CY,rrx,rry,'rgba(255,60,25,.3)',1.3,4);
+    arrowHead(ctx,CX,CY,rrx,rry,'rgba(255,60,25,.3)');
+  } else {
+    laser(ctx,CX,CY,rrx,rry,'#ff2200',2.5,18);
+    arrowHead(ctx,CX,CY,rrx,rry,'#ff2200');
+  }
+
+  // Point central
+  ctx.save();
+  ctx.shadowColor='#ff2200';ctx.shadowBlur=10;
+  ctx.fillStyle='#ff2200';
+  ctx.beginPath();ctx.arc(CX,CY,4,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+
+  // Point source draggable
+  const dR=rayR*0.60;
+  const dX=CX-dR*Math.sin(a1r);
+  const dY=CY-dR*Math.cos(a1r);
+  ctx.save();
+  ctx.shadowColor='#ff5500';ctx.shadowBlur=16;
+  ctx.fillStyle='#ff4400';
+  ctx.beginPath();ctx.arc(dX,dY,9,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.restore();
+}
+
+/* ════════════════════════════════════════
+   GRADUATIONS
+   0° en haut et en bas (normales),
+   10-20-...-80 de chaque côté dans les 4 quadrants.
+   Chiffres droits non tournés.
+════════════════════════════════════════ */
+function drawGrad(){
+  ctx.save();
+  ctx.font='bold 10px Rajdhani,sans-serif';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+
+  for(let i=0;i<360;i++){
+    const ang=toRad(i-90);
+    const cos=Math.cos(ang), sin=Math.sin(ang);
+    const is10=i%10===0, is5=i%5===0;
+
+    const outer=R-3;
+    const inner=is10?R-18:is5?R-11:R-6;
+    ctx.strokeStyle=is10?'rgba(0,0,0,.72)':is5?'rgba(0,0,0,.42)':'rgba(0,0,0,.22)';
+    ctx.lineWidth=is10?1.6:1;
+    ctx.beginPath();
+    ctx.moveTo(CX+outer*cos,CY+outer*sin);
+    ctx.lineTo(CX+inner*cos,CY+inner*sin);
+    ctx.stroke();
+
+    if(is10){
+      // Valeur = angle depuis la normale la plus proche
+      let val;
+      if(i<=90)       val=i;
+      else if(i<=180) val=180-i;
+      else if(i<=270) val=i-180;
+      else            val=360-i;
+
+      const lx=CX+(R-28)*cos;
+      const ly=CY+(R-28)*sin;
+      ctx.fillStyle='rgba(0,0,0,.72)';
+      ctx.fillText(val,lx,ly);
+    }
+  }
+  ctx.restore();
+}
+
+/* ════════════════════════════════════════
+   HELPERS DESSIN
+════════════════════════════════════════ */
+function laser(c,x1,y1,x2,y2,col,lw,blur){
+  c.save();
+  c.shadowColor=col;c.shadowBlur=blur;
+  c.strokeStyle=col;c.lineWidth=lw;
+  c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();
+  c.restore();
+}
+function arrowHead(c,x1,y1,x2,y2,col){
+  const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
+  const ux=dx/len,uy=dy/len;
+  const mx=x1+dx*0.58,my=y1+dy*0.58;
+  const al=9,aw=4.5;
+  c.save();
+  c.fillStyle=col;c.shadowColor=col;c.shadowBlur=8;
+  c.beginPath();
+  c.moveTo(mx+ux*al,my+uy*al);
+  c.lineTo(mx-uy*aw,my+ux*aw);
+  c.lineTo(mx+uy*aw,my-ux*aw);
+  c.closePath();c.fill();
+  c.restore();
+}
+
+/* ════════════════════════════════════════
+   BOUCLE D'ANIMATION
+════════════════════════════════════════ */
+let lastT=0;
+function loop(ts){
+  const dt=Math.min((ts-lastT)/1000,0.05);
+  lastT=ts;
+  const t=ts*0.001;
+
+  // 1. Scène statique
+  drawScene();
+
+  // 2. Particules sur canvas offscreen
+  drawParticles(dt,t);
+
+  // 3. Superposer en mode screen (effet lumineux)
+  ctx.save();
+  ctx.globalCompositeOperation='screen';
+  ctx.drawImage(off,0,0);
+  ctx.restore();
+
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ════════════════════════════════════════
+   INTERACTION SOURIS / TOUCH
+════════════════════════════════════════ */
+function angleFromXY(x,y){
+  const dx=x-CX,dy=CY-y;
+  if(dy<=0) return theta1;
+  return clamp(toDeg(Math.atan2(Math.abs(dx),dy)),0,89);
+}
+function getPos(e){
+  const r=canvas.getBoundingClientRect();
+  const sx=S/r.width,sy=S/r.height;
+  const s=e.touches?e.touches[0]:e;
+  return{x:(s.clientX-r.left)*sx,y:(s.clientY-r.top)*sy};
+}
+function sourcePt(){
+  const a1r=toRad(theta1),dR=(R-4)*0.60;
+  return{x:CX-dR*Math.sin(a1r),y:CY-dR*Math.cos(a1r)};
+}
+
+canvas.addEventListener('mousedown',e=>{
+  const p=getPos(e),s=sourcePt();
+  if(Math.hypot(p.x-s.x,p.y-s.y)<22) drag=true;
+});
+canvas.addEventListener('mousemove',e=>{
+  if(!drag) return;
+  const p=getPos(e);
+  if(p.y<CY){theta1=angleFromXY(p.x,p.y);syncSl();}
+});
+canvas.addEventListener('mouseup',()=>drag=false);
+canvas.addEventListener('mouseleave',()=>drag=false);
+canvas.addEventListener('click',e=>{
+  if(drag) return;
+  const p=getPos(e);
+  if(p.y<CY-4){theta1=angleFromXY(p.x,p.y);syncSl();}
+});
+canvas.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  const p=getPos(e),s=sourcePt();
+  if(Math.hypot(p.x-s.x,p.y-s.y)<30) drag=true;
+},{passive:false});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(!drag) return;
+  const p=getPos(e);
+  if(p.y<CY){theta1=angleFromXY(p.x,p.y);syncSl();}
+},{passive:false});
+canvas.addEventListener('touchend',()=>drag=false);
+
+document.getElementById('angsl').addEventListener('input',function(){
+  theta1=parseInt(this.value);
+  const pct=(theta1/89)*100;
+  this.style.setProperty('--pct',pct.toFixed(1));
+});
+function stepAngle(d){
+  theta1=clamp(Math.round(theta1)+d,0,89);
+  syncSl();
+}
+document.getElementById('btnMinus').addEventListener('click',()=>stepAngle(-1));
+document.getElementById('btnPlus').addEventListener('click',()=>stepAngle(1));
+
+function syncSl(){
+  const sl=document.getElementById('angsl');
+  sl.value=theta1;
+  sl.style.setProperty('--pct',((theta1/89)*100).toFixed(1));
+}
+
+syncSl();
+</script>
+</body>
+</html>
