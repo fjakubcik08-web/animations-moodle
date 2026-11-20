@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robot Converter</title>
+<style>
+  :root{ --bleu:#1f5fa8; --bleu-clair:#e8f0fa; --gris:#5b6470; --fond:#f6f8fb; --encre:#1b1b1b; }
+  html,body{margin:0;padding:0;overflow-x:hidden;overflow-y:auto;background:var(--fond);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--encre);}
+  .wrap{max-width:840px;margin:0 auto;padding:14px 16px 24px;}
+  header{background:var(--bleu);color:#fff;border-radius:10px;padding:10px 16px;
+    font-weight:600;font-size:1.05rem;display:flex;align-items:center;gap:10px;}
+  header small{font-weight:400;opacity:.85}
+
+  .scene{display:flex;align-items:flex-start;gap:6px;margin-top:10px;min-height:270px;}
+  .robot{flex:0 0 250px;}
+  .robot > svg{width:250px;height:auto;display:block;overflow:visible}
+  .shake #robotG{animation:shake .12s linear infinite;}
+  @keyframes shake{0%{transform:translate(0,0) rotate(0)}25%{transform:translate(-3px,1px) rotate(-2deg)}
+    50%{transform:translate(2px,-2px) rotate(1.5deg)}75%{transform:translate(-1px,2px) rotate(-1deg)}100%{transform:translate(0,0)}}
+  .idle #robotG{animation:bob 3s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  .think #antBall{animation:blink .25s steps(2) infinite;}
+  @keyframes blink{0%{fill:#ffcf33}100%{fill:#ff3b30}}
+  /* ---- Effets BD ---- */
+  .robot{position:relative}
+  .comic{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:5}
+  .burst{position:absolute;left:0;top:0;transform:translate(-50%,-50%) rotate(var(--r)) scale(0);
+    animation:burst var(--d,.75s) cubic-bezier(.2,1.5,.4,1) forwards;filter:drop-shadow(3px 3px 0 rgba(0,0,0,.25))}
+  .burst svg{display:block;overflow:visible}
+  .burst text{font:900 var(--fs,22px) "Comic Sans MS","Comic Neue","Chalkboard SE",cursive;
+    paint-order:stroke;stroke:#1b1b1b;stroke-width:4px;stroke-linejoin:round;letter-spacing:1px}
+  @keyframes burst{
+    0%{transform:translate(-50%,-50%) rotate(var(--r)) scale(0);opacity:1}
+    25%{transform:translate(-50%,-50%) rotate(var(--r)) scale(1.18)}
+    40%{transform:translate(-50%,-50%) rotate(var(--r)) scale(1)}
+    80%{opacity:1}
+    100%{transform:translate(-50%,-50%) rotate(calc(var(--r) + 6deg)) scale(1.06);opacity:0}}
+  .impact{position:absolute;left:50%;top:58%;width:330px;height:330px;transform:translate(-50%,-50%);
+    opacity:0;transition:opacity .15s}
+  .think .impact{opacity:1;animation:jit .09s steps(2) infinite}
+  @keyframes jit{0%{transform:translate(-50%,-50%) rotate(0)}100%{transform:translate(-50%,-50%) rotate(7deg)}}
+  .flash{position:absolute;left:50%;top:58%;width:10px;height:10px;border-radius:50%;
+    transform:translate(-50%,-50%);background:radial-gradient(circle,#fff7b0 0%,#ffd23f 45%,rgba(255,140,0,0) 70%);
+    pointer-events:none;opacity:0}
+  .flash.go{animation:flash .55s ease-out}
+  @keyframes flash{0%{width:10px;height:10px;opacity:1}100%{width:420px;height:420px;opacity:0}}
+  .qmark{font:bold 46px "Comic Sans MS","Comic Neue","Segoe Print",cursive;fill:#1b1b1b;stroke:none}
+
+  .bubble{position:relative;flex:1;margin-top:70px;background:#fff;border:3px solid var(--encre);
+    border-radius:28px 30px 26px 32px / 30px 26px 32px 28px;padding:16px 20px;
+    font-family:"Comic Sans MS","Comic Neue","Chalkboard SE","Segoe Print",cursive;
+    font-size:1.12rem;line-height:1.5;min-height:80px;box-shadow:4px 4px 0 rgba(0,0,0,.12);}
+  .bubble::before{content:"";position:absolute;left:-26px;top:46px;border-width:14px 26px 14px 0;
+    border-style:solid;border-color:transparent var(--encre) transparent transparent;}
+  .bubble::after{content:"";position:absolute;left:-19px;top:49px;border-width:11px 21px 11px 0;
+    border-style:solid;border-color:transparent #fff transparent transparent;}
+  .bubble .eq{display:inline-block;background:var(--bleu-clair);border-radius:6px;padding:0 8px;
+    margin:3px 0;font-weight:bold;white-space:nowrap}
+  .bubble .bz{color:#c0392b;font-weight:bold;letter-spacing:1px}
+  .bubble.pop{animation:pop .25s ease-out}
+  @keyframes pop{0%{transform:scale(.85);opacity:0}100%{transform:scale(1);opacity:1}}
+  .cursor::after{content:"▌";animation:blink2 .6s steps(2) infinite;margin-left:1px}
+  @keyframes blink2{0%{opacity:1}100%{opacity:0}}
+
+  .panel{margin-top:14px;background:#fff;border:1px solid #d9e0ea;border-radius:12px;padding:14px 16px;
+    display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:.82rem;color:var(--gris);font-weight:600}
+  input{font-size:1.05rem;padding:8px 10px;border:1.5px solid #c5cfdc;border-radius:8px;background:#fff;font-family:inherit;}
+  #val{width:220px} #dest{width:110px}
+  input:focus{outline:none;border-color:var(--bleu);box-shadow:0 0 0 3px rgba(31,95,168,.15)}
+  .arrow{font-size:1.4rem;color:var(--gris);padding-bottom:8px}
+  button{font-size:1.05rem;font-weight:600;padding:9px 18px;border:none;border-radius:8px;background:var(--bleu);color:#fff;cursor:pointer;}
+  button:hover{background:#174b86}
+  button:disabled{background:#9aa9bd;cursor:wait}
+  .hint{width:100%;font-size:.8rem;color:var(--gris);margin-top:-2px}
+  @media (max-width:580px){
+    .scene{flex-direction:column;align-items:center}
+    .bubble{margin-top:4px;width:calc(100% - 44px)}
+    .bubble::before{left:50%;top:-26px;border-width:0 14px 26px 14px;border-color:transparent transparent var(--encre) transparent;margin-left:-14px}
+    .bubble::after{left:50%;top:-19px;border-width:0 11px 21px 11px;border-color:transparent transparent #fff transparent;margin-left:-11px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>🤖 Robot Converter <small>— convertisseur d'unités automatique (ou presque)</small></header>
+
+  <div class="scene idle" id="scene">
+    <div class="robot">
+      <div class="comic" id="comic">
+        <svg class="impact" viewBox="-165 -165 330 330" id="impact"></svg>
+        <div class="flash" id="flash"></div>
+      </div>
+      <svg viewBox="0 0 260 330" xmlns="http://www.w3.org/2000/svg" aria-label="Tête de robot">
+        <defs>
+          <filter id="wobble" filterUnits="userSpaceOnUse" x="-60" y="-80" width="380" height="400">
+            <feTurbulence id="turb" type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="3"/>
+            <feDisplacementMap in="SourceGraphic" scale="3.2"/>
+          </filter>
+        </defs>
+        <g transform="translate(20,75)">
+        <g id="robotG" filter="url(#wobble)" fill="none" stroke="#1b1b1b" stroke-width="3.2"
+           stroke-linecap="round" stroke-linejoin="round">
+          <!-- antenne -->
+          <path id="antenna" d="M110 58 L110 22"/>
+          <circle id="antBall" cx="110" cy="16" r="7" fill="#ffcf33"/>
+          <!-- tête -->
+          <path d="M42 60 L178 58 L181 172 L40 175 Z" fill="#fff"/>
+          <path d="M40 98 L26 100 L27 135 L40 134"/>
+          <path d="M181 96 L195 98 L194 133 L181 132"/>
+          <g id="blush" stroke="none" fill="#ff9aa8" opacity="0">
+            <ellipse cx="66" cy="128" rx="10" ry="5"/><ellipse cx="156" cy="128" rx="10" ry="5"/>
+          </g>
+          <path id="brows" d=""/>
+          <g id="eyeL"></g>
+          <g id="eyeR"></g>
+          <path id="mouth" d="M72 145 L150 144"/>
+          <path id="grille" d="M84 140 L84 150 M98 140 L98 150 M112 140 L112 150 M126 140 L126 150 M140 140 L140 150" stroke-width="2"/>
+          <!-- cou + épaules -->
+          <path d="M96 175 L96 195 M124 175 L124 195"/>
+          <path d="M50 245 Q56 200 110 198 Q164 200 170 245"/>
+          <!-- étincelles -->
+          <g id="sparks" stroke="#e67e22" stroke-width="2.5" opacity="0">
+            <path d="M188 70 L200 62 M192 80 L206 80 M186 88 L198 96"/>
+            <path d="M32 70 L20 62 M28 80 L14 80"/>
+          </g>
+          <!-- œil à ressort -->
+          <g id="popEye" style="display:none">
+            <path id="spring" d="" stroke-width="2.4"/>
+            <g id="ball">
+              <circle cx="0" cy="0" r="15" fill="#fff"/>
+              <circle id="ballPup" cx="0" cy="0" r="5" fill="#1b1b1b"/>
+              <path d="M-9 -4 Q-4 -3 -6 4 M6 -9 Q3 -5 9 -2" stroke="#e74c3c" stroke-width="1.2"/>
+            </g>
+          </g>
+          <g id="fx"></g>
+        </g>
+        </g>
+      </svg>
+    </div>
+    <div class="bubble" id="bubble"></div>
+  </div>
+
+  <div class="panel">
+    <div class="field">
+      <label for="val">Valeur à convertir (nombre + unité)</label>
+      <input id="val" type="text" placeholder="ex : 3,25e2 mm" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="arrow">→</div>
+    <div class="field">
+      <label for="dest">Unité finale</label>
+      <input id="dest" type="text" placeholder="ex : m" autocomplete="off" spellcheck="false">
+    </div>
+    <button id="go">Conversion</button>
+    <div class="hint">Écritures acceptées : 325 mm · 3,25e2 mm · 3,25×10^2 mm · 3.25E-4 km (µ peut s'écrire u)</div>
+    <details class="hint" id="unitsList"><summary style="cursor:pointer">Unités connues du robot</summary><div id="unitsBody" style="margin-top:6px;line-height:1.7"></div></details>
+  </div>
+</div>
+
+<script>
+(function(){
+  const NS="http://www.w3.org/2000/svg";
+  const $ = id=>document.getElementById(id);
+  const pick = a => a[Math.floor(Math.random()*a.length)];
+
+  // ================= Unités =================
+  const EXP = {T:12,G:9,M:6,k:3,h:2,da:1,"":0,d:-1,c:-2,m:-3,"µ":-6,n:-9,p:-12,f:-15};
+  /* Familles : [symbole de base, grandeur, préfixes autorisés, puissance (m², m³), lien vers l'unité de référence] */
+  const FAM = [
+    ["m","longueur","T G M k h da _ d c m µ n p f",1],
+    ["al","longueur","",1,"1 al = 9,46×10¹⁵ m"],
+    ["ua","longueur","",1,"1 ua = 1,50×10¹¹ m"],
+    ["Å","longueur","",1,"1 Å = 10⁻¹⁰ m"],
+    ["m²","surface","k h da _ d c m µ",2],
+    ["ha","surface","",1,"1 ha = 10⁴ m²"],
+    ["m³","volume","k h da _ d c m µ",3],
+    ["L","volume","h da _ d c m µ",1,"1 L = 1 dm³ = 10⁻³ m³"],
+    ["g","masse","k h da _ d c m µ n",1],
+    ["t","masse","",1,"1 t = 10³ kg = 10⁶ g"],
+    ["u","masse","",1,"1 u = 1,66×10⁻²⁷ kg = 1,66×10⁻²⁴ g"],
+    ["s","durée","_ m µ n p f",1],
+    ["min","durée","",1,"1 min = 60 s"],
+    ["h","durée","",1,"1 h = 60 min = 3 600 s"],
+    ["j","durée","",1,"1 j = 24 h = 86 400 s"],
+    ["an","durée","",1,"1 an ≈ 365,25 j ≈ 3,16×10⁷ s"],
+    ["Hz","fréquence","T G M k _",1],
+    ["m/s","vitesse","k _ c m",1],
+    ["km/h","vitesse","",1,"1 m/s = 3,6 km/h"],
+    ["N","force","M k _ m µ",1],
+    ["Pa","pression","G M k h _",1],
+    ["bar","pression","_ m",1,"1 bar = 10⁵ Pa"],
+    ["J","énergie","T G M k _ m µ n",1],
+    ["eV","énergie","T G M k _ m",1,"1 eV = 1,60×10⁻¹⁹ J"],
+    ["Wh","énergie","T G M k _",1,"1 Wh = 3,6×10³ J"],
+    ["cal","énergie","k _",1,"1 cal ≈ 4,18 J"],
+    ["W","puissance","T G M k _ m µ",1],
+    ["C","charge électrique","k _ m µ n p",1],
+    ["Ah","charge électrique","_ m",1,"1 Ah = 3,6×10³ C"],
+    ["A","intensité","k _ m µ n",1],
+    ["V","tension","M k _ m µ",1],
+    ["Ω","résistance","G M k _ m",1],
+    ["F","capacité","_ m µ n p",1],
+    ["T","champ magnétique","_ m µ n",1],
+    ["mol","quantité de matière","k _ m µ n",1],
+    ["mol/L","concentration","_ m µ",1],
+    ["g/L","concentration massique","k _ m µ",1],
+    ["Bq","activité","T G M k _",1],
+    ["Gy","dose absorbée","_ m µ",1],
+    ["Sv","dose efficace","_ m µ",1],
+    ["dB","niveau sonore","",1],
+    ["K","température","_ m",1]
+  ];
+  const UNITS = {}, DUP=[];
+  for(const [b,dim,pref,pow,link] of FAM){
+    const pl = pref ? pref.split(" ").map(p=>p==="_"?"":p) : [""];
+    for(const p of pl){
+      // préfixe sur le numérateur pour m/s, mol/L, g/L
+      const sym = b.includes("/") ? (b==="m/s" ? p+"m/s" : p+b) : p+b;
+      if(UNITS[sym]) DUP.push(sym);
+      UNITS[sym] = {fam:b, dim, exp:EXP[p]*pow, link};
+    }
+  }
+  if(DUP.length) console.warn("Doublons d'unités :", DUP);
+  (function(){ const byDim={}; for(const u in UNITS){ (byDim[UNITS[u].dim]=byDim[UNITS[u].dim]||[]).push(u); }
+    document.getElementById("unitsBody").innerHTML = Object.entries(byDim)
+      .map(([d,l])=>`<b>${d}</b> : ${l.join(", ")}`).join("<br>"); })();
+
+  function normUnit(s){
+    let u=(s||"").replace(/\s+/g,"").replace(/μ/g,"µ").replace(/−/g,"-");
+    if(!u) return u;
+    u=u.replace(/ohms?$/i,"Ω").replace(/^(.*)Ohm$/,"$1Ω");
+    u=u.replace(/[.·×*]?L(\^|\*\*)?(-1|⁻¹)$/,"/L").replace(/[.·×*]?s(\^|\*\*)?(-1|⁻¹)$/,"/s").replace(/[.·×*]?h(\^|\*\*)?(-1|⁻¹)$/,"/h");
+    u=u.replace(/([a-zA-Zµ])(\^|\*\*)?2$/,"$1²").replace(/([a-zA-Zµ])(\^|\*\*)?3$/,"$1³");
+    if(/^(UA|AU|au|u\.a\.?)$/.test(u)) u="ua";
+    if(/^(a\.l\.?|AL)$/.test(u)) u="al";
+    if(/^(A°|angstr[oö]m)$/i.test(u)) u="Å";
+    if(u==="l"||u==="ℓ") u="L";
+    if(/^(ans?|années?)$/.test(u)) u="an";
+    if(/^(jours?|d)$/.test(u)) u="j";
+    if(!UNITS[u] && /^u./.test(u) && UNITS["µ"+u.slice(1)]) u="µ"+u.slice(1);
+    if(!UNITS[u] && /^(.*)l$/.test(u) && UNITS[u.slice(0,-1)+"L"]) u=u.slice(0,-1)+"L"; // ml → mL
+    return u;
+  }
+  function parse(txt){
+    const t = txt.trim().replace(/\s+/g," ");
+    const m = t.match(/^([+\-−]?(?:\d+[.,]?\d*|[.,]\d+)(?:\s*[eE]\s*[+\-−]?\d+|\s*[×x*·]\s*10\s*(?:\^|\*\*)?\s*\(?\s*[+\-−]?\d+\s*\)?)?)\s*(.*)$/);
+    if(!m){ const u=normUnit(t.replace(/^[^a-zA-Zµμ°ÅΩ]*/,"")); return UNITS[u]?{err:"num",u}:{err:"unit",u:t}; }
+    if(!m[2]) return {err:"unit"};
+    const u = normUnit(m[2]);
+    if(!UNITS[u]) return {err:"unit", u:m[2]};
+    const num = m[1].replace(/,/g,".").replace(/\s/g,"").replace(/−/g,"-")
+             .replace(/[×x*·]10(?:\^|\*\*)?\(?([+\-]?\d+)\)?/i,"e$1");
+    if(!/^[+\-]?(\d+\.?\d*|\.\d+)(e[+\-]?\d+)?$/i.test(num)) return {err:"num", u};
+    return {num:parseFloat(num), u};
+  }
+  const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+
+  const SUP = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","-":"⁻"};
+  const pw = n => "10"+String(n).split("").map(c=>SUP[c]).join("");
+  const box = s => `<span class="eq">${s}</span>`;
+
+  const INTRO = ["Euh... je ne sais pas trop...","Bzzt... calcul... calcul... ERREUR 404 cerveau introuvable.",
+    "Hmm. Mes circuits chauffent un peu...","Alors là... j'ai oublié comment on fait.",
+    "*bip* *bip* ... mémoire corrompue...","Attends, attends... ça me revient... non."];
+  const MAIS = ["mais je me souviens que","par contre je sais que","tout ce que je sais, c'est que","il me reste juste ça en mémoire :"];
+  const FIN = ["Débrouille-toi avec ça ! <span class='bz'>BZZT</span>","Je te laisse finir, je reboote...",
+    "Le reste, c'est toi le cerveau ! 🔧","À toi de jouer, humain.","<span class='bz'>*fumée*</span> Bon courage !"];
+
+  function reponse(src, dst){
+    const lignes=[], vu=new Set();
+    const add = s => { if(!vu.has(s)){ vu.add(s); lignes.push(box(s)); } };
+    for(const u of [src,dst]){
+      const U=UNITS[u];
+      if(u!==U.fam) add(`1 ${u} = ${pw(U.exp)} ${U.fam}`);
+    }
+    if(UNITS[src].fam!==UNITS[dst].fam)
+      for(const u of [src,dst]) if(UNITS[u].link) add(UNITS[u].link);
+    if(!lignes.length) lignes.push(box("... rien. Mémoire vide. <span class='bz'>BZZT</span>"));
+    return `${pick(INTRO)}<br>... ${pick(MAIS)}<br>${lignes.join("<br>")}<br>${pick(FIN)}`;
+  }
+
+  // ================= Visage =================
+  const EYE = {L:[80,102], R:[142,102]};
+  const BROWS = {
+    none:"", angry:"M62 78 L96 90 M160 78 L126 90",
+    raised:"M64 80 Q80 64 97 76 M126 84 L159 85", worried:"M64 88 L96 79 M126 79 L158 88"
+  };
+  const MOUTH = {
+    flat:"M72 145 L150 144", smile:"M74 138 Q111 170 148 138", frown:"M76 158 Q111 132 146 158",
+    wavy:"M72 146 L82 139 L92 151 L102 139 L112 151 L122 139 L132 151 L142 139 L150 146",
+    O:"M99 147 a12 10 0 1 0 24 0 a12 10 0 1 0 -24 0", side:"M80 152 Q115 148 146 136",
+    open:"M72 140 Q111 164 150 140 Q111 150 72 140"
+  };
+  function spiralD(cx,cy){
+    let d=""; for(let i=0;i<=60;i++){ const a=i/60*6*Math.PI, r=1+12*i/60;
+      d+=(i?"L":"M")+(cx+r*Math.cos(a)).toFixed(1)+" "+(cy+r*Math.sin(a)).toFixed(1)+" "; }
+    return d;
+  }
+  function eyeSVG(mode,side){
+    const [x,y]=EYE[side], id="pup"+side;
+    switch(mode){
+      case "happy": return `<path d="M${x-12} ${y+5} Q${x} ${y-14} ${x+12} ${y+5}"/>`;
+      case "closed": return `<path d="M${x-13} ${y} Q${x} ${y+6} ${x+13} ${y}"/>`;
+      case "half": return `<circle cx="${x}" cy="${y}" r="15" fill="#fff"/><circle id="${id}" cx="${x}" cy="${y+6}" r="4.5" fill="#1b1b1b"/>
+        <path d="M${x-15} ${y} A15 15 0 0 1 ${x+15} ${y} Z" fill="#c9ced6"/>`;
+      case "wide": return `<circle cx="${x}" cy="${y}" r="18" fill="#fff"/><circle id="${id}" cx="${x}" cy="${y}" r="2.8" fill="#1b1b1b"/>`;
+      case "x": return `<path d="M${x-10} ${y-10} L${x+10} ${y+10} M${x+10} ${y-10} L${x-10} ${y+10}" stroke-width="3.6"/>`;
+      case "spiral": return `<circle cx="${x}" cy="${y}" r="15" fill="#fff"/><path d="${spiralD(x,y)}" stroke-width="2">
+        <animateTransform attributeName="transform" type="rotate" from="${side==="L"?0:360} ${x} ${y}" to="${side==="L"?360:0} ${x} ${y}" dur="0.9s" repeatCount="indefinite"/></path>`;
+      case "socket": return `<circle cx="${x}" cy="${y}" r="13" fill="#1b1b1b"/><circle cx="${x}" cy="${y}" r="13" fill="#3a3a3a" stroke="none" opacity=".6"/>`;
+      default: return `<circle cx="${x}" cy="${y}" r="15" fill="#fff"/><circle id="${id}" cx="${x}" cy="${y}" r="5" fill="#1b1b1b"/>`;
+    }
+  }
+
+  /* Expressions :
+     eyes / eyeR : forme des yeux · mouth · brows · fx : effets · pop : œil sur ressort */
+  const FACES = {
+    neutral:   {eyes:"normal", mouth:"flat", brows:"none"},
+    happy:     {eyes:"happy",  mouth:"smile", brows:"none", fx:["blush"]},
+    bored:     {eyes:"half",   mouth:"flat",  brows:"none"},
+    perplexed: {eyes:"normal", eyeR:"wide", mouth:"side", brows:"raised", fx:["question"]},
+    vexed:     {eyes:"half",   mouth:"frown", brows:"angry"},
+    furious:   {eyes:"normal", mouth:"wavy",  brows:"angry", fx:["steam"], shake:900},
+    // après le bug
+    smoke:     {eyes:"half",   mouth:"wavy",  brows:"worried", fx:["smoke"]},
+    spring:    {eyes:"wide",   mouth:"O",     brows:"worried", pop:true},
+    dead:      {eyes:"x",      mouth:"wavy",  brows:"none", fx:["smoke"], antenna:"bent"},
+    dizzy:     {eyes:"spiral", mouth:"wavy",  brows:"none", fx:["stars"]},
+    sweat:     {eyes:"wide",   mouth:"side",  brows:"worried", fx:["sweat"]},
+    burnt:     {eyes:"x", eyeR:"normal", mouth:"O", brows:"none", fx:["smoke","sparks"], antenna:"bent"},
+    springSmoke:{eyes:"half",  mouth:"wavy",  brows:"none", pop:true, fx:["smoke"]}
+  };
+  const AFTER_BUG = ["smoke","spring","dead","dizzy","sweat","burnt","springSmoke"];
+
+  let face = FACES.neutral, faceName="neutral", fxOn=new Set(), talking=false;
+
+  function setFace(name){
+    faceName=name; face=FACES[name];
+    $("brows").setAttribute("d", BROWS[face.brows||"none"]);
+    setMouth(face.mouth);
+    $("eyeL").innerHTML = eyeSVG(face.eyes,"L");
+    const popWanted = !!face.pop;
+    if(popWanted && !pop.active) startPop();
+    if(!popWanted && pop.active) retractPop();
+    $("eyeR").innerHTML = eyeSVG(pop.active ? "socket" : (face.eyeR||face.eyes), "R");
+    $("antenna").setAttribute("d", face.antenna==="bent" ? "M110 58 L112 38 L128 30" : "M110 58 L110 22");
+    $("antBall").setAttribute("cx", face.antenna==="bent" ? 134 : 110);
+    $("antBall").setAttribute("cy", face.antenna==="bent" ? 27 : 16);
+    // effets
+    fxOn = new Set(face.fx||[]);
+    $("blush").setAttribute("opacity", fxOn.has("blush")?".7":"0");
+    $("sparks").setAttribute("opacity", fxOn.has("sparks")?"1":"0");
+    syncStaticFx();
+    if(face.shake){ scene.classList.add("shake"); scene.classList.remove("idle");
+      setTimeout(()=>{ if(!busy){ scene.classList.remove("shake"); scene.classList.add("idle"); } }, face.shake); }
+  }
+  function setMouth(m){
+    $("mouth").setAttribute("d", MOUTH[m]);
+    $("grille").style.display = m==="flat" ? "" : "none";
+  }
+
+  // ---- Effets (fumée, vapeur, étoiles, sueur, "?") ----
+  const fxG = $("fx"), parts=[];
+  let stat = {};
+  function el(tag, attrs){ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); fxG.appendChild(e); return e; }
+  function syncStaticFx(){
+    for(const k in stat){ if(!fxOn.has(k)){ stat[k].forEach(e=>e.remove()); delete stat[k]; } }
+    if(fxOn.has("question") && !stat.question){
+      const t=el("text",{x:"190",y:"40","class":"qmark"}); t.textContent="?"; stat.question=[t];
+    }
+    if(fxOn.has("stars") && !stat.stars){
+      stat.stars=[0,1,2].map(()=>el("path",{d:starD(0,0,7),fill:"#ffcf33","stroke-width":"1.8"}));
+    }
+    if(fxOn.has("sweat") && !stat.sweat){
+      stat.sweat=[el("path",{d:"M0 -9 Q7 2 0 6 Q-7 2 0 -9 Z",fill:"#7cc0ff","stroke-width":"2"})];
+    }
+  }
+  function starD(x,y,r){ let d=""; for(let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, rr=i%2?r*0.45:r;
+    d+=(i?"L":"M")+(x+rr*Math.cos(a)).toFixed(1)+" "+(y+rr*Math.sin(a)).toFixed(1); } return d+"Z"; }
+
+  let acc={smoke:0,steam:0};
+  function spawn(kind){
+    if(kind==="smoke"){
+      const x0=60+Math.random()*100;
+      parts.push({e:el("circle",{cx:x0,cy:58,r:5,fill:"#c4c9d0","stroke-width":"1.6",stroke:"#555"}),
+        x0, y0:56, t:0, life:2.2+Math.random()*0.8, kind, ph:Math.random()*6});
+    } else {
+      const left=Math.random()<.5;
+      parts.push({e:el("circle",{cx:0,cy:0,r:4,fill:"#fff","stroke-width":"1.5",stroke:"#777"}),
+        x0:left?24:197, y0:116, dir:left?-1:1, t:0, life:0.9, kind});
+    }
+  }
+
+  // ---- Œil à ressort ----
+  const pop = {active:false, t:0, retract:false, L:0};
+  const SOCK = EYE.R, DIR = (()=>{ const dx=62, dy=78, n=Math.hypot(dx,dy); return [dx/n,dy/n,n]; })();
+  function startPop(){ pop.active=true; pop.retract=false; pop.t=0; $("popEye").style.display=""; }
+  function retractPop(){ pop.retract=true; }
+  function drawPop(dt){
+    pop.t+=dt;
+    const [ux,uy,L0]=DIR;
+    let L, th;
+    if(pop.retract){
+      pop.L*=Math.max(0,1-dt*9); L=pop.L; th=0;
+      if(L<2){ pop.active=false; pop.retract=false; $("popEye").style.display="none";
+        $("eyeR").innerHTML = eyeSVG(face.eyeR||face.eyes,"R"); return; }
+    } else {
+      const t=pop.t;
+      L = L0*(1 - Math.exp(-2.6*t)*Math.cos(11*t));       // jaillit puis rebondit
+      th = 0.55*Math.exp(-0.9*t)*Math.sin(6.5*t) + 0.05*Math.sin(2.1*t); // balancement
+      pop.L=L;
+    }
+    const c=Math.cos(th), s=Math.sin(th);
+    const vx=ux*c-uy*s, vy=ux*s+uy*c;            // direction tournée
+    const bx=SOCK[0]+vx*L, by=SOCK[1]+vy*L;
+    // ressort en zigzag
+    const N=14, amp=6, px=-vy, py=vx; let d=`M${SOCK[0]} ${SOCK[1]}`;
+    for(let i=1;i<N;i++){ const f=i/N, k=(i%2?1:-1)*amp;
+      d+=` L${(SOCK[0]+vx*L*f+px*k).toFixed(1)} ${(SOCK[1]+vy*L*f+py*k).toFixed(1)}`; }
+    d+=` L${bx.toFixed(1)} ${by.toFixed(1)}`;
+    $("spring").setAttribute("d",d);
+    $("ball").setAttribute("transform",`translate(${bx.toFixed(1)},${by.toFixed(1)}) rotate(${(th*120).toFixed(0)})`);
+    $("ballPup").setAttribute("cx",(4*Math.sin(pop.t*9)).toFixed(1));
+    $("ballPup").setAttribute("cy",(4*Math.cos(pop.t*7)).toFixed(1));
+  }
+
+  // ---- Boucle d'animation ----
+  let last=performance.now(), T=0;
+  function loop(now){
+    const dt=Math.min(0.05,(now-last)/1000); last=now; T+=dt;
+    if(fxOn.has("smoke")){ acc.smoke+=dt; while(acc.smoke>0.22){ acc.smoke-=0.22; spawn("smoke"); } }
+    if(fxOn.has("steam")){ acc.steam+=dt; while(acc.steam>0.07){ acc.steam-=0.07; spawn("steam"); } }
+    for(let i=parts.length-1;i>=0;i--){
+      const p=parts[i]; p.t+=dt; const f=p.t/p.life;
+      if(f>=1){ p.e.remove(); parts.splice(i,1); continue; }
+      if(p.kind==="smoke"){
+        p.e.setAttribute("cx",(p.x0+10*Math.sin(p.ph+p.t*2.5)+f*15).toFixed(1));
+        p.e.setAttribute("cy",(p.y0-f*95).toFixed(1));
+        p.e.setAttribute("r",(5+f*16).toFixed(1));
+        p.e.setAttribute("opacity",(0.95*(1-f)).toFixed(2));
+      } else {
+        p.e.setAttribute("cx",(p.x0+p.dir*f*45).toFixed(1));
+        p.e.setAttribute("cy",(p.y0-f*30-6*Math.sin(f*9)).toFixed(1));
+        p.e.setAttribute("r",(3+f*8).toFixed(1));
+        p.e.setAttribute("opacity",(1-f).toFixed(2));
+      }
+    }
+    if(stat.stars) stat.stars.forEach((e,i)=>{ const a=T*4+i*2.094;
+      e.setAttribute("transform",`translate(${(111+58*Math.cos(a)).toFixed(1)},${(42+12*Math.sin(a)).toFixed(1)}) rotate(${(T*200%360).toFixed(0)})`);
+      e.setAttribute("opacity", Math.sin(a)>-0.3?1:0.45); });
+    if(stat.sweat){ const f=(T%1.4)/1.4; stat.sweat[0].setAttribute("transform",`translate(${176-f*3},${66+f*55})`);
+      stat.sweat[0].setAttribute("opacity",(1-f*f).toFixed(2)); }
+    if(stat.question){ stat.question[0].setAttribute("transform",`translate(0,${(4*Math.sin(T*3)).toFixed(1)}) rotate(${(8*Math.sin(T*2)).toFixed(1)} 200 30)`); }
+    if(pop.active) drawPop(dt);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---- Clignement + yeux qui suivent la souris ----
+  setInterval(()=>{
+    if(busy || faceName!=="neutral" || Math.random()<.4) return;
+    $("eyeL").innerHTML=eyeSVG("closed","L"); $("eyeR").innerHTML=eyeSVG("closed","R");
+    setTimeout(()=>{ if(faceName==="neutral" && !busy){ $("eyeL").innerHTML=eyeSVG("normal","L"); $("eyeR").innerHTML=eyeSVG("normal","R"); } },130);
+  }, 2600);
+
+  document.addEventListener("mousemove",e=>{
+    if(busy) return;
+    const r=document.querySelector(".robot > svg").getBoundingClientRect(), k=r.width/260;
+    for(const side of ["L","R"]){
+      const p=$("pup"+side); if(!p) continue;
+      const [cx,cy]=EYE[side], dy0 = (face.eyes==="half" && side==="L")||(face.eyes==="half"&&side==="R") ? 6 : 0;
+      const ex=r.left+(cx+20)*k, ey=r.top+(cy+75)*k;
+      const a=Math.atan2(e.clientY-ey,e.clientX-ex), d=Math.min(7,Math.hypot(e.clientX-ex,e.clientY-ey)/30);
+      p.setAttribute("cx",cx+d*Math.cos(a)); p.setAttribute("cy",cy+dy0+Math.max(dy0?-1:-99, d*Math.sin(a)));
+    }
+  });
+  let seed=3; setInterval(()=>{ seed=(seed%50)+1; $("turb").setAttribute("seed",seed); }, 260);
+
+  // ================= Bulle =================
+  const inp=$("val"), dest=$("dest"), bub=$("bubble"), btn=$("go"), scene=$("scene");
+  let typing=null, talkT=null, busy=false;
+  function say(html, faceName2, speed=22){
+    clearInterval(typing);
+    if(faceName2) setFace(faceName2);
+    bub.classList.remove("pop"); void bub.offsetWidth; bub.classList.add("pop");
+    const toks = html.match(/<[^>]+>|&[a-z]+;|[\s\S]/g) || [];
+    let i=0, out="";
+    bub.classList.add("cursor"); mouthTalk(true);
+    typing=setInterval(()=>{
+      while(i<toks.length && toks[i][0]==="<") out+=toks[i++];
+      if(i<toks.length) out+=toks[i++];
+      bub.innerHTML=out;
+      if(i>=toks.length){ clearInterval(typing); bub.classList.remove("cursor"); mouthTalk(false); }
+    }, speed);
+  }
+  function mouthTalk(on){
+    clearInterval(talkT);
+    if(!on){ setMouth(face.mouth); return; }
+    let k=0; talkT=setInterval(()=>{ k^=1; setMouth(k?"open":face.mouth); },120);
+  }
+
+  // ================= Effets BD =================
+  const comic=$("comic");
+  // traits d'impact autour de la tête
+  (function(){ let s=""; for(let i=0;i<28;i++){ const a=i/28*2*Math.PI+(i%2)*0.05, r1=118+(i%3)*8, r2=150+(i%2)*14;
+      s+=`<path d="M${(r1*Math.cos(a)).toFixed(1)} ${(r1*Math.sin(a)).toFixed(1)} L${(r2*Math.cos(a)).toFixed(1)} ${(r2*Math.sin(a)).toFixed(1)}" stroke="#1b1b1b" stroke-width="${2+(i%3)}" stroke-linecap="round"/>`; }
+    $("impact").innerHTML=s; })();
+
+  const BUG_WORDS=["BZZT!","KRRZZ!","CLIC!","BIP?!","ZAP!","CRRR!","TILT!","POC!","DZING!","#@%!","BLIP!","VRRR!"];
+  const FINAL_WORD={spring:"BOING!", springSmoke:"SPROING!", smoke:"PFFFT!", dead:"CRAC!", dizzy:"TOING!",
+                    sweat:"GLOUPS!", burnt:"KABOOM!", furious:"GRRR!", vexed:"HMPF!"};
+  const COLORS=[["#ffd23f","#e63946"],["#ff6b35","#fff"],["#4cc9f0","#1b1b1b"],["#f72585","#fff"],["#fff","#e63946"],["#b8f35a","#1b1b1b"]];
+
+  function starPts(w,h,n,jag){
+    let p=[]; for(let i=0;i<n*2;i++){ const a=i/(n*2)*2*Math.PI, k=i%2?1-jag*(0.7+Math.random()*0.6):1;
+      p.push(((w/2)*k*Math.cos(a)).toFixed(1)+","+((h/2)*k*Math.sin(a)).toFixed(1)); }
+    return p.join(" ");
+  }
+  function burst(word, opt={}){
+    const big=!!opt.big, fs=big?32:19+Math.floor(Math.random()*6);
+    const w=Math.max(60, word.length*fs*0.7+28), h=fs*2.4+(big?10:0);
+    const [bg,fg]=opt.colors||pick(COLORS);
+    const d=document.createElement("div"); d.className="burst";
+    const box=comic.getBoundingClientRect();
+    let x,y;
+    if(opt.x!=null){ x=opt.x; y=opt.y; }
+    else { const a=Math.random()*2*Math.PI, r=0.36+Math.random()*0.1;
+      x=box.width*(0.5+r*Math.cos(a)*1.05); y=box.height*(0.55+r*Math.sin(a)*0.9); }
+    d.style.left=x+"px"; d.style.top=y+"px";
+    d.style.setProperty("--r",(opt.rot!=null?opt.rot:(Math.random()*40-20))+"deg");
+    d.style.setProperty("--fs",fs+"px");
+    d.style.setProperty("--d",(big?1.6:0.75)+"s");
+    d.innerHTML=`<svg width="${w}" height="${h}" viewBox="${-w/2} ${-h/2} ${w} ${h}">
+      <polygon points="${starPts(w,h,big?14:11,big?0.28:0.24)}" fill="${bg}" stroke="#1b1b1b" stroke-width="3" stroke-linejoin="round"/>
+      <text x="0" y="${fs*0.35}" text-anchor="middle" fill="${fg}">${word}</text></svg>`;
+    comic.appendChild(d);
+    setTimeout(()=>d.remove(), big?1700:850);
+  }
+  function flash(){ const f=$("flash"); f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); }
+
+  // ================= Phase "bug" =================
+  let lastAfter="";
+  function bug(cb){
+    busy=true; btn.disabled=true;
+    clearInterval(typing); clearInterval(talkT); bub.classList.remove("cursor");
+    setFace("neutral"); setMouth("wavy");
+    scene.classList.remove("idle"); scene.classList.add("shake","think");
+    const style = pick(["roll","spiral","flicker"]);
+    if(style==="spiral"){ $("eyeL").innerHTML=eyeSVG("spiral","L"); $("eyeR").innerHTML=eyeSVG("spiral","R"); }
+    let t=0;
+    burst(pick(BUG_WORDS));
+    const bi=setInterval(()=>burst(pick(BUG_WORDS)), 300);
+    const dots=["Calcul en cours","Calcul en cours.","Calcul en cours..","Calcul en cours...","Conversion<span class='bz'>##@%!</span>","<span class='bz'>ERR0R ERR0R</span>"];
+    const iv=setInterval(()=>{
+      t++;
+      if(style==="roll" && $("pupL") && $("pupR")){ const a=t*0.9;
+        $("pupL").setAttribute("cx",80+8*Math.cos(a)); $("pupL").setAttribute("cy",102+8*Math.sin(a));
+        $("pupR").setAttribute("cx",142+8*Math.cos(-a)); $("pupR").setAttribute("cy",102+8*Math.sin(-a)); }
+      if(style==="flicker"){ const m=pick(["x","wide","closed","normal","spiral"]);
+        $("eyeL").innerHTML=eyeSVG(m,"L"); $("eyeR").innerHTML=eyeSVG(pick(["x","wide","closed","normal"]),"R"); }
+      bub.innerHTML=dots[Math.min(dots.length-1,Math.floor(t/4))];
+      $("sparks").setAttribute("opacity", t%2?"1":"0.2");
+    },80);
+    setTimeout(()=>{
+      clearInterval(iv); clearInterval(bi);
+      scene.classList.remove("shake","think"); scene.classList.add("idle");
+      busy=false; btn.disabled=false;
+      let f; do{ f=pick(AFTER_BUG); }while(f===lastAfter); lastAfter=f;
+      flash();
+      const box=comic.getBoundingClientRect();
+      burst(FINAL_WORD[f], {big:true, x:box.width*0.5, y:box.height*0.2, rot:-8,
+        colors: f==="burnt"||f==="dead" ? ["#ff6b35","#ffd23f"] : ["#ffd23f","#e63946"]});
+      cb(f);
+    },1700);
+  }
+
+  // ================= Événements =================
+  inp.addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
+  dest.addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
+  btn.addEventListener("click",go);
+
+  function go(){
+    if(busy) return;
+    const p=parse(inp.value), dst=normUnit(dest.value);
+    if(!inp.value.trim()) return say("Il faut d'abord m'écrire une valeur avec son unité ! Par exemple <b>3,25e2 mm</b>.","bored");
+    if(p.err==="unit") return say(`Hein ? Je ne connais pas l'unité <b>${p.u?esc(p.u):"..."}</b>. N'oublie pas l'unité après le nombre !`,"perplexed");
+    if(p.err==="num") return say(`Ce nombre me donne mal aux circuits... Essaie une écriture comme <b>325</b>, <b>3,25e2</b> ou <b>3,25×10^2</b>.`,"perplexed");
+    if(!dst) return say("Et je convertis en quoi ? Écris l'<b>unité finale</b> !","perplexed");
+    if(!UNITS[dst]) return say(`L'unité <b>${esc(dst)}</b> ? Jamais entendu parler...`,"perplexed");
+    const cb=comic.getBoundingClientRect(), top={big:true, x:cb.width*0.5, y:cb.height*0.2, rot:-8};
+    if(p.u===dst){ burst(FINAL_WORD.vexed, {...top, colors:["#fff","#1f5fa8"]}); }
+    else if(UNITS[p.u].dim!==UNITS[dst].dim){ flash(); burst(FINAL_WORD.furious, {...top, colors:["#e63946","#fff"]}); }
+    if(p.u===dst) return say(`Mais... c'est déjà en <b>${dst}</b> ?! Tu essaies de me piéger ? Hmpf.`,"vexed");
+    if(UNITS[p.u].dim!==UNITS[dst].dim) return say(`Convertir des <b>${p.u}</b> (${UNITS[p.u].dim}) en <b>${dst}</b> (${UNITS[dst].dim}) ?! Même un robot cassé sait que ce n'est pas la même grandeur ! <span class="bz">GRRR</span>`,"furious");
+    bug(f=>say(reponse(p.u,dst), f));
+  }
+
+  setFace("happy");
+  say("Bip bip ! Je suis <b>Robot Converter</b>, le convertisseur ultime. 🤖<br>Je peux faire une conversion pour toi ? Écris une valeur avec son unité, l'unité finale, et clique sur <b>Conversion</b> !");
+  setTimeout(()=>{ if(faceName==="happy" && !busy) setFace("neutral"); }, 4500);
+})();
+</script>
+</body>
+</html>
