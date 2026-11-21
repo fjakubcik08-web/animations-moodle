@@ -120,11 +120,15 @@ function stackPos(L){
   for(const o of lots){ if(o === L) break; if(o.r !== null && o !== drag?.obj && Math.abs(o.r - L.r) < 1e-9) k++; }
   return xOf(L.r) + k*(2*GR + 4);
 }
-function drawStack(c, x, L, col){
+const TAG_W = 46, TAG_H = 18;
+function tagBase(L){ return AX.y - 12 - L.e*GS - 6; }
+function drawStack(c, x, L, col, ty){
   for(let i=0;i<L.e;i++) miniGeode(c, x, AX.y - 12 - i*GS, col);
-  const ty = AX.y - 12 - L.e*GS - 6;
-  wrect(c, x-11, ty-14, 22, 18, 0.6); c.fillStyle = "#fff"; c.fill(); c.lineWidth = 1.6; c.strokeStyle = INK; c.stroke();
-  txt(c, String(L.n), x, ty-5, 13, "center", INK, true);
+  const base = tagBase(L);
+  if(ty === undefined) ty = base;
+  if(ty < base){ c.lineWidth = 1; c.strokeStyle = "#777"; c.beginPath(); c.moveTo(x, ty+4); c.lineTo(x, base-GR+2); c.stroke(); }
+  wrect(c, x-TAG_W/2, ty-TAG_H+4, TAG_W, TAG_H, 0.6); c.fillStyle = "#fff"; c.fill(); c.lineWidth = 1.6; c.strokeStyle = INK; c.stroke();
+  txt(c, "Lot " + L.n, x, ty-5, 13, "center", INK, true);
 }
 function drawCard(c, L, x, y){
   wrect(c, x, y, CARD_W, CARD_H, 0.9);
@@ -180,14 +184,26 @@ function frame(){
     ctx.beginPath(); ctx.moveTo(x, AX.y); ctx.lineTo(x, AX.y + (big ? 12 : 6)); ctx.stroke();
     if(big) txt(ctx, fr(r), x, AX.y + 30, 13, "center");
   }
-  txt(ctx, "ρ (g/cm³)", AX.x1+28, AX.y - 18, 14, "right");
+  txt(ctx, "ρ (g/mL)", AX.x1+28, AX.y - 18, 14, "right");
   // bornes
   bounds.forEach(drawBound.bind(null, ctx));
   // lots placés
-  for(const L of lots){
-    if(L.r === null || (drag && drag.obj === L)) continue;
-    const x = stackPos(L); L.x = x;
-    drawStack(ctx, x, L, inZone(L.r) ? GREEN : RED);
+  const placed = lots.filter(L => L.r !== null && !(drag && drag.obj === L));
+  placed.forEach(L => { L.x = stackPos(L); });
+  placed.sort((u, v) => u.x - v.x);
+  const tags = [];
+  for(const L of placed){
+    let ty = tagBase(L);
+    let moved = true;
+    while(moved){
+      moved = false;
+      for(const t of tags){
+        if(Math.abs(t.x - L.x) < TAG_W + 2 && Math.abs(t.y - ty) < TAG_H + 2){ ty = t.y - TAG_H - 4; moved = true; }
+      }
+    }
+    tags.push({x:L.x, y:ty});
+    L.ty = ty;
+    drawStack(ctx, L.x, L, inZone(L.r) ? GREEN : RED, ty);
   }
   // objet en cours de glissement
   if(drag && drag.type === 'lot'){
@@ -217,8 +233,9 @@ function hit(p){
   // piles posées (du dernier au premier)
   for(let i=lots.length-1;i>=0;i--){
     const L = lots[i]; if(L.r === null) continue;
-    const top = AX.y - 12 - L.e*GS - 22;
+    const top = AX.y - 12 - L.e*GS - 22, ty = (L.ty === undefined) ? top : L.ty;
     if(Math.abs(p.x - L.x) < GR+5 && p.y > top && p.y < AX.y) return {type:'lot', obj:L};
+    if(Math.abs(p.x - L.x) < TAG_W/2 && p.y > ty-TAG_H+4 && p.y < ty+4) return {type:'lot', obj:L};
   }
   // bornes (drapeau ou poignée)
   for(const B of bounds){
