@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Labo du minéralogiste – géode de galène</title>
+<style>
+html,body{margin:0;padding:0;background:#fffdf7;overflow-x:hidden;overflow-y:auto;}
+body{font-family:'Comic Sans MS','Comic Neue','Chalkboard SE',cursive;color:#222;}
+#wrap{max-width:920px;margin:0 auto;padding:8px;box-sizing:border-box;}
+canvas{display:block;width:100%;height:auto;aspect-ratio:900/560;touch-action:none;}
+.bar{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:8px 0 4px;}
+button{font-family:inherit;font-size:17px;background:#fff;color:#222;border:2px solid #222;padding:6px 16px;cursor:pointer;
+  border-radius:14px 4px 11px 5px/5px 11px 4px 14px;box-shadow:2px 3px 0 #222;}
+button:active{transform:translate(2px,3px);box-shadow:none;}
+button.on{background:#ffe9a8;}
+#msg{text-align:center;font-size:16px;min-height:24px;padding:2px 6px;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv" width="900" height="560"></canvas>
+  <div class="bar">
+    <button id="bLoupe">🔍 Loupe</button>
+    <button id="bReset">↺ Recommencer</button>
+  </div>
+  <div id="msg">Fais glisser la géode sur la balance ou dans l'éprouvette.</div>
+</div>
+<script>
+(function(){
+"use strict";
+/* ---------- paramètres (JSON -> XOR -> base64url) ---------- */
+const KEY = "PBayle-Geode#galene";
+function decodeP(s){
+  try{
+    s = s.replace(/-/g,'+').replace(/_/g,'/');
+    while(s.length % 4) s += '=';
+    const bin = atob(s), k = new TextEncoder().encode(KEY);
+    const b = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) b[i] = bin.charCodeAt(i) ^ k[i % k.length];
+    return JSON.parse(new TextDecoder().decode(b));
+  }catch(e){ return {}; }
+}
+const qs = new URLSearchParams(location.search);
+const P = {m:150.0, v1:50, v2:70, cap:100, g:1, d:1};
+if(qs.get('p')) Object.assign(P, decodeP(qs.get('p')));
+for(const k of ['m','v1','v2','cap','g','d']) if(qs.has(k)) P[k] = parseFloat(qs.get(k));
+if(!(P.cap>0)) P.cap = 100;
+if(!(P.g>0)) P.g = 1;
+P.d = Math.max(0, Math.min(2, Math.round(P.d)));
+
+/* ---------- canvas ---------- */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const W = 900, H = 560;
+let dpr = 1;
+function resize(){ dpr = window.devicePixelRatio || 1; cv.width = W*dpr; cv.height = H*dpr; }
+resize(); window.addEventListener('resize', resize);
+const FONT = "'Comic Sans MS','Comic Neue','Chalkboard SE',cursive";
+const INK = "#222";
+
+/* ---------- trait "dessiné à la main" (bruit déterministe) ---------- */
+function hsh(n){ n = Math.sin(n*127.1 + 311.7)*43758.5453; return n - Math.floor(n); }
+function wseg(c, x1,y1,x2,y2, amp, first){
+  const L = Math.hypot(x2-x1, y2-y1) || 1;
+  const n = Math.max(2, Math.round(L/16));
+  const nx = -(y2-y1)/L, ny = (x2-x1)/L;
+  const sd = x1*0.37 + y1*0.91 + x2*1.31 + y2*0.17;
+  if(first) c.moveTo(x1,y1);
+  for(let i=1;i<=n;i++){
+    const t = i/n, o = (i===n) ? 0 : (hsh(sd + i*3.7) - 0.5)*2*amp;
+    c.lineTo(x1 + (x2-x1)*t + nx*o, y1 + (y2-y1)*t + ny*o);
+  }
+}
+function wpoly(c, pts, closed, amp){
+  c.beginPath();
+  for(let i=0;i<pts.length-1;i++) wseg(c, pts[i][0],pts[i][1],pts[i+1][0],pts[i+1][1], amp, i===0);
+  if(closed){ const a = pts[pts.length-1], b = pts[0]; wseg(c, a[0],a[1],b[0],b[1], amp, false); c.closePath(); }
+}
+function wline(c,x1,y1,x2,y2,amp){ wpoly(c, [[x1,y1],[x2,y2]], false, amp===undefined?1.1:amp); c.stroke(); }
+function wrect(c,x,y,w,h,amp){ wpoly(c, [[x,y],[x+w,y],[x+w,y+h],[x,y+h]], true, amp===undefined?1.1:amp); }
+function txt(c, s, x, y, size, align, col){
+  c.font = size + "px " + FONT; c.fillStyle = col || INK;
+  c.textAlign = align || "left"; c.textBaseline = "middle"; c.fillText(s, x, y);
+}
+
+/* ---------- géométrie ---------- */
+const BENCH = 482;
+const R = 26;                                   // rayon de la géode
+const TRAY = {x:130, y:BENCH-12-R};
+const BAL = {cx:360, top:392};
+const TUBE = {cx:600, xl:566, xr:634, yTop:62, yB:455, yCap:95};
+const ppm = (TUBE.yB - TUBE.yCap) / P.cap;      // pixels par mL
+const yOf = v => TUBE.yB - v*ppm;
+const REST_TUBE = TUBE.yB - R;
+const LOUPE = {cx:765, cy:240, r:100, z:4, fx:592};
+
+/* ---------- état ---------- */
+const geo = {x:TRAY.x, y:TRAY.y, loc:'tray', vy:0};
+let drag = null, Vcur = P.v1, loupeOn = false, tBal = -1, splashed = false;
+let parts = [], ploufT = -1;
+const msg = document.getElementById('msg');
+
+/* ---------- dessin de la géode ---------- */
+const GEO_OUT = [], GEO_IN = [];
+for(let i=0;i<12;i++){
+  const a = i/12*2*Math.PI;
+  GEO_OUT.push([Math.cos(a)*(0.86 + 0.16*hsh(i*5.1)), Math.sin(a)*(0.82 + 0.16*hsh(i*2.3))]);
+  GEO_IN.push([Math.cos(a)*(0.52 + 0.1*hsh(i*7.7)), Math.sin(a)*(0.5 + 0.1*hsh(i*1.9))]);
+}
+const CUBES = [[-0.22,-0.15,0.2],[0.12,-0.22,0.17],[0.2,0.08,0.2],[-0.12,0.16,0.16],[0.0,-0.02,0.13]];
+function drawGeode(c, x, y){
+  c.save(); c.lineJoin = "round";
+  wpoly(c, GEO_OUT.map(p=>[x+p[0]*R, y+p[1]*R]), true, 1.0);
+  c.fillStyle = "#8d847a"; c.fill(); c.lineWidth = 2; c.strokeStyle = INK; c.stroke();
+  wpoly(c, GEO_IN.map(p=>[x+p[0]*R, y+p[1]*R]), true, 0.6);
+  c.fillStyle = "#3b3b44"; c.fill(); c.lineWidth = 1.4; c.stroke();
+  for(const q of CUBES){
+    const s = q[2]*R, cx = x+q[0]*R, cy = y+q[1]*R;
+    c.beginPath(); c.moveTo(cx-s/2,cy-s/2); c.lineTo(cx+s/2,cy-s/2); c.lineTo(cx+s/2,cy+s/2); c.lineTo(cx-s/2,cy+s/2); c.closePath();
+    c.fillStyle = "#c3c7cf"; c.fill(); c.lineWidth = 1; c.strokeStyle = "#111"; c.stroke();
+    c.beginPath(); c.moveTo(cx-s/2,cy-s/2); c.lineTo(cx-s/4,cy-s*0.75); c.lineTo(cx+s*0.75,cy-s*0.75); c.lineTo(cx+s/2,cy-s/2);
+    c.fillStyle = "#e4e6ea"; c.fill(); c.stroke();
+  }
+  c.restore();
+}
+
+/* ---------- éprouvette (réutilisée par la loupe) ---------- */
+function drawTube(c){
+  const {xl, xr, yTop, yB} = TUBE;
+  // verre
+  c.fillStyle = "rgba(205,228,242,0.35)";
+  c.fillRect(xl, yTop, xr-xl, yB-yTop);
+  // géode immergée
+  if(geo.loc === 'tube') drawGeode(c, geo.x, geo.y);
+  // eau + ménisque (bas du ménisque exactement au niveau)
+  const ys = yOf(Vcur);
+  c.beginPath();
+  c.moveTo(xl, ys-4);
+  c.bezierCurveTo(xl+5, ys-0.3, xl+10, ys, xl+14, ys);
+  c.lineTo(xr-14, ys);
+  c.bezierCurveTo(xr-10, ys, xr-5, ys-0.3, xr, ys-4);
+  c.lineTo(xr, yB); c.lineTo(xl, yB); c.closePath();
+  c.fillStyle = "rgba(80,155,230,0.42)"; c.fill();
+  c.beginPath();
+  c.moveTo(xl, ys-4);
+  c.bezierCurveTo(xl+5, ys-0.3, xl+10, ys, xl+14, ys);
+  c.lineTo(xr-14, ys);
+  c.bezierCurveTo(xr-10, ys, xr-5, ys-0.3, xr, ys-4);
+  c.strokeStyle = "#1f5f9e"; c.lineWidth = 1.1; c.stroke();
+  // graduations (traits droits : ce sont elles qu'on lit)
+  const Lb = P.cap/10, Md = Lb/2;
+  c.strokeStyle = INK; c.lineWidth = 0.7;
+  const nT = Math.round(P.cap / P.g);
+  for(let i=0;i<=nT;i++){
+    const v = i*P.g, y = yOf(v);
+    const isL = Math.abs(v/Lb - Math.round(v/Lb)) < 1e-6;
+    const isM = Math.abs(v/Md - Math.round(v/Md)) < 1e-6;
+    const len = isL ? 20 : (isM ? 13 : 7);
+    c.beginPath(); c.moveTo(xl+1, y); c.lineTo(xl+1+len, y); c.stroke();
+    if(isL && v > 0) txt(c, String(Math.round(v)), xl+24, y, 10, "left");
+  }
+  txt(c, "mL", xl+24, yOf(P.cap)-16, 10, "left");
+  // parois
+  c.strokeStyle = INK; c.lineWidth = 2.2; c.lineJoin = "round";
+  wpoly(c, [[xl-4, yTop-6],[xl-4, yB+3],[xr+4, yB+3],[xr+4, yTop-6]], false, 0.9); c.stroke();
+  wpoly(c, [[xl-10, yTop-8],[xl-3, yTop-4]], false, 0.4); c.stroke();
+  wpoly(c, [[xr+3, yTop-4],[xr+10, yTop-8]], false, 0.4); c.stroke();
+  // reflet
+  c.strokeStyle = "rgba(255,255,255,0.8)"; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(xr-6, yTop+20); c.lineTo(xr-6, yB-30); c.stroke();
+}
+
+function drawTubeBase(c){
+  c.lineWidth = 2.2; c.strokeStyle = INK;
+  wpoly(c, [[TUBE.xl-4, TUBE.yB+3],[TUBE.cx-60, BENCH-8],[TUBE.cx-62, BENCH],[TUBE.cx+62, BENCH],[TUBE.cx+60, BENCH-8],[TUBE.xr+4, TUBE.yB+3]], false, 0.8);
+  c.fillStyle = "rgba(205,228,242,0.6)"; c.fill(); c.stroke();
+}
+
+/* ---------- balance ---------- */
+function fmtMass(v){ return v.toFixed(P.d).replace('.', ',') + " g"; }
+function drawBalance(c, now){
+  const cx = BAL.cx, loaded = geo.loc === 'balance';
+  const dy = loaded ? 2 : 0;
+  c.lineWidth = 2.2; c.strokeStyle = INK;
+  // corps
+  wpoly(c, [[cx-92, BENCH],[cx-80, 410],[cx+80, 410],[cx+92, BENCH]], true, 1.0);
+  c.fillStyle = "#eef0f2"; c.fill(); c.stroke();
+  // pied du plateau
+  wrect(c, cx-6, BAL.top+5+dy, 12, 410-BAL.top-5-dy, 0.5); c.fillStyle = "#cfd3d8"; c.fill(); c.stroke();
+  // plateau
+  wpoly(c, [[cx-75, BAL.top+dy],[cx+75, BAL.top+dy],[cx+70, BAL.top+7+dy],[cx-70, BAL.top+7+dy]], true, 0.7);
+  c.fillStyle = "#d9dde2"; c.fill(); c.stroke();
+  // afficheur
+  wrect(c, cx-58, 428, 116, 36, 0.8); c.fillStyle = "#cfe3bd"; c.fill(); c.stroke();
+  let val = 0;
+  if(loaded){
+    const t = (now - tBal)/700;
+    val = t >= 1 ? P.m : P.m + (hsh(Math.floor(now/70))-0.5)*12*(1-t);
+    if(val < 0) val = 0;
+  }
+  c.font = "bold 22px 'Courier New',monospace"; c.fillStyle = "#1d2a14";
+  c.textAlign = "right"; c.textBaseline = "middle";
+  c.fillText(fmtMass(val), cx+50, 447);
+  // bouton décoratif
+  c.beginPath(); c.arc(cx+70, 470, 4, 0, 2*Math.PI); c.stroke();
+}
+
+/* ---------- plateau "géode mystère" ---------- */
+function drawTray(c){
+  c.lineWidth = 2.2; c.strokeStyle = INK;
+  wpoly(c, [[TRAY.x-70, BENCH-12],[TRAY.x+70, BENCH-12],[TRAY.x+60, BENCH],[TRAY.x-60, BENCH]], true, 0.8);
+  c.fillStyle = "#d9b98a"; c.fill(); c.stroke();
+  // étiquette
+  wrect(c, TRAY.x-22, BENCH-52-R, 44, 24, 0.7); c.fillStyle = "#fff"; c.fill(); c.stroke();
+  txt(c, "?", TRAY.x, BENCH-40-R, 18, "center");
+  c.lineWidth = 1.2; wline(c, TRAY.x, BENCH-28-R, TRAY.x+8, BENCH-16-R, 0.3);
+}
+
+/* ---------- loupe ---------- */
+function drawLoupe(c){
+  const L = LOUPE, fy = yOf(Vcur), half = L.r / L.z;
+  // cadre de zoom sur l'éprouvette
+  c.save(); c.setLineDash([4,3]); c.lineWidth = 1.2; c.strokeStyle = "#b03a2e";
+  c.strokeRect(L.fx-half, fy-half, 2*half, 2*half);
+  c.beginPath(); c.moveTo(L.fx+half, fy-half); c.lineTo(L.cx-L.r*0.7, L.cy-L.r*0.7);
+  c.moveTo(L.fx+half, fy+half); c.lineTo(L.cx-L.r*0.7, L.cy+L.r*0.7); c.stroke();
+  c.restore();
+  // contenu zoomé
+  c.save();
+  c.beginPath(); c.arc(L.cx, L.cy, L.r, 0, 2*Math.PI); c.clip();
+  c.fillStyle = "#fffdf7"; c.fillRect(L.cx-L.r, L.cy-L.r, 2*L.r, 2*L.r);
+  c.translate(L.cx, L.cy); c.scale(L.z, L.z); c.translate(-L.fx, -fy);
+  drawTube(c);
+  c.restore();
+  // monture + manche
+  c.lineWidth = 3; c.strokeStyle = INK;
+  const pts = [];
+  for(let i=0;i<=24;i++){ const a = i/24*2*Math.PI; pts.push([L.cx+Math.cos(a)*L.r, L.cy+Math.sin(a)*L.r]); }
+  wpoly(c, pts, false, 0.8); c.stroke();
+  c.lineWidth = 9; c.lineCap = "round";
+  wline(c, L.cx+L.r*0.72, L.cy+L.r*0.72, L.cx+L.r*0.72+38, L.cy+L.r*0.72+38, 0.5);
+  c.lineCap = "butt";
+}
+
+/* ---------- logique ---------- */
+function setMsg(s){ msg.textContent = s; }
+function place(loc){
+  geo.loc = loc;
+  if(loc === 'tray'){ geo.x = TRAY.x; geo.y = TRAY.y; setMsg("Fais glisser la géode sur la balance ou dans l'éprouvette."); }
+  else if(loc === 'balance'){ geo.x = BAL.cx; geo.y = BAL.top + 2 - R*0.84; tBal = performance.now(); setMsg("La géode est posée sur la balance."); }
+  else if(loc === 'tube'){ geo.x = TUBE.cx; geo.y = TUBE.yTop - R - 4; geo.vy = 0; splashed = false; setMsg("La géode est plongée dans l'éprouvette."); }
+}
+function update(now){
+  if(geo.loc === 'tube'){
+    const ysurf = yOf(Vcur);
+    const inWater = geo.y + R*0.3 > ysurf;
+    if(!splashed && geo.y + R > ysurf){
+      splashed = true; ploufT = now;
+      for(let i=0;i<14;i++) parts.push({x:TUBE.cx + (hsh(now+i)-0.5)*50, y:ysurf, vx:(hsh(i*9+now)-0.5)*3, vy:-2-3*hsh(i*3+now), life:1});
+    }
+    if(geo.y < REST_TUBE){
+      if(inWater){ geo.vy += 0.06; if(geo.vy > 2.2) geo.vy = 2.2; geo.vy *= 0.97; }
+      else geo.vy += 0.6;
+      geo.y = Math.min(REST_TUBE, geo.y + geo.vy);
+    }
+  }
+  // niveau d'eau
+  let f = 0;
+  if(geo.loc === 'tube'){
+    const y1 = yOf(P.v1);
+    f = Math.max(0, Math.min(1, (geo.y + R - y1)/(2*R)));
+  }
+  const target = P.v1 + (P.v2 - P.v1)*f;
+  Vcur += (target - Vcur)*0.18;
+  if(Math.abs(target - Vcur) < 1e-4) Vcur = target;
+  for(const p of parts){ p.x += p.vx; p.y += p.vy; p.vy += 0.25; p.life -= 0.03; }
+  parts = parts.filter(p => p.life > 0);
+}
+
+function frame(now){
+  update(now);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = "#fffdf7"; ctx.fillRect(0,0,W,H);
+  // titre
+  txt(ctx, "Labo du minéralogiste", 24, 30, 24, "left");
+  ctx.lineWidth = 1.6; ctx.strokeStyle = INK; wline(ctx, 24, 48, 290, 50, 1.2);
+  // paillasse
+  ctx.lineWidth = 2.4; wline(ctx, 10, BENCH, 890, BENCH, 1.3);
+  ctx.lineWidth = 1; for(let x=20;x<890;x+=26) wline(ctx, x, BENCH+2, x-12, BENCH+14, 0.3);
+  drawTray(ctx);
+  drawBalance(ctx, now);
+  drawTubeBase(ctx);
+  drawTube(ctx);
+  // éclaboussures
+  ctx.fillStyle = "rgba(60,140,220,0.8)";
+  for(const p of parts){ ctx.beginPath(); ctx.arc(p.x, p.y, 2.4*p.life+0.6, 0, 2*Math.PI); ctx.fill(); }
+  if(ploufT > 0 && now - ploufT < 900){
+    ctx.globalAlpha = 1 - (now - ploufT)/900;
+    txt(ctx, "plouf !", TUBE.xr + 14, TUBE.yTop + 10, 20, "left");
+    ctx.globalAlpha = 1;
+  }
+  // légendes
+  txt(ctx, "géode mystère", TRAY.x, BENCH+32, 16, "center");
+  txt(ctx, "balance", BAL.cx, BENCH+32, 16, "center");
+  txt(ctx, "éprouvette graduée", TUBE.cx, BENCH+32, 16, "center");
+  // géode (hors éprouvette)
+  if(geo.loc !== 'tube') drawGeode(ctx, geo.x, geo.y);
+  if(loupeOn) drawLoupe(ctx);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- interactions ---------- */
+function pos(e){
+  const r = cv.getBoundingClientRect();
+  return {x:(e.clientX - r.left)*W/r.width, y:(e.clientY - r.top)*H/r.height};
+}
+function onGeo(p){ return Math.hypot(p.x - geo.x, p.y - geo.y) < R + 8; }
+cv.addEventListener('pointerdown', e => {
+  const p = pos(e);
+  if(onGeo(p)){
+    drag = {dx: geo.x - p.x, dy: geo.y - p.y};
+    geo.loc = 'drag';
+    cv.setPointerCapture(e.pointerId);
+    cv.style.cursor = "grabbing";
+  }
+});
+cv.addEventListener('pointermove', e => {
+  const p = pos(e);
+  if(drag){
+    geo.x = Math.max(R, Math.min(W-R, p.x + drag.dx));
+    geo.y = Math.max(R, Math.min(BENCH-R, p.y + drag.dy));
+  } else cv.style.cursor = onGeo(p) ? "grab" : "default";
+});
+function endDrag(){
+  if(!drag) return;
+  drag = null; cv.style.cursor = "default";
+  const x = geo.x, y = geo.y;
+  if(x > BAL.cx-95 && x < BAL.cx+95 && y > 290 && y < 430) place('balance');
+  else if(x > TUBE.xl-35 && x < TUBE.xr+35 && y > 20 && y < TUBE.yB) place('tube');
+  else place('tray');
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+
+const bL = document.getElementById('bLoupe');
+bL.addEventListener('click', () => { loupeOn = !loupeOn; bL.classList.toggle('on', loupeOn); });
+document.getElementById('bReset').addEventListener('click', () => {
+  loupeOn = false; bL.classList.remove('on'); parts = []; ploufT = -1;
+  place('tray'); Vcur = P.v1;
+});
+
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
