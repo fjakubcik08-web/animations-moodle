@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tri des géodes – masse volumique</title>
+<style>
+html,body{margin:0;padding:0;background:#fffdf7;overflow-x:hidden;overflow-y:auto;}
+body{font-family:'Comic Sans MS','Comic Neue','Chalkboard SE',cursive;color:#222;}
+#wrap{max-width:920px;margin:0 auto;padding:8px;box-sizing:border-box;}
+canvas{display:block;width:100%;height:auto;aspect-ratio:900/520;touch-action:none;}
+.bar{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:8px 0 4px;}
+button{font-family:inherit;font-size:17px;background:#fff;color:#222;border:2px solid #222;padding:6px 16px;cursor:pointer;
+  border-radius:14px 4px 11px 5px/5px 11px 4px 14px;box-shadow:2px 3px 0 #222;}
+button:active{transform:translate(2px,3px);box-shadow:none;}
+#msg{text-align:center;font-size:16px;min-height:24px;padding:2px 6px;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv" width="900" height="520"></canvas>
+  <div class="bar"><button id="bReset">↺ Recommencer</button></div>
+  <div id="msg">Fais glisser chaque lot sur sa masse volumique, puis place les deux bornes.</div>
+</div>
+<script>
+(function(){
+"use strict";
+/* ---------- paramètres (JSON -> XOR -> base64url) ---------- */
+const KEY = "PBayle-TriGeode#xkcd";
+function decodeP(s){
+  try{
+    s = s.replace(/-/g,'+').replace(/_/g,'/');
+    while(s.length % 4) s += '=';
+    const bin = atob(s), k = new TextEncoder().encode(KEY);
+    const b = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) b[i] = bin.charCodeAt(i) ^ k[i % k.length];
+    return JSON.parse(new TextDecoder().decode(b));
+  }catch(e){ return {}; }
+}
+const qs = new URLSearchParams(location.search);
+const P = {e:[5,5,7,4,7,5,4], a:6.0, b:8.0};
+if(qs.get('p')) Object.assign(P, decodeP(qs.get('p')));
+if(qs.has('e')) P.e = qs.get('e').split(',').map(Number);
+if(qs.has('a')) P.a = parseFloat(qs.get('a'));
+if(qs.has('b')) P.b = parseFloat(qs.get('b'));
+if(!Array.isArray(P.e) || !P.e.length) P.e = [5,5,7,4,7,5,4];
+P.e = P.e.slice(0, 9).map(v => Math.max(1, Math.min(14, Math.round(v))));
+if(!(P.b > P.a)) { P.a = 6.0; P.b = 8.0; }
+const NSTEP = Math.round((P.b - P.a)*10);
+
+/* ---------- canvas ---------- */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const W = 900, H = 520;
+let dpr = 1;
+function resize(){ dpr = window.devicePixelRatio || 1; cv.width = W*dpr; cv.height = H*dpr; }
+resize(); window.addEventListener('resize', resize);
+const FONT = "'Comic Sans MS','Comic Neue','Chalkboard SE',cursive";
+const INK = "#222", GREEN = "#2e9d4a", RED = "#d23a2a";
+
+/* ---------- traits main levée ---------- */
+function hsh(n){ n = Math.sin(n*127.1 + 311.7)*43758.5453; return n - Math.floor(n); }
+function wseg(c,x1,y1,x2,y2,amp,first){
+  const L = Math.hypot(x2-x1,y2-y1) || 1, n = Math.max(2, Math.round(L/16));
+  const nx = -(y2-y1)/L, ny = (x2-x1)/L, sd = x1*0.37 + y1*0.91 + x2*1.31 + y2*0.17;
+  if(first) c.moveTo(x1,y1);
+  for(let i=1;i<=n;i++){
+    const t = i/n, o = (i===n) ? 0 : (hsh(sd + i*3.7) - 0.5)*2*amp;
+    c.lineTo(x1+(x2-x1)*t + nx*o, y1+(y2-y1)*t + ny*o);
+  }
+}
+function wpoly(c,pts,closed,amp){
+  c.beginPath();
+  for(let i=0;i<pts.length-1;i++) wseg(c,pts[i][0],pts[i][1],pts[i+1][0],pts[i+1][1],amp,i===0);
+  if(closed){ const a = pts[pts.length-1], b = pts[0]; wseg(c,a[0],a[1],b[0],b[1],amp,false); c.closePath(); }
+}
+function wline(c,x1,y1,x2,y2,amp){ wpoly(c,[[x1,y1],[x2,y2]],false,amp===undefined?1.1:amp); c.stroke(); }
+function wrect(c,x,y,w,h,amp){ wpoly(c,[[x,y],[x+w,y],[x+w,y+h],[x,y+h]],true,amp===undefined?1:amp); }
+function txt(c,s,x,y,size,align,col,bold){
+  c.font = (bold ? "bold " : "") + size + "px " + FONT; c.fillStyle = col || INK;
+  c.textAlign = align || "left"; c.textBaseline = "middle"; c.fillText(s,x,y);
+}
+const fr = v => v.toFixed(1).replace('.', ',');
+
+/* ---------- géométrie ---------- */
+const AX = {x0:70, x1:830, y:395};
+const xOf = r => AX.x0 + (r - P.a)/(P.b - P.a)*(AX.x1 - AX.x0);
+const rOf = x => P.a + (x - AX.x0)/(AX.x1 - AX.x0)*(P.b - P.a);
+const snap = r => Math.max(P.a, Math.min(P.b, Math.round(r*10)/10));
+const GR = 7, GS = 15;                 // rayon / pas vertical des mini-géodes
+const ZONE_TOP = 120;
+const nL = P.e.length;
+const CARD_W = Math.min(96, (W - 40)/nL - 10), CARD_H = 44, CARD_Y = 62;
+const cardX = i => 20 + (W - 40)/nL*i + ((W - 40)/nL - CARD_W)/2;
+
+/* ---------- état ---------- */
+let lots, bounds, drag = null, hover = null;
+function reset(){
+  lots = P.e.map((e,i) => ({n:i+1, e:e, r:null, x:0, y:0}));
+  bounds = [{r:P.a + 0.3*(P.b-P.a)}, {r:P.a + 0.7*(P.b-P.a)}].map(b => ({r:snap(b.r)}));
+  msg("Fais glisser chaque lot sur sa masse volumique, puis place les deux bornes.");
+}
+const msgEl = document.getElementById('msg');
+function msg(s){ msgEl.textContent = s; }
+
+/* ---------- dessins ---------- */
+function miniGeode(c,x,y,col){
+  const pts = [];
+  for(let i=0;i<8;i++){ const a = i/8*2*Math.PI; const rr = GR*(0.85 + 0.2*hsh(x*0.1 + y*0.3 + i)); pts.push([x+Math.cos(a)*rr, y+Math.sin(a)*rr]); }
+  wpoly(c, pts, true, 0.4);
+  c.fillStyle = col; c.fill(); c.lineWidth = 1.4; c.strokeStyle = INK; c.stroke();
+  c.beginPath(); c.arc(x, y, GR*0.4, 0, 2*Math.PI); c.fillStyle = "#3b3b44"; c.fill();
+}
+function inZone(r){
+  const lo = Math.min(bounds[0].r, bounds[1].r), hi = Math.max(bounds[0].r, bounds[1].r);
+  return r >= lo - 1e-9 && r <= hi + 1e-9;
+}
+function stackPos(L){
+  // décalage si plusieurs lots sur la même valeur
+  let k = 0;
+  for(const o of lots){ if(o === L) break; if(o.r !== null && o !== drag?.obj && Math.abs(o.r - L.r) < 1e-9) k++; }
+  return xOf(L.r) + k*(2*GR + 4);
+}
+function drawStack(c, x, L, col){
+  for(let i=0;i<L.e;i++) miniGeode(c, x, AX.y - 12 - i*GS, col);
+  const ty = AX.y - 12 - L.e*GS - 6;
+  wrect(c, x-11, ty-14, 22, 18, 0.6); c.fillStyle = "#fff"; c.fill(); c.lineWidth = 1.6; c.strokeStyle = INK; c.stroke();
+  txt(c, String(L.n), x, ty-5, 13, "center", INK, true);
+}
+function drawCard(c, L, x, y){
+  wrect(c, x, y, CARD_W, CARD_H, 0.9);
+  c.fillStyle = "#fff"; c.fill(); c.lineWidth = 2; c.strokeStyle = INK; c.stroke();
+  txt(c, "Lot n°" + L.n, x + CARD_W/2, y + 15, 15, "center", INK, true);
+  txt(c, L.e + " géodes", x + CARD_W/2, y + 32, 12, "center", "#555");
+}
+function drawBound(c, B, i){
+  const x = xOf(B.r);
+  c.save(); c.setLineDash([6,5]); c.lineWidth = 2; c.strokeStyle = INK;
+  c.beginPath(); c.moveTo(x, ZONE_TOP); c.lineTo(x, AX.y); c.stroke(); c.restore();
+  // drapeau en haut
+  c.lineWidth = 2; c.strokeStyle = INK;
+  wpoly(c, [[x, ZONE_TOP-26],[x+44, ZONE_TOP-26],[x+44, ZONE_TOP-4],[x, ZONE_TOP-4]], true, 0.7);
+  c.fillStyle = "#ffe9a8"; c.fill(); c.stroke();
+  txt(c, fr(B.r), x+22, ZONE_TOP-15, 14, "center", INK, true);
+  wline(c, x, ZONE_TOP-30, x, ZONE_TOP, 0.3);
+  // poignée sous l'axe
+  wpoly(c, [[x, AX.y+4],[x-10, AX.y+24],[x+10, AX.y+24]], true, 0.6);
+  c.fillStyle = "#ffe9a8"; c.fill(); c.stroke();
+}
+
+function frame(){
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = "#fffdf7"; ctx.fillRect(0,0,W,H);
+  txt(ctx, "Tri des géodes", 20, 26, 22, "left");
+  ctx.lineWidth = 1.6; ctx.strokeStyle = INK; wline(ctx, 20, 42, 180, 44, 1);
+  // parking : cartes non placées
+  for(let i=0;i<nL;i++){
+    const L = lots[i];
+    if(L.r === null && !(drag && drag.obj === L)){
+      drawCard(ctx, L, cardX(i), CARD_Y);
+    } else {
+      ctx.save(); ctx.setLineDash([4,4]); ctx.strokeStyle = "#bbb"; ctx.lineWidth = 1.2;
+      ctx.strokeRect(cardX(i), CARD_Y, CARD_W, CARD_H); ctx.restore();
+    }
+  }
+  // zones rouge / verte
+  const xa = xOf(Math.min(bounds[0].r, bounds[1].r)), xb = xOf(Math.max(bounds[0].r, bounds[1].r));
+  ctx.fillStyle = "rgba(210,58,42,0.10)";
+  ctx.fillRect(AX.x0-20, ZONE_TOP, xa-(AX.x0-20), AX.y-ZONE_TOP);
+  ctx.fillRect(xb, ZONE_TOP, AX.x1+20-xb, AX.y-ZONE_TOP);
+  ctx.fillStyle = "rgba(46,157,74,0.16)";
+  ctx.fillRect(xa, ZONE_TOP, xb-xa, AX.y-ZONE_TOP);
+  // axe gradué
+  ctx.lineWidth = 2.4; ctx.strokeStyle = INK;
+  wline(ctx, AX.x0-20, AX.y, AX.x1+25, AX.y, 1.2);
+  wpoly(ctx, [[AX.x1+15, AX.y-7],[AX.x1+27, AX.y],[AX.x1+15, AX.y+7]], false, 0.4); ctx.stroke();
+  ctx.lineWidth = 1;
+  for(let k=0;k<=NSTEP;k++){
+    const r = P.a + k/10, x = xOf(r);
+    const big = Math.abs(r*2 - Math.round(r*2)) < 1e-6;
+    ctx.beginPath(); ctx.moveTo(x, AX.y); ctx.lineTo(x, AX.y + (big ? 12 : 6)); ctx.stroke();
+    if(big) txt(ctx, fr(r), x, AX.y + 30, 13, "center");
+  }
+  txt(ctx, "ρ (g/cm³)", AX.x1+28, AX.y - 18, 14, "right");
+  // bornes
+  bounds.forEach(drawBound.bind(null, ctx));
+  // lots placés
+  for(const L of lots){
+    if(L.r === null || (drag && drag.obj === L)) continue;
+    const x = stackPos(L); L.x = x;
+    drawStack(ctx, x, L, inZone(L.r) ? GREEN : RED);
+  }
+  // objet en cours de glissement
+  if(drag && drag.type === 'lot'){
+    const L = drag.obj, near = drag.y > ZONE_TOP - 10 && drag.y < AX.y + 60;
+    if(near){
+      const r = snap(rOf(drag.x)), x = xOf(r);
+      ctx.save(); ctx.globalAlpha = 0.85;
+      drawStack(ctx, x, L, inZone(r) ? GREEN : RED);
+      ctx.restore();
+      wrect(ctx, x-24, AX.y+44, 48, 20, 0.5); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 1.4; ctx.stroke();
+      txt(ctx, fr(r), x, AX.y+54, 13, "center", INK, true);
+    } else {
+      drawCard(ctx, L, drag.x - CARD_W/2, drag.y - CARD_H/2);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- interactions ---------- */
+function pos(e){ const r = cv.getBoundingClientRect(); return {x:(e.clientX-r.left)*W/r.width, y:(e.clientY-r.top)*H/r.height}; }
+function hit(p){
+  // cartes au parking
+  for(let i=0;i<nL;i++){
+    const L = lots[i], x = cardX(i);
+    if(L.r === null && p.x > x && p.x < x+CARD_W && p.y > CARD_Y && p.y < CARD_Y+CARD_H) return {type:'lot', obj:L};
+  }
+  // piles posées (du dernier au premier)
+  for(let i=lots.length-1;i>=0;i--){
+    const L = lots[i]; if(L.r === null) continue;
+    const top = AX.y - 12 - L.e*GS - 22;
+    if(Math.abs(p.x - L.x) < GR+5 && p.y > top && p.y < AX.y) return {type:'lot', obj:L};
+  }
+  // bornes (drapeau ou poignée)
+  for(const B of bounds){
+    const x = xOf(B.r);
+    if((p.x > x-12 && p.x < x+48 && p.y > ZONE_TOP-32 && p.y < ZONE_TOP) ||
+       (Math.abs(p.x - x) < 14 && p.y > AX.y && p.y < AX.y+30)) return {type:'bound', obj:B};
+  }
+  return null;
+}
+cv.addEventListener('pointerdown', e => {
+  const p = pos(e), h = hit(p);
+  if(!h) return;
+  drag = {type:h.type, obj:h.obj, x:p.x, y:p.y};
+  cv.setPointerCapture(e.pointerId); cv.style.cursor = "grabbing";
+});
+cv.addEventListener('pointermove', e => {
+  const p = pos(e);
+  if(drag){
+    drag.x = p.x; drag.y = p.y;
+    if(drag.type === 'bound') drag.obj.r = snap(rOf(p.x));
+  } else cv.style.cursor = hit(p) ? "grab" : "default";
+});
+function endDrag(){
+  if(!drag) return;
+  if(drag.type === 'lot'){
+    const near = drag.y > ZONE_TOP - 10 && drag.y < AX.y + 60;
+    drag.obj.r = near ? snap(rOf(drag.x)) : null;
+    const placed = lots.filter(L => L.r !== null).length;
+    msg(placed < nL ? "Lots placés : " + placed + " / " + nL : "Tous les lots sont placés. Vérifie aussi les deux bornes.");
+  }
+  drag = null; cv.style.cursor = "default";
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+document.getElementById('bReset').addEventListener('click', reset);
+
+reset();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
