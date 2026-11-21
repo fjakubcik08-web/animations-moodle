@@ -14,12 +14,15 @@ button{font-family:inherit;font-size:17px;background:#fff;color:#222;border:2px 
   border-radius:14px 4px 11px 5px/5px 11px 4px 14px;box-shadow:2px 3px 0 #222;}
 button:active{transform:translate(2px,3px);box-shadow:none;}
 #msg{text-align:center;font-size:16px;min-height:24px;padding:2px 6px;}
+#code{display:none;margin:6px auto 4px;width:fit-content;font-size:22px;font-weight:bold;letter-spacing:2px;background:#ffe9a8;border:2px solid #222;padding:6px 18px;
+  border-radius:12px 4px 10px 5px/5px 10px 4px 12px;user-select:all;}
 </style>
 </head>
 <body>
 <div id="wrap">
   <canvas id="cv" width="900" height="520"></canvas>
-  <div class="bar"><button id="bReset">↺ Recommencer</button></div>
+  <div class="bar"><button id="bFini">✅ J'ai fini de classer</button><button id="bReset">↺ Recommencer</button></div>
+  <div id="code"></div>
   <div id="msg">Fais glisser chaque lot sur sa masse volumique, puis place les deux bornes.</div>
 </div>
 <script>
@@ -38,11 +41,13 @@ function decodeP(s){
   }catch(e){ return {}; }
 }
 const qs = new URLSearchParams(location.search);
-const P = {e:[5,5,7,4,7,5,4], a:6.0, b:8.0};
+const P = {e:[5,5,7,4,7,5,4], a:6.0, b:8.0, s:0};
 if(qs.get('p')) Object.assign(P, decodeP(qs.get('p')));
 if(qs.has('e')) P.e = qs.get('e').split(',').map(Number);
 if(qs.has('a')) P.a = parseFloat(qs.get('a'));
 if(qs.has('b')) P.b = parseFloat(qs.get('b'));
+if(qs.has('s')) P.s = parseInt(qs.get('s'), 10);
+P.s = (P.s | 0);
 if(!Array.isArray(P.e) || !P.e.length) P.e = [5,5,7,4,7,5,4];
 P.e = P.e.slice(0, 9).map(v => Math.max(1, Math.min(14, Math.round(v))));
 if(!(P.b > P.a)) { P.a = 6.0; P.b = 8.0; }
@@ -98,6 +103,22 @@ function reset(){
   lots = P.e.map((e,i) => ({n:i+1, e:e, r:null, x:0, y:0}));
   bounds = [{r:P.a + 0.3*(P.b-P.a)}, {r:P.a + 0.7*(P.b-P.a)}].map(b => ({r:snap(b.r)}));
   msg("Fais glisser chaque lot sur sa masse volumique, puis place les deux bornes.");
+  hideCode();
+}
+const codeEl = document.getElementById('code');
+function hideCode(){ codeEl.style.display = "none"; codeEl.textContent = ""; }
+function hash6(str){
+  let h = 2166136261 >>> 0;
+  for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(36).toUpperCase().padStart(6, '0').slice(0, 6);
+}
+function finir(){
+  if(lots.some(L => L.r === null)){ hideCode(); msg("Place d'abord tous les lots sur l'axe."); return; }
+  const lo = Math.min(bounds[0].r, bounds[1].r), hi = Math.max(bounds[0].r, bounds[1].r);
+  const str = P.s + "|" + lots.map(L => Math.round(L.r*10)).join(",") + "|" + Math.round(lo*10) + "," + Math.round(hi*10);
+  codeEl.textContent = "Code : T-" + hash6(str);
+  codeEl.style.display = "block";
+  msg("Recopie ce code dans la question. Si tu modifies le classement, appuie de nouveau sur le bouton.");
 }
 const msgEl = document.getElementById('msg');
 function msg(s){ msgEl.textContent = s; }
@@ -260,6 +281,7 @@ cv.addEventListener('pointermove', e => {
 });
 function endDrag(){
   if(!drag) return;
+  hideCode();
   if(drag.type === 'lot'){
     const near = drag.y > ZONE_TOP - 10 && drag.y < AX.y + 60;
     drag.obj.r = near ? snap(rOf(drag.x)) : null;
@@ -271,6 +293,7 @@ function endDrag(){
 cv.addEventListener('pointerup', endDrag);
 cv.addEventListener('pointercancel', endDrag);
 document.getElementById('bReset').addEventListener('click', reset);
+document.getElementById('bFini').addEventListener('click', finir);
 
 reset();
 requestAnimationFrame(frame);
