@@ -45,6 +45,7 @@
   .go{background:var(--bleu);color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:1em;cursor:pointer}
   .go:hover{filter:brightness(1.1)}
   #bilan{font-weight:600}
+  .code{margin-left:auto;font-family:Consolas,monospace;font-size:1.1em;background:#fff;border:2px dashed var(--bleu);border-radius:6px;padding:4px 12px;user-select:all;display:none}
   .ligne{display:flex;gap:10px;align-items:baseline;padding:5px 8px;margin:3px 0;border-left:4px solid var(--bord);background:var(--gris);border-radius:0 5px 5px 0;font-family:Consolas,"Courier New",monospace;font-size:.95em}
   .ligne.ok{border-color:var(--ok);background:#effaf3}
   .ligne.ko{border-color:var(--ko);background:#fdf0f0}
@@ -77,6 +78,7 @@
   <div class="actions">
     <button class="go" id="verif">Vérifier</button>
     <span id="bilan"></span>
+    <span id="code" class="code"></span>
   </div>
   <div id="resLignes"></div>
   <div id="resJalons"></div>
@@ -521,6 +523,14 @@ $('palette').querySelectorAll('.pb').forEach(b=>b.onclick=()=>{
   ta.focus(); majApercu();
 });
 
+/* code de fin à recopier dans Moodle : FNV-1a 32 bits de "DEMO|seed|nOk|nKo" */
+function codeFin(seed,nOk,nKo){
+  const s=`DEMO|${seed}|${nOk}|${nKo}`; let h=0x811c9dc5;
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
+  const A='23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; let c='';
+  for(let i=0;i<7;i++){c+=A[h%32];h=Math.floor(h/32);}
+  return c.slice(0,4)+'-'+c.slice(4);
+}
 // une ligne peut contenir plusieurs étapes : « ax = 0 donc dvx/dt = 0 donc vx = cst »
 const MID_RE=new RegExp("\\s+(?:"+MID_ALT+")\\s+","i");
 function verifierLigne(raw,S,B_){
@@ -558,10 +568,11 @@ $('verif').onclick=()=>{
     `<div class="ligne" style="background:#fff"><span class="ico"></span><span style="color:#889">${esc(r.raw)}</span></div>` :
     `<div class="ligne ${r.st}"><span class="ico">${r.st==='ok'?'✓':r.st==='ko'?'✗':r.st==='vec'?'·':'?'}</span><span>${esc(r.raw)}</span>`+
     `<span class="msg">${r.st==='ok'?'':r.st==='ko'?'fausse':r.st==='vec'?'relation vectorielle : non vérifiée':'non comprise'+(r.msg?' : '+esc(r.msg):'')}</span></div>`).join('') : '';
-  $('resJalons').innerHTML = EX.fb>=2 && JAL.length ? '<h3>Étapes attendues</h3><div class="jalons">'+
-    JAL.map((j,i)=>`<span class="jal ${atteints[i]?'ok':'ko'}">${atteints[i]?'✓':'✗'} ${esc(j.l)}</span>`).join('')+'</div>' : '';
+  $('resJalons').innerHTML = '';   // liste des étapes attendues jamais affichée
   $('bilan').textContent=`Étapes attendues : ${nOk} / ${JAL.length}`+(nKo?` · ${nKo} ligne${nKo>1?'s':''} fausse${nKo>1?'s':''}`:'')+(nOk===JAL.length&&!nKo?' — bravo !':'');
   $('bilan').style.color=nOk===JAL.length&&!nKo?'var(--ok)':'var(--txt)';
+  if(EX.s!==undefined&&EX.s>=0){ $('code').textContent='Code : '+codeFin(EX.s,nOk,Math.min(nKo,3)); $('code').style.display='inline-block'; }
+  if(EX.fb===0) $('bilan').textContent='';      // mode test : seul le code est affiché
 };
 </script>
 </body>
