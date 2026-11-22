@@ -33,7 +33,11 @@ const DEF={
   aDeg:50,        // angle DESSINÉ (jamais affiché)
   h:"h",          // nom de la hauteur initiale ("" = pas de cote)
   L:"",           // nom de l'abscisse initiale ("" = départ à la verticale de O)
-  gr:1            // 1 : graduations des axes (pas et unité fournis par le décor)
+  gr:1,           // 1 : graduations des axes (pas et unité fournis par le décor)
+  pD:"",          // basket : nom de la distance horizontale O -> centre de l'arceau ("" = pas de cote)
+  pH:"",          // basket : nom de la hauteur de l'arceau ("" = pas de cote)
+  pd:"",          // basket : nom du diamètre de l'arceau ("" = pas de cote)
+  pC:""           // basket : nom du centre de l'arceau ("" = pas de nom)
 };
 let P={...DEF};
 const Q=new URLSearchParams(location.search);
@@ -66,12 +70,12 @@ function fleche(x1,y1,x2,y2,o={}){
   ligne(x2,y2,x2-s*Math.cos(a-0.4),y2-s*Math.sin(a-0.4),o);
   ligne(x2,y2,x2-s*Math.cos(a+0.4),y2-s*Math.sin(a+0.4),o);
 }
-function cote(x1,y1,x2,y2,lab,o={}){        // double flèche + lettre
-  fleche((x1+x2)/2,(y1+y2)/2,x1,y1,{w:1.6,s:9});fleche((x1+x2)/2,(y1+y2)/2,x2,y2,{w:1.6,s:9});
-  texte(lab,(x1+x2)/2+(o.dx||0),(y1+y2)/2+(o.dy||0),{size:21,anchor:o.anchor||'middle',italic:true});
+function cote(x1,y1,x2,y2,lab,o={}){        // double flèche + lettre (o.c : couleur)
+  fleche((x1+x2)/2,(y1+y2)/2,x1,y1,{w:o.w||1.6,s:9,c:o.c});fleche((x1+x2)/2,(y1+y2)/2,x2,y2,{w:o.w||1.6,s:9,c:o.c});
+  texte(lab,(x1+x2)/2+(o.dx||0),(y1+y2)/2+(o.dy||0),{size:21,anchor:o.anchor||'middle',italic:true,c:o.c});
 }
 function texte(s,x,y,o={}){
-  const t=el('text',{x,y,'font-size':o.size||20,'text-anchor':o.anchor||'start','dominant-baseline':'middle','font-style':o.italic?'italic':'normal'});
+  const t=el('text',{x,y,fill:o.c||'#222','font-size':o.size||20,'text-anchor':o.anchor||'start','dominant-baseline':'middle','font-style':o.italic?'italic':'normal'});
   // « v0 » -> v + indice 0 ; « h0 » -> h + indice 0
   const m=/^([A-Za-zα-ω])(\d+|[a-z])$/.exec(s);
   if(m&&!GREC[s]){t.appendChild(document.createTextNode(m[1]));const sub=el('tspan',{'font-size':(o.size||20)*0.68,dy:6},t);sub.textContent=m[2];}
@@ -116,6 +120,13 @@ const DECORS={
       cercle(rx,ry,23,{ry:6,w:3,c:'#c2410c'});               // arceau vu de côté
       for(const k of [-20,-10,0,10,20]) ligne(rx+k,ry+4,rx+k*0.55,ry+42,{w:1.3,c:'#555'});
       ligne(rx-17,ry+20,rx+17,ry+20,{w:1.2,c:'#555'}); ligne(rx-12,ry+38,rx+12,ry+38,{w:1.2,c:'#555'});
+      // cotes du panier (lettres uniquement)
+      const VERT='#15803d';
+      if(P.pD){ ligne(rx,(P.pd?ry-50:ry-8),rx,72,{w:1.2,dash:'6 5',c:VERT}); ligne(G.Mx,G.My-60,G.Mx,72,{w:1.2,dash:'6 5',c:VERT});
+                cote(G.Mx,72,rx,72,P.pD,{dy:-16,c:VERT,w:2}); }
+      if(P.pH){ const xc=rx-62; ligne(rx-24,ry,xc-6,ry,{w:1.2,dash:'6 5',c:VERT}); cote(xc,SOL,xc,ry,P.pH,{dx:-22,c:VERT,w:2}); }
+      if(P.pC){ cercle(rx,ry,3,{f:'#222'}); texte(P.pC,rx+8,ry-9,{size:18,italic:true}); }
+      if(P.pd){ cote(rx-23,ry-20,rx+23,ry-20,P.pd,{dy:-16}); }
     },
     // ballon au point de départ
     objet(){ cercle(G.Mx,G.My,12,{f:'#f59e0b'}); ligne(G.Mx-12,G.My,G.Mx+12,G.My,{w:1.2}); ligne(G.Mx,G.My-12,G.Mx,G.My+12,{w:1.2}); }
