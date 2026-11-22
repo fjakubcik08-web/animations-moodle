@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schéma de la situation - Newton</title>
+<style>
+  html,body{margin:0;padding:0;overflow-x:hidden;overflow-y:auto;background:#fff}
+  .wrap{max-width:860px;margin:0 auto;padding:8px}
+  svg{width:100%;height:auto;display:block;background:#fdfdfb;border:2px solid #222;border-radius:14px 10px 16px 9px}
+  text{font-family:'Comic Sans MS','Comic Neue','Chalkboard SE',cursive;fill:#222}
+</style>
+</head>
+<body>
+<div class="wrap"><svg id="sch" viewBox="0 0 800 480" xmlns="http://www.w3.org/2000/svg"></svg></div>
+<script>
+/* ================== Paramètres (XOR + base64 dans ?p=) ================== */
+const KEY="PBayle-SchemaSit#xk";
+function decodeP(p){
+  let b=p.replace(/-/g,'+').replace(/_/g,'/'); while(b.length%4) b+='=';
+  const bin=atob(b), k=new TextEncoder().encode(KEY), u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i)^k[i%k.length];
+  return JSON.parse(new TextDecoder().decode(u));
+}
+const DEF={
+  d:"basket",     // décor : "basket", "aucun" (d'autres viendront)
+  o:"sol",        // origine : "sol" (O au sol sous le point de départ) ou "depart" (O au point de départ)
+  yd:"haut",      // sens de l'axe vertical : "haut" ou "bas"
+  ax:["x","y"],   // noms des axes
+  M:"M",          // nom du point étudié
+  v:"v0",         // nom de la vitesse initiale (affichée en vecteur)
+  a:"alpha",      // nom de l'angle ("alpha", "theta"… ; "" = vitesse horizontale)
+  aDeg:50,        // angle DESSINÉ (jamais affiché)
+  h:"h",          // nom de la hauteur initiale ("" = pas de cote)
+  L:"",           // nom de l'abscisse initiale ("" = départ à la verticale de O)
+  gr:1            // 1 : graduations des axes (pas et unité fournis par le décor)
+};
+let P={...DEF};
+const Q=new URLSearchParams(location.search);
+if(Q.get('p')){try{P={...DEF,...decodeP(Q.get('p'))};}catch(e){console.warn('p invalide',e);}}
+for(const k of Object.keys(DEF)) if(Q.get(k)!==null && k!=='ax') P[k]= typeof DEF[k]==='number' ? +Q.get(k) : Q.get(k);   // clair prioritaire
+
+const GREC={alpha:"α",alfa:"α",theta:"θ",beta:"β",phi:"φ",gamma:"γ"};
+const lettre=n=>GREC[n]||n;
+
+/* ================== Trait « à la main » (xkcd) ================== */
+let seed=12345; const rnd=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
+const NS="http://www.w3.org/2000/svg", svg=document.getElementById('sch');
+function el(tag,att,parent=svg){const e=document.createElementNS(NS,tag);for(const k in att)e.setAttribute(k,att[k]);parent.appendChild(e);return e;}
+function bosse(){return (rnd()-0.5)*2.2;}
+function ligne(x1,y1,x2,y2,o={}){
+  const n=Math.max(2,Math.round(Math.hypot(x2-x1,y2-y1)/40)); let d=`M${x1+bosse()},${y1+bosse()}`;
+  const nx=-(y2-y1),ny=x2-x1,l=Math.hypot(nx,ny)||1;
+  for(let i=1;i<=n;i++){const t=i/n, w=(i<n?bosse()*1.3:bosse()*0.4);
+    d+=` L${x1+(x2-x1)*t+nx/l*w},${y1+(y2-y1)*t+ny/l*w}`;}
+  return el('path',{d,fill:'none',stroke:o.c||'#222','stroke-width':o.w||2.4,'stroke-linecap':'round','stroke-linejoin':'round','stroke-dasharray':o.dash||''},o.p);
+}
+function cercle(cx,cy,r,o={}){
+  let d='';const n=26,ph=rnd()*6;
+  for(let i=0;i<=n+2;i++){const a=ph+i/n*2*Math.PI, rr=r+bosse()*0.6;d+=(i?'L':'M')+(cx+rr*Math.cos(a))+','+(cy+rr*Math.sin(a)*(o.ry?o.ry/r:1))+' ';}
+  return el('path',{d,fill:o.f||'none',stroke:o.c||'#222','stroke-width':o.w||2.4,'stroke-linejoin':'round'},o.p);
+}
+function fleche(x1,y1,x2,y2,o={}){
+  ligne(x1,y1,x2,y2,o);
+  const a=Math.atan2(y2-y1,x2-x1),s=o.s||13;
+  ligne(x2,y2,x2-s*Math.cos(a-0.4),y2-s*Math.sin(a-0.4),o);
+  ligne(x2,y2,x2-s*Math.cos(a+0.4),y2-s*Math.sin(a+0.4),o);
+}
+function cote(x1,y1,x2,y2,lab,o={}){        // double flèche + lettre
+  fleche((x1+x2)/2,(y1+y2)/2,x1,y1,{w:1.6,s:9});fleche((x1+x2)/2,(y1+y2)/2,x2,y2,{w:1.6,s:9});
+  texte(lab,(x1+x2)/2+(o.dx||0),(y1+y2)/2+(o.dy||0),{size:21,anchor:o.anchor||'middle',italic:true});
+}
+function texte(s,x,y,o={}){
+  const t=el('text',{x,y,'font-size':o.size||20,'text-anchor':o.anchor||'start','dominant-baseline':'middle','font-style':o.italic?'italic':'normal'});
+  // « v0 » -> v + indice 0 ; « h0 » -> h + indice 0
+  const m=/^([A-Za-zα-ω])(\d+|[a-z])$/.exec(s);
+  if(m&&!GREC[s]){t.appendChild(document.createTextNode(m[1]));const sub=el('tspan',{'font-size':(o.size||20)*0.68,dy:6},t);sub.textContent=m[2];}
+  else t.textContent=s;
+  return t;
+}
+function vecteurNom(s,x,y,o={}){            // nom avec flèche au-dessus
+  const t=texte(s,x,y,{size:o.size||22,italic:true,anchor:o.anchor});
+  const b=t.getBBox(); const ya=b.y-3, xa=b.x+1, xb=b.x+Math.min(b.width,18)+3;
+  ligne(xa,ya,xb,ya,{w:1.5}); ligne(xb,ya,xb-5,ya-3.5,{w:1.5}); ligne(xb,ya,xb-5,ya+3.5,{w:1.5});
+}
+
+/* ================== Géométrie commune ================== */
+const W=800,H=480,SOL=416,K=64;            // K : pixels par unité du décor (64 px = 2 grands carreaux)
+const G={};                                 // géométrie partagée avec les décors
+function geometrie(){
+  const dec=DECORS[P.d]||DECORS.aucun;
+  const hD=dec.hauteur??2.1;                // hauteur de départ dessinée (m)
+  G.Mx = P.L ? 256 : 160; G.My = SOL - hD*K;
+  if(P.o==="depart"){ G.Ox=G.Mx; G.Oy=G.My; } else { G.Ox = P.L ? 96 : G.Mx; G.Oy=SOL; }
+}
+
+/* ================== Décors (à enrichir) ================== */
+const DECORS={
+  aucun:{ hauteur:2.1, grad:{pas:1,unite:'m'}, dessin(){} },
+  basket:{
+    hauteur:2.1, grad:{pas:1,unite:'m'},           // 1 graduation = 1 m
+    dessin(){
+      // joueur stylisé, main sous le ballon
+      const px=G.Mx-34, tete=SOL-152;
+      cercle(px,tete,15);
+      ligne(px,tete+15,px+2,SOL-70);                         // tronc
+      ligne(px+2,SOL-70,px-16,SOL); ligne(px+2,SOL-70,px+18,SOL);   // jambes
+      ligne(px+1,SOL-122,G.Mx-6,G.My+16); ligne(G.Mx-6,G.My+16,G.Mx-3,G.My+8);  // bras tireur
+      ligne(px+1,SOL-118,px-22,SOL-92);                      // autre bras
+      // panier : poteau, panneau, arceau, filet
+      const rx=G.Mx+4.6*K, ry=SOL-3.05*K;                   // centre de l'arceau
+      ligne(rx+95,SOL,rx+95,ry-70,{w:4});                    // poteau
+      ligne(rx+95,ry-70,rx+42,ry-70,{w:3.5});                 // bras du poteau
+      ligne(rx+40,ry-95,rx+40,ry+18,{w:4});                   // panneau
+      ligne(rx+22,ry,rx+40,ry,{w:2.5});                       // fixation
+      cercle(rx,ry,23,{ry:6,w:3,c:'#c2410c'});               // arceau vu de côté
+      for(const k of [-20,-10,0,10,20]) ligne(rx+k,ry+4,rx+k*0.55,ry+42,{w:1.3,c:'#555'});
+      ligne(rx-17,ry+20,rx+17,ry+20,{w:1.2,c:'#555'}); ligne(rx-12,ry+38,rx+12,ry+38,{w:1.2,c:'#555'});
+    },
+    // ballon au point de départ
+    objet(){ cercle(G.Mx,G.My,12,{f:'#f59e0b'}); ligne(G.Mx-12,G.My,G.Mx+12,G.My,{w:1.2}); ligne(G.Mx,G.My-12,G.Mx,G.My+12,{w:1.2}); }
+  }
+};
+
+/* ================== Graduations (pas et unité selon le décor) ================== */
+const fr=v=>(Math.round(v*1000)/1000).toString().replace('.',',');
+function graduations(gd,bas){
+  const pas=gd.pas, px=K;                      // K pixels = 1 unité
+  for(let i=1;G.Ox+i*px<W-45;i++){              // axe x
+    const x=G.Ox+i*px; ligne(x,G.Oy-6,x,G.Oy+6,{w:1.6});
+    texte(fr(i*pas),x,G.Oy+(bas?-18:20),{size:15,anchor:'middle'});
+  }
+  for(let i=1;;i++){                             // axe y
+    const y=bas?G.Oy+i*px:G.Oy-i*px; if(bas?y>H-35:y<45) break;
+    ligne(G.Ox-6,y,G.Ox+6,y,{w:1.6});
+    texte(fr(i*pas),G.Ox-12,y,{size:15,anchor:'end'});
+  }
+  texte(`(${gd.unite})`,W-36,G.Oy+(bas?-40:40),{size:15,anchor:'middle'});
+  texte(`(${gd.unite})`,G.Ox+40,bas?Math.min(H-28,G.Oy+250):34,{size:15});
+}
+
+/* ================== Papier grands carreaux (Seyès) ================== */
+function papier(){
+  const defs=el('defs',{}), C=32;                       // un grand carreau = 32 px, 4 interlignes
+  const pat=el('pattern',{id:'seyes',width:C,height:C,patternUnits:'userSpaceOnUse'},defs);
+  for(const y of [8,16,24]) el('line',{x1:0,y1:y,x2:C,y2:y,stroke:'#b9cbe8','stroke-width':0.7},pat);
+  el('line',{x1:0,y1:0,x2:C,y2:0,stroke:'#8f86c9','stroke-width':1.1},pat);
+  el('line',{x1:0,y1:0,x2:0,y2:C,stroke:'#8f86c9','stroke-width':1.1},pat);
+  el('rect',{x:0,y:0,width:W,height:H,fill:'url(#seyes)'});
+  el('line',{x1:56,y1:0,x2:56,y2:H,stroke:'#e0567a','stroke-width':1.6});   // marge rouge
+}
+
+/* ================== Dessin ================== */
+function dessiner(){
+  svg.innerHTML=''; seed=12345; geometrie();
+  papier();
+  const dec=DECORS[P.d]||DECORS.aucun;
+  // sol
+  ligne(20,SOL,W-20,SOL,{w:2});
+  for(let x=35;x<W-30;x+=26) ligne(x,SOL+2,x-12,SOL+14,{w:1.2,c:'#777'});
+  dec.dessin();
+  // repère
+  const bas=P.yd==="bas";
+  fleche(G.Ox,G.Oy,W-30,G.Oy,{w:2.2});
+  if(bas) fleche(G.Ox,G.Oy,G.Ox,Math.min(H-20,G.Oy+260),{w:2.2});
+  else    fleche(G.Ox,G.Oy,G.Ox,28,{w:2.2});
+  texte(P.ax[0],W-36,G.Oy-18,{size:22,italic:true});
+  texte(P.ax[1],G.Ox+12,bas?Math.min(H-28,G.Oy+250):34,{size:22,italic:true});
+  texte('O',G.Ox-22,G.Oy+(bas?-16:18),{size:21});
+  if(P.gr && dec.grad) graduations(dec.grad,bas);
+  // point de départ
+  if(dec.objet) dec.objet(); else cercle(G.Mx,G.My,4,{f:'#222'});
+  texte(P.M,G.Mx+14,G.My+22,{size:21,italic:true});
+  // cotes (lettres uniquement)
+  if(P.o==="sol" && P.h){
+    const xc=G.Mx+48;
+    cote(xc,SOL,xc,G.My,P.h,{dx:20});
+  }
+  if(P.L){
+    ligne(G.Mx,G.My+14,G.Mx,SOL+42,{w:1.2,dash:'6 5'});
+    cote(G.Ox,SOL+38,G.Mx,SOL+38,P.L,{dy:16});
+  }
+  // vitesse initiale
+  const a=(P.a?P.aDeg:0)*Math.PI/180, Lv=115;
+  const vx=G.Mx+Lv*Math.cos(a), vy=G.My-Lv*Math.sin(a);
+  fleche(G.Mx,G.My,vx,vy,{w:3,c:'#1f5fa8',s:15});
+  vecteurNom(P.v,vx+8,vy-14,{});
+  if(P.a){
+    ligne(G.Mx,G.My,G.Mx+95,G.My,{w:1.2,dash:'6 5'});
+    let d='';for(let i=0;i<=12;i++){const t=a*i/12;d+=(i?'L':'M')+(G.Mx+52*Math.cos(t))+','+(G.My-52*Math.sin(t))+' ';}
+    el('path',{d,fill:'none',stroke:'#222','stroke-width':1.6});
+    texte(lettre(P.a),G.Mx+64*Math.cos(a/2)+2,G.My-64*Math.sin(a/2),{size:22,italic:true});
+  }
+
+}
+dessiner();
+</script>
+</body>
+</html>
