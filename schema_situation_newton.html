@@ -23,7 +23,7 @@ function decodeP(p){
   return JSON.parse(new TextDecoder().decode(u));
 }
 const DEF={
-  d:"basket",     // décor : "basket", "aucun" (d'autres viendront)
+  d:"basket",     // décor : "basket", "cornhole", "aucun" (d'autres viendront)
   o:"sol",        // origine : "sol" (O au sol sous le point de départ) ou "depart" (O au point de départ)
   yd:"haut",      // sens de l'axe vertical : "haut" ou "bas"
   ax:["x","y"],   // noms des axes
@@ -36,8 +36,8 @@ const DEF={
   gr:1,           // 1 : graduations des axes (pas et unité fournis par le décor)
   pD:"",          // basket : nom de la distance horizontale O -> centre de l'arceau ("" = pas de cote)
   pH:"",          // basket : nom de la hauteur de l'arceau ("" = pas de cote)
-  pd:"",          // basket : nom du diamètre de l'arceau ("" = pas de cote)
-  pC:""           // basket : nom du centre de l'arceau ("" = pas de nom)
+  pd:"",          // cible : nom du diamètre (arceau, trou…) ("" = pas de cote)
+  pC:""           // cible : nom du centre ("" = pas de nom)
 };
 let P={...DEF};
 const Q=new URLSearchParams(location.search);
@@ -120,18 +120,49 @@ const DECORS={
       cercle(rx,ry,23,{ry:6,w:3,c:'#c2410c'});               // arceau vu de côté
       for(const k of [-20,-10,0,10,20]) ligne(rx+k,ry+4,rx+k*0.55,ry+42,{w:1.3,c:'#555'});
       ligne(rx-17,ry+20,rx+17,ry+20,{w:1.2,c:'#555'}); ligne(rx-12,ry+38,rx+12,ry+38,{w:1.2,c:'#555'});
-      // cotes du panier (lettres uniquement)
-      const VERT='#15803d';
-      if(P.pD){ ligne(rx,(P.pd?ry-50:ry-8),rx,72,{w:1.2,dash:'6 5',c:VERT}); ligne(G.Mx,G.My-60,G.Mx,72,{w:1.2,dash:'6 5',c:VERT});
-                cote(G.Mx,72,rx,72,P.pD,{dy:-16,c:VERT,w:2}); }
-      if(P.pH){ const xc=rx-62; ligne(rx-24,ry,xc-6,ry,{w:1.2,dash:'6 5',c:VERT}); cote(xc,SOL,xc,ry,P.pH,{dx:-22,c:VERT,w:2}); }
-      if(P.pC){ cercle(rx,ry,3,{f:'#222'}); texte(P.pC,rx+8,ry-9,{size:18,italic:true}); }
-      if(P.pd){ cote(rx-23,ry-20,rx+23,ry-20,P.pd,{dy:-16}); }
+      G.cible={x:rx,y:ry,r:23,yc:72,dxH:-62};               // centre de l'arceau (cotes communes)
     },
     // ballon au point de départ
     objet(){ cercle(G.Mx,G.My,12,{f:'#f59e0b'}); ligne(G.Mx-12,G.My,G.Mx+12,G.My,{w:1.2}); ligne(G.Mx,G.My-12,G.Mx,G.My+12,{w:1.2}); }
+  },
+  cornhole:{                                   // bac Métropole mars 2021 « Le jeu du cornhole »
+    hauteur:0.88, grad:{pas:1,unite:'m'}, haut:176,      // scène basse : on recadre le haut
+    dessin(){
+      // joueur qui lance par en dessous (bras vers l'avant, sac à hauteur de hanche)
+      const px=G.Mx-30, tete=SOL-1.62*K;
+      cercle(px,tete,11);
+      ligne(px,tete+11,px+1,SOL-0.92*K);                                    // tronc
+      ligne(px+1,SOL-0.92*K,px-12,SOL); ligne(px+1,SOL-0.92*K,px+14,SOL);   // jambes
+      ligne(px,SOL-1.35*K,G.Mx-8,G.My+2);                                    // bras lanceur
+      ligne(px,SOL-1.35*K,px-18,SOL-0.95*K);                                 // autre bras
+      // planche inclinée (avant 0,10 m, arrière 0,30 m, longueur 1,22 m), trou à 0,23 m du bord arrière
+      const xA=G.Mx+7.0*K, xB=xA+1.20*K, yA=SOL-0.10*K, yB=SOL-0.30*K;
+      ligne(xA,yA,xB,yB,{w:3.2}); ligne(xA,yA+5,xB,yB+5,{w:1.6});
+      ligne(xA,yA+5,xA,SOL,{w:1.6}); ligne(xB-4,yB+5,xB-4,SOL,{w:2.4});    // bord avant, pied arrière
+      const u=(1.20*K-0.23*K)/(1.20*K), hx=xA+u*(xB-xA), hy=yA+u*(yB-yA);
+      cercle(hx,hy,10,{ry:3,f:'#fdfdfb',w:2});                               // trou
+      G.cible={x:hx,y:hy,r:10,yc:SOL+33,dxH:-48};          // cote de distance sous le sol
+    },
+    // sac de graines au point de départ
+    objet(){ const x=G.Mx,y=G.My;
+      el('path',{d:`M${x-9},${y-7} Q${x},${y-11} ${x+9},${y-7} Q${x+12},${y} ${x+9},${y+7} Q${x},${y+11} ${x-9},${y+7} Q${x-12},${y} ${x-9},${y-7} Z`,
+                 fill:'#dc2626',stroke:'#222','stroke-width':2.2});
+      ligne(x-6,y-3,x+6,y-3,{w:1,c:'#fff'}); ligne(x-6,y+3,x+6,y+3,{w:1,c:'#fff'}); }
   }
 };
+
+/* ================== Cotes de la cible (panier, trou…) : communes à tous les décors ================== */
+function cotesCible(){
+  const C=G.cible; if(!C) return;
+  const VERT='#15803d', yc=C.yc??72;
+  if(P.pD){ const dessous=yc>C.y;
+            ligne(C.x,dessous?C.y+6:(P.pd?C.y-30-C.r:C.y-8),C.x,yc,{w:1.2,dash:'6 5',c:VERT});
+            ligne(G.Mx,dessous?G.My+14:G.My-60,G.Mx,yc,{w:1.2,dash:'6 5',c:VERT});
+            cote(G.Mx,yc,C.x,yc,P.pD,{dy:dessous?13:-16,c:VERT,w:2}); }
+  if(P.pH){ const xc=C.x+(C.dxH??-62); ligne(C.x-C.r-1,C.y,xc-6,C.y,{w:1.2,dash:'6 5',c:VERT}); cote(xc,SOL,xc,C.y,P.pH,{dx:-22,c:VERT,w:2}); }
+  if(P.pC){ cercle(C.x,C.y,3,{f:'#222'}); texte(P.pC,C.x+8,C.y-9,{size:18,italic:true}); }
+  if(P.pd){ cote(C.x-C.r,C.y-20,C.x+C.r,C.y-20,P.pd,{dy:-16}); }
+}
 
 /* ================== Graduations (pas et unité selon le décor) ================== */
 const fr=v=>(Math.round(v*1000)/1000).toString().replace('.',',');
@@ -142,12 +173,12 @@ function graduations(gd,bas){
     texte(fr(i*pas),x,G.Oy+(bas?-18:20),{size:15,anchor:'middle'});
   }
   for(let i=1;;i++){                             // axe y
-    const y=bas?G.Oy+i*px:G.Oy-i*px; if(bas?y>H-35:y<45) break;
+    const y=bas?G.Oy+i*px:G.Oy-i*px; if(bas?y>H-35:y<G.top+45) break;
     ligne(G.Ox-6,y,G.Ox+6,y,{w:1.6});
     texte(fr(i*pas),G.Ox-12,y,{size:15,anchor:'end'});
   }
   texte(`(${gd.unite})`,W-36,G.Oy+(bas?-40:40),{size:15,anchor:'middle'});
-  texte(`(${gd.unite})`,G.Ox+40,bas?Math.min(H-28,G.Oy+250):34,{size:15});
+  texte(`(${gd.unite})`,G.Ox+40,bas?Math.min(H-28,G.Oy+250):G.top+34,{size:15});
 }
 
 /* ================== Papier grands carreaux (Seyès) ================== */
@@ -164,19 +195,21 @@ function papier(){
 /* ================== Dessin ================== */
 function dessiner(){
   svg.innerHTML=''; seed=12345; geometrie();
+  const decV=DECORS[P.d]||DECORS.aucun; G.top=decV.haut??0;           // recadrage vertical propre au décor
+  svg.setAttribute('viewBox',`0 ${G.top} ${W} ${H-G.top}`);
   papier();
   const dec=DECORS[P.d]||DECORS.aucun;
   // sol
   ligne(20,SOL,W-20,SOL,{w:2});
   for(let x=35;x<W-30;x+=26) ligne(x,SOL+2,x-12,SOL+14,{w:1.2,c:'#777'});
-  dec.dessin();
+  G.cible=null; dec.dessin();
   // repère
   const bas=P.yd==="bas";
   fleche(G.Ox,G.Oy,W-30,G.Oy,{w:2.2});
   if(bas) fleche(G.Ox,G.Oy,G.Ox,Math.min(H-20,G.Oy+260),{w:2.2});
-  else    fleche(G.Ox,G.Oy,G.Ox,28,{w:2.2});
+  else    fleche(G.Ox,G.Oy,G.Ox,G.top+28,{w:2.2});
   texte(P.ax[0],W-36,G.Oy-18,{size:22,italic:true});
-  texte(P.ax[1],G.Ox+12,bas?Math.min(H-28,G.Oy+250):34,{size:22,italic:true});
+  texte(P.ax[1],G.Ox+12,bas?Math.min(H-28,G.Oy+250):G.top+34,{size:22,italic:true});
   texte('O',G.Ox-22,G.Oy+(bas?-16:18),{size:21});
   if(P.gr && dec.grad) graduations(dec.grad,bas);
   // point de départ
@@ -191,6 +224,7 @@ function dessiner(){
     ligne(G.Mx,G.My+14,G.Mx,SOL+42,{w:1.2,dash:'6 5'});
     cote(G.Ox,SOL+38,G.Mx,SOL+38,P.L,{dy:16});
   }
+  cotesCible();
   // vitesse initiale
   const a=(P.a?P.aDeg:0)*Math.PI/180, Lv=115;
   const vx=G.Mx+Lv*Math.cos(a), vy=G.My-Lv*Math.sin(a);
