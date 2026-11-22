@@ -37,7 +37,9 @@ const DEF={
   pD:"",          // basket : nom de la distance horizontale O -> centre de l'arceau ("" = pas de cote)
   pH:"",          // basket : nom de la hauteur de l'arceau ("" = pas de cote)
   pd:"",          // cible : nom du diamètre (arceau, trou…) ("" = pas de cote)
-  pC:""           // cible : nom du centre ("" = pas de nom)
+  pC:"",          // cible : nom du centre ("" = pas de nom)
+  hD:null,        // hauteur de départ DESSINÉE (m) ; null = valeur du décor
+  cx:null, cy:null // position DESSINÉE du centre de la cible (m) ; null = valeurs du décor
 };
 let P={...DEF};
 const Q=new URLSearchParams(location.search);
@@ -93,7 +95,7 @@ const W=800,H=480,SOL=416,K=64;            // K : pixels par unité du décor (6
 const G={};                                 // géométrie partagée avec les décors
 function geometrie(){
   const dec=DECORS[P.d]||DECORS.aucun;
-  const hD=dec.hauteur??2.1;                // hauteur de départ dessinée (m)
+  const hD=(P.hD!=null&&P.hD!=='')?+P.hD:(dec.hauteur??2.1);   // hauteur de départ dessinée (m)
   G.Mx = P.L ? 256 : 160; G.My = SOL - hD*K;
   if(P.o==="depart"){ G.Ox=G.Mx; G.Oy=G.My; } else { G.Ox = P.L ? 96 : G.Mx; G.Oy=SOL; }
 }
@@ -112,7 +114,7 @@ const DECORS={
       ligne(px+1,SOL-122,G.Mx-6,G.My+16); ligne(G.Mx-6,G.My+16,G.Mx-3,G.My+8);  // bras tireur
       ligne(px+1,SOL-118,px-22,SOL-92);                      // autre bras
       // panier : poteau, panneau, arceau, filet
-      const rx=G.Mx+4.6*K, ry=SOL-3.05*K;                   // centre de l'arceau
+      const rx=G.Mx+(P.cx!=null&&P.cx!==''?+P.cx:4.6)*K, ry=SOL-(P.cy!=null&&P.cy!==''?+P.cy:3.05)*K;   // centre de l'arceau
       ligne(rx+95,SOL,rx+95,ry-70,{w:4});                    // poteau
       ligne(rx+95,ry-70,rx+42,ry-70,{w:3.5});                 // bras du poteau
       ligne(rx+40,ry-95,rx+40,ry+18,{w:4});                   // panneau
@@ -136,7 +138,8 @@ const DECORS={
       ligne(px,SOL-1.35*K,G.Mx-8,G.My+2);                                    // bras lanceur
       ligne(px,SOL-1.35*K,px-18,SOL-0.95*K);                                 // autre bras
       // planche inclinée (avant 0,10 m, arrière 0,30 m, longueur 1,22 m), trou à 0,23 m du bord arrière
-      const xA=G.Mx+7.0*K, xB=xA+1.20*K, yA=SOL-0.10*K, yB=SOL-0.30*K;
+      const dTrou=(P.cx!=null&&P.cx!==''?+P.cx:7.97);                 // distance dessinée au centre du trou (m)
+      const xA=G.Mx+(dTrou-0.97)*K, xB=xA+1.20*K, yA=SOL-0.10*K, yB=SOL-0.30*K;
       ligne(xA,yA,xB,yB,{w:3.2}); ligne(xA,yA+5,xB,yB+5,{w:1.6});
       ligne(xA,yA+5,xA,SOL,{w:1.6}); ligne(xB-4,yB+5,xB-4,SOL,{w:2.4});    // bord avant, pied arrière
       const u=(1.20*K-0.23*K)/(1.20*K), hx=xA+u*(xB-xA), hy=yA+u*(yB-yA);
