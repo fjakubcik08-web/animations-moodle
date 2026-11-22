@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Démonstration rédigée</title>
+<style>
+  :root{--bleu:#1f5fa8;--bleu2:#e8f0fa;--gris:#f3f5f8;--bord:#cfd8e3;--ok:#1e9e5a;--ko:#d23c3c;--nc:#c98a12;--txt:#1d2733}
+  html,body{margin:0;padding:0;overflow-x:hidden;overflow-y:auto;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--txt);background:#fff}
+  .wrap{max-width:900px;margin:0 auto;padding:10px}
+  .bandeau{background:var(--bleu);color:#fff;padding:10px 14px;border-radius:8px;font-weight:600;font-size:1.05em}
+  .consigne{margin:8px 2px;font-size:.93em;color:#445}
+  h3{margin:14px 0 6px;font-size:.95em;color:var(--bleu);text-transform:uppercase;letter-spacing:.04em}
+  .palette{display:flex;flex-direction:column;gap:5px;background:var(--gris);border:2px solid var(--bord);border-bottom:none;border-radius:8px 8px 0 0;padding:6px 8px}
+  .pal-l{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+  .pal-t{font-size:.72em;color:#778;text-transform:uppercase;letter-spacing:.04em;min-width:78px}
+  .pb{border:1px solid var(--bord);background:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-family:"Cambria Math","Times New Roman",serif;font-size:1em;min-width:28px}
+  .pb:hover{background:var(--bleu2);border-color:var(--bleu)}
+  .pb.cn{color:var(--bleu);font-weight:600} .pb.ju{color:#6a7a8c;font-style:italic} .pb.ph{color:#445}
+  .pal-t{min-width:110px}
+  .pb.txt{font-family:system-ui,sans-serif;font-size:.85em}
+  textarea{width:100%;box-sizing:border-box;min-height:220px;font-family:Consolas,"Courier New",monospace;font-size:1.02em;line-height:1.55;padding:8px 10px;border:2px solid var(--bord);border-radius:8px;resize:vertical}
+  .ac{position:absolute;z-index:20;background:#fff;border:1px solid var(--bord);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.15);font-size:.9em;min-width:190px;display:none;overflow:hidden}
+  .ac div{padding:4px 10px;cursor:pointer;display:flex;justify-content:space-between;gap:12px}
+  .ac div.sel,.ac div:hover{background:var(--bleu2)}
+  .ac small{color:#99a;font-size:.78em}
+  .ac b{color:var(--bleu)}
+  .duo{position:relative;display:flex;flex-wrap:wrap;border:2px solid var(--bord);border-top:none;border-radius:0 0 8px 8px;overflow:hidden}
+  .duo textarea{flex:1 1 320px;border:none;border-radius:0;min-height:240px}
+  .apercu{flex:1 1 320px;min-height:240px;background:#fffdf8;border-left:2px solid var(--bord);padding:8px 14px;box-sizing:border-box}
+  .apercu .tit{font-size:.72em;color:#998;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+  .al{font-family:"Cambria Math","Times New Roman",serif;font-size:1.15em;line-height:2.1;min-height:2.1em}
+  .al .cn{font-family:system-ui,sans-serif;font-size:.82em;color:var(--bleu);font-weight:600;margin-right:.35em}
+  .al .ju{font-family:system-ui,sans-serif;font-size:.78em;color:#6a7a8c;font-style:italic;margin-left:.6em}
+  .al .ph{font-family:system-ui,sans-serif;font-size:.82em;color:#445;margin:0 .35em}
+  .al .bad{font-family:system-ui,sans-serif;font-size:.82em;text-decoration:underline wavy var(--ko);text-decoration-skip-ink:none;text-underline-offset:3px;margin:0 .2em}
+  .al .rm{font-style:normal}
+  .al .box{display:inline-block;border:2px solid var(--txt);padding:0 8px;border-radius:2px;line-height:1.9}
+  .pb.enc{border:2px solid var(--txt);font-weight:600}
+  .al .rad{border-top:1px solid currentColor;padding:0 2px}
+  textarea:focus{outline:none;border-color:var(--bleu)}
+  .aide{font-size:.82em;color:#667;margin-top:4px;line-height:1.5}
+  .aide code{background:var(--gris);padding:0 4px;border-radius:3px}
+  .actions{margin:12px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .go{background:var(--bleu);color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:1em;cursor:pointer}
+  .go:hover{filter:brightness(1.1)}
+  #bilan{font-weight:600}
+  .ligne{display:flex;gap:10px;align-items:baseline;padding:5px 8px;margin:3px 0;border-left:4px solid var(--bord);background:var(--gris);border-radius:0 5px 5px 0;font-family:Consolas,"Courier New",monospace;font-size:.95em}
+  .ligne.ok{border-color:var(--ok);background:#effaf3}
+  .ligne.ko{border-color:var(--ko);background:#fdf0f0}
+  .ligne.nc{border-color:var(--nc);background:#fdf7ea}
+  .ico{font-weight:700;min-width:1.2em;font-family:system-ui,sans-serif}
+  .ok .ico{color:var(--ok)} .ko .ico{color:var(--ko)} .nc .ico{color:var(--nc)}
+  .msg{margin-left:auto;font-family:system-ui,sans-serif;font-size:.82em;color:#776;white-space:nowrap}
+  .frac{display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:.78em;line-height:1.05}
+  .frac>span:first-child{border-bottom:1px solid currentColor;padding:0 1px}
+  .jalons{display:flex;flex-wrap:wrap;gap:8px}
+  .jal{padding:4px 10px;border-radius:14px;border:1.5px solid var(--bord);font-size:.88em;background:#fff}
+  .jal.ok{border-color:var(--ok);color:var(--ok);background:#effaf3}
+  .jal.ko{border-color:var(--ko);color:var(--ko);background:#fdf0f0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bandeau" id="titre">Démonstration</div>
+  <div class="consigne" id="consigne"></div>
+
+  <h3>Ta démonstration <span style="text-transform:none;font-weight:400;color:#667">(une étape par ligne)</span></h3>
+  <div class="palette" id="palette"></div>
+  <div class="duo">
+    <textarea id="txt" spellcheck="false" placeholder="On sait que ...&#10;donc ...&#10;or ...&#10;soit ..."></textarea>
+    <div class="apercu"><div class="tit">Aperçu</div><div id="apercu"></div></div>
+    <div class="ac" id="ac"></div>
+  </div>
+  <div class="aide" id="aide"></div>
+
+  <div class="actions">
+    <button class="go" id="verif">Vérifier</button>
+    <span id="bilan"></span>
+  </div>
+  <div id="resLignes"></div>
+  <div id="resJalons"></div>
+</div>
+
+<script>
+/* ===================== Paramètres URL (XOR + base64) ===================== */
+const KEY = "Bayle-DemoRedac-v1";
+function decodeP(p){
+  let b=p.replace(/-/g,'+').replace(/_/g,'/'); while(b.length%4) b+='=';
+  const bin=atob(b), k=new TextEncoder().encode(KEY), u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i)^k[i%k.length];
+  return JSON.parse(new TextDecoder().decode(u));
+}
+
+/* ===================== Exercice par défaut ===================== */
+const DEFAUT = {"titre": "Chute libre : établir vy(t)", "consigne": "Rédige la démonstration permettant d'établir vy(t). Une étape par ligne.", "params": {"g": [9, 10], "v0": [1, 20], "alpha": [0.1, 1.4], "h": [0.5, 3]}, "trange": [0, 3], "modele": {"ax": "0", "ay": "-g", "vx": "(0)*t + (v0*cos(alpha))", "vy": "(-g)*t + (v0*sin(alpha))", "x": "(0)*t^2/2 + (v0*cos(alpha))*t + (0)", "y": "(-g)*t^2/2 + (v0*sin(alpha))*t + (h)"}, "jalons": [{"l": "Accélération ay", "s": "ay = -g"}, {"l": "Équation différentielle vy", "s": "dvy/dt = -g"}, {"l": "Primitive vy", "s": "vy = (-g)*t + cst"}, {"l": "Condition initiale vy", "ci": "vy"}, {"l": "Constante vy", "cst": "vy"}, {"l": "Expression de vy(t)", "s": "vy = (-g)*t + (v0*sin(alpha))"}], "justifs": ["d'après la RFD", "par définition"], "fb": 2};
+let EX=DEFAUT;
+const Q=new URLSearchParams(location.search);
+if(Q.get('p')){try{EX=Object.assign({},DEFAUT,decodeP(Q.get('p')));}catch(e){console.warn('p invalide',e);}}
+if(Q.get('fb')!==null) EX.fb=+Q.get('fb');
+
+/* ===================== Analyse lexicale ===================== */
+const FN={sin:Math.sin,cos:Math.cos,tan:Math.tan,sqrt:Math.sqrt,exp:Math.exp,ln:Math.log,log:Math.log10,abs:Math.abs};
+const GREC={"α":"alpha","β":"beta","θ":"theta","ω":"omega","π":"pi","λ":"lambda","φ":"phi","τ":"tau","Δ":"delta","ε":"epsilon"};
+const PN=Object.keys(EX.params), QN=Object.keys(EX.modele);
+/* dictionnaire des noms : forme écrite -> {n: nom canonique, k: type}. Casse respectée (E ≠ e) ;
+   casse ignorée seulement si aucune ambiguïté (V0 -> v0 si V0 n'existe pas). */
+const ENT=[];
+const addE=(s,n,k)=>ENT.push({s,n,k});
+for(const f of Object.keys(FN)) addE(f,f,'f');
+addE('pi','pi','pi'); if(!PN.includes('t')) addE('t','t','t');
+for(const n of PN) addE(n,n,'p');
+for(const n of Object.keys(EX.derives||{})) if(!PN.includes(n)) addE(n,n,'p');   // ex. E = U/d
+for(const n of QN) addE(n,n,'q');
+for(const c of ["cste","cst"]) addE(c,c,'c');
+const ALIAS={alfa:"alpha",teta:"theta",...(EX.alias||{})};
+for(const [a,n] of Object.entries(ALIAS)){const e=ENT.find(x=>x.n===n);if(e&&!ENT.some(x=>x.s===a)) addE(a,n,e.k);}
+ENT.sort((a,b)=>b.s.length-a.s.length);
+const LOWCOUNT={}; for(const e of ENT) LOWCOUNT[e.s.toLowerCase()]=(LOWCOUNT[e.s.toLowerCase()]||0)+1;
+function trouveNom(w){ // plus long nom en tête de w : exact, sinon insensible à la casse non ambigu
+  return ENT.find(e=>w.startsWith(e.s)) || ENT.find(e=>LOWCOUNT[e.s.toLowerCase()]===1&&w.toLowerCase().startsWith(e.s.toLowerCase()));
+}
+function quantite(w){const e=ENT.find(x=>x.k==='q'&&x.s===w)||ENT.find(x=>x.k==='q'&&LOWCOUNT[x.s.toLowerCase()]===1&&x.s.toLowerCase()===w.toLowerCase());return e?e.n:null;}
+/* découpe un identifiant (v0sin, gt, qE…) ; null si impossible.
+   Une lettre isolée (A, K) ou lettre+chiffres (C1) non définie = constante. */
+function decoupe(w){
+  if(/^[A-Za-z]\d*$/.test(w)){const e=trouveNom(w); if(e&&e.s.length===w.length) return [e]; if(!e) return [{n:w,k:'c'}];}
+  if(/^[A-Za-z]\d+$/.test(w)&&!trouveNom(w)) return [{n:w,k:'c'}];
+  const out=[];let x=w;
+  while(x.length){const e=trouveNom(x);if(!e)return null;out.push(e);x=x.slice(e.s.length);}
+  return out;
+}
+function normaliser(s){ // commun vérification / aperçu
+  s=s.replace(/[×·]/g,'*').replace(/([A-Za-z0-9)²³½α-ωΑ-Ω])\.(?=\s*[A-Za-z(α-ωΑ-Ω])/g,'$1*').replace(/[−–]/g,'-').replace(/÷/g,'/').replace(/²/g,'^2').replace(/³/g,'^3').replace(/½/g,' (1/2) ').replace(/’/g,"'");
+  for(const [g,n] of Object.entries(GREC)) s=s.split(g).join(' '+n+' ');
+  s=s.replace(/[_{}]/g,'');
+  s=s.replace(/\bd\s*\(\s*([A-Za-z][A-Za-z0-9]*)\s*\)\s*\/\s*dt\b/g,(m,a)=>quantite(a)?` §${quantite(a)} `:m)
+     .replace(/\bd([A-Za-z][A-Za-z0-9]*)\s*\/\s*dt\b/g,(m,a)=>quantite(a)?` §${quantite(a)} `:m)
+     .replace(/\b([A-Za-z][A-Za-z0-9]*)'/g,(m,a)=>quantite(a)?` §${quantite(a)} `:m);
+  return s;
+}
+function prepare(s){
+  s=normaliser(s).replace(/,(?=\d)/g,'.');
+  s=s.replace(/(?:la\s+)?valeur\s+ini(?:tiale)?\s+(?:de\s+)?([A-Za-z][A-Za-z0-9]*)/gi,'$1(0)');
+  return s;
+}
+function tokenise(s){
+  const T=[];let i=0;
+  while(i<s.length){
+    const c=s[i]; if(/\s/.test(c)){i++;continue;}
+    let m;
+    if((m=/^§([A-Za-z0-9]+)/.exec(s.slice(i)))){T.push({k:'d',v:m[1]});i+=m[0].length;continue;}
+    if((m=/^\d+(\.\d+)?(e[-+]\d+)?/.exec(s.slice(i)))){T.push({k:'n',v:parseFloat(m[0])});i+=m[0].length;continue;}
+    if((m=/^[A-Za-z][A-Za-z0-9]*/.exec(s.slice(i)))){
+      const parts=decoupe(m[0]); if(!parts) throw new Error(`« ${m[0]} » inconnu`);
+      for(const e of parts) T.push({k:e.k,v:e.n});
+      i+=m[0].length;continue;
+    }
+    if('+-*/^()'.includes(c)){T.push({k:'o',v:c});i++;continue;}
+    throw new Error(`« ${c} » non reconnu`);
+  }
+  return T;
+}
+
+/* ===================== Analyse syntaxique -> arbre ===================== */
+let T0MODE=false;
+function parseExpr(src){
+  const T=tokenise(prepare(src)); let p=0;
+  const is2=v=>T[p+1]&&T[p+1].k==='o'&&T[p+1].v===v;
+  const pk=()=>T[p], is=v=>T[p]&&T[p].k==='o'&&T[p].v===v, eat=v=>{if(is(v)){p++;return true;}return false;};
+  const startsAtom=()=>{const t=pk();return t&&(t.k!=='o'||t.v==='(');};
+  function expr(){let n=term();for(;;){if(eat('+'))n={k:'b',o:'+',a:n,b:term()};else if(eat('-'))n={k:'b',o:'-',a:n,b:term()};else return n;}}
+  function term(){let n=unary();for(;;){if(eat('*'))n={k:'b',o:'*',a:n,b:unary()};else if(eat('/'))n={k:'b',o:'/',a:n,b:unary()};else if(startsAtom())n={k:'b',o:'*',a:n,b:power()};else return n;}}
+  function unary(){if(eat('-'))return{k:'neg',a:unary()};if(eat('+'))return unary();return power();}
+  function power(){const a=atom();if(eat('^'))return{k:'b',o:'^',a,b:unary()};return a;}
+  function atom(){
+    const t=pk(); if(!t) throw new Error("expression incomplète");
+    if(t.k==='n'){p++;return{k:'n',v:t.v};}
+    if(t.k==='pi'){p++;return{k:'n',v:Math.PI};}
+    if(t.k==='t'){p++;return{k:'t'};}
+    if(t.k==='p'){p++;return{k:'p',v:t.v};}
+    if(t.k==='c'){p++;return{k:'c',v:t.v};}
+    if(t.k==='d'){p++;return{k:'d',v:t.v};}
+    if(t.k==='q'&&T0MODE&&!is2('(')){p++;return{k:'at',v:t.v,a:{k:'n',v:0}};}
+    if(t.k==='q'){p++;
+      if(is('(')){p++;const a=expr();if(!eat(')'))throw new Error("parenthèse manquante");
+        return (a.k==='t'||a.k==='q')?{k:'q',v:t.v}:{k:'at',v:t.v,a};}   // vy(t), y(x) : la grandeur elle-même
+      return{k:'q',v:t.v};}
+    if(t.k==='f'){p++;let ex=null;if(eat('^'))ex=atom();      // cos^2(α)
+      const a=is('(')?atom():power();const n={k:'f',f:t.v,a};return ex?{k:'b',o:'^',a:n,b:ex}:n;}
+    if(eat('(')){const n=expr();if(!eat(')'))throw new Error("parenthèse manquante");return n;}
+    throw new Error(`« ${t.v} » mal placé`);
+  }
+  const n=expr(); if(p<T.length) throw new Error(`« ${T[p].v} » inattendu`);
+  return n;
+}
+function walk(n,f){f(n);for(const c of ['a','b']) if(n[c]) walk(n[c],f);}
+function cstsOf(n){const s=new Set();walk(n,x=>{if(x.k==='c')s.add(x.v);});return[...s];}
+function depT(n){let d=false;walk(n,x=>{if(x.k==='t'||x.k==='q'||x.k==='d')d=true;});return d;}
+
+/* ===================== Modèle & évaluation ===================== */
+const MOD={}; for(const [k,v] of Object.entries(EX.modele)) MOD[k]=parseExpr(v);
+function q(name,P,t){return ev(MOD[name],{mode:'m',P,t,C:{}});}
+function ev(n,x){
+  switch(n.k){
+    case 'n':return n.v; case 't':return x.t; case 'p':return x.P[n.v];
+    case 'c':return x.mode==='f'?x.free('c'):(x.C[n.v]??NaN);
+    case 'q':return x.mode==='f'?x.free('q'+n.v):q(n.v,x.P,x.t);
+    case 'd':{if(x.mode==='f')return x.free('d'+n.v);const h=1e-5*Math.max(1,Math.abs(x.t));return(q(n.v,x.P,x.t+h)-q(n.v,x.P,x.t-h))/(2*h);}
+    case 'at':{const a=ev(n.a,x);return x.mode==='f'?x.free(Math.abs(a)<1e-12?'c':'q'+n.v+'@'+a.toFixed(6)):q(n.v,x.P,a);}
+    case 'f':return FN[n.f](ev(n.a,x));
+    case 'neg':return -ev(n.a,x);
+    case 'b':{const a=ev(n.a,x),b=ev(n.b,x);return n.o==='+'?a+b:n.o==='-'?a-b:n.o==='*'?a*b:n.o==='/'?a/b:Math.pow(a,b);}
+  }
+}
+function dt(n,x){const h=1e-5*Math.max(1,Math.abs(x.t));return(ev(n,{...x,t:x.t+h})-ev(n,{...x,t:x.t-h}))/(2*h);}
+const close=(a,b,tol)=>isFinite(a)&&isFinite(b)&&Math.abs(a-b)<=tol*Math.max(1,Math.abs(a),Math.abs(b));
+
+/* ===================== Lecture d'une ligne ===================== */
+/* ===================== Connecteurs logiques (liste unique) ===================== */
+const CONNECTEURS=["on sait que","on a","or","donc","soit","soit encore","d'où","et","ainsi","alors","par conséquent","comme","avec","car","puisque","puis","de plus","enfin","finalement",
+  "il vient","on en déduit que","on en déduit","on obtient","on trouve","ce qui donne","c'est-à-dire","de même","par intégration","en intégrant","après intégration","sachant que","on peut écrire","on remarque que"];
+const CONN_ALT=CONNECTEURS.slice().sort((a,b)=>b.length-a.length).map(c=>c.replace(/['’]/g,"['’]\\s*").replace(/é/g,'[ée]').replace(/ù/g,'[uù]').replace(/-/g,'[\\s-]').replace(/\s+/g,'\\s+')).join('|');
+const MID_ALT=CONNECTEURS.filter(c=>!["comme","avec","car","puisque","on a","sachant que"].includes(c)).sort((a,b)=>b.length-a.length).map(c=>c.replace(/['’]/g,"['’]\\s*").replace(/é/g,'[ée]').replace(/ù/g,'[uù]').replace(/-/g,'[\\s-]').replace(/\s+/g,'\\s+')).join('|');
+const CONNECT=new RegExp("^\\s*("+CONN_ALT+")(?![A-Za-zÀ-ÿ])\\s*[,:]?\\s*","i");
+/* justifications entre parenthèses : (d'après la RFD), (par définition)… */
+function motifJ(j){return j.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/['’]/g,"['’]\\s*").replace(/[eéèê]/gi,'[eéèê]').replace(/\s+/g,'\\s+');}
+const JUST_RE=new RegExp('\\s*\\(\\s*('+(EX.justifs||[]).map(motifJ).join('|')+')\\s*\\)\\s*','gi');
+function estMath(w){try{tokenise(prepare(w));return true;}catch(e){return false;}}
+function lireLigne(raw){
+  let s=raw.replace(JUST_RE,' ').trim();
+  if(/\(\s*(d['’]|par\s|selon|car\s|avec\s)/i.test(s)) throw new Error('justification non reconnue'); while(CONNECT.test(s)) s=s.replace(CONNECT,'');
+  // mots inconnus en tête (« On en déduit que », « Ensuite »…) : ignorés, l'égalité qui suit est vérifiée
+  let mm;
+  while(!/^(la\s+)?valeur\s+ini/i.test(s) && (mm=/^([A-Za-zÀ-ÿ'’-]+)(?:[\s,:]+|$)/.exec(s)) && !estMath(mm[1])) s=s.slice(mm[0].length);
+  if(!s.trim()) return{k:'conn'};
+  let m;
+  if((m=/^(.+?)\s+est\s+(?:une\s+)?constante?$/i.exec(s))) return{k:'eq',M:[parseExpr(m[1]),{k:'c',v:'cst'}]};
+  if((m=/^(.+?)\s+est\s+nul(?:le)?$/i.exec(s)))            return{k:'eq',M:[parseExpr(m[1]),{k:'n',v:0}]};
+  if((m=/^(.+?)\s+est\s+(?:une|la)\s+primitive\s+de\s+(.+)$/i.exec(s))) return{k:'prim',X:parseExpr(m[1]),Y:parseExpr(m[2])};
+  if((m=/^(.+?)\s+a\s+pour\s+primitive\s+(.+)$/i.exec(s)))             return{k:'prim',X:parseExpr(m[2]),Y:parseExpr(m[1])};
+  if((m=/^(.+?)\s+est\s+la\s+dérivée\s+de\s+(.+)$/i.exec(s)))           return{k:'prim',X:parseExpr(m[2]),Y:parseExpr(m[1])};
+  const parts=s.split('=');
+  if(parts.length<2) return{k:'conn'};   // texte sans égalité (« On remplace dans y ») : neutre
+  return{k:'eq',M:parts.map(parseExpr)};
+}
+
+/* ===================== Vérification "vraie dans le modèle" ===================== */
+let DERIV=null;
+function tirerP(){
+  const P={};for(const [k,[a,b]] of Object.entries(EX.params))P[k]=a+Math.random()*(b-a);
+  if(EX.derives){ if(!DERIV){DERIV={};for(const [n,e] of Object.entries(EX.derives))DERIV[n]=parseExpr(e);}
+    for(const [n,A] of Object.entries(DERIV)) P[n]=ev(A,{mode:'m',P,t:0,C:{}}); }
+  return P;
+}
+function echantillons(){
+  const PS=[];for(let i=0;i<6;i++)PS.push(tirerP());
+  const [t0,t1]=EX.trange, TS=[0.13,0.31,0.52,0.74,0.93].map(u=>t0+u*(t1-t0));
+  return{PS,TS};
+}
+function verifPaire(A,B,S,B_){ // B_ : liaisons des constantes {nom:[valeur par jeu de paramètres]}
+  const names=[...new Set([...cstsOf(A),...cstsOf(B)])];
+  if(names.length>1) return 'nc';
+  const C=pi=>{const o={};for(const k in B_)if(k.slice(0,2)!=='__')o[k]=B_[k][pi];return o;};
+  const tester=()=>S.PS.every((P,pi)=>S.TS.every(t=>{const x={mode:'m',P,t,C:C(pi)};return close(ev(A,x),ev(B,x),1e-6);}));
+  const k=names[0], dep=depT(A)||depT(B);
+  if(!k){ if(!tester()) return 'ko';
+    for(const [U,V] of [[A,B],[B,A]]) if(U.k==='at'&&U.a.k==='n'&&U.a.v===0&&!depT(V)&&!(()=>{let z=false;walk(V,x=>{if(x.k==='at')z=true;});return z;})()){ B_.__ci.add(U.v); if(!cstsOf(V).length) B_.__det.add(U.v); }
+    return 'ok'; }
+  if(!dep){                                   // « K = v0 cos α », « K = x(0) = 0 » : détermination
+    if(!B_[k]) return 'ncst';
+    if(tester()){ if(B_.__src[k]) B_.__det.add(B_.__src[k]); return 'ok'; }
+    return 'ko';
+  }
+  // « x = v0 t + K » : (ré)introduction de la constante K par une primitive
+  // résolution de la constante (doit être indépendante de t)
+  const vals=[];
+  for(let pi=0;pi<S.PS.length;pi++){
+    let ref=null;
+    for(const t of S.TS){
+      const x0={mode:'m',P:S.PS[pi],t,C:{...C(pi),[k]:0}}, x1={...x0,C:{...C(pi),[k]:1}};
+      const f0=ev(A,x0)-ev(B,x0), a=ev(A,x1)-ev(B,x1)-f0;
+      if(!isFinite(a)||!close(Math.abs(a),1,1e-6)) return 'ko';   // « + K » seulement (ay = qE/m avec q inconnu : refusé)
+      const kv=-f0/a;
+      if(ref===null) ref=kv; else if(!close(ref,kv,1e-6)) return 'ko';
+    }
+    vals.push(ref);
+  }
+  B_[k]=vals;
+  let src=null; for(const N of [A,B]) walk(N,x=>{if(!src&&x.k==='q')src=x.v;});   // grandeur dont c'est la primitive
+  B_.__src[k]=src; return 'ok';
+}
+function verifLigne(L,S,B_){
+  if(L.k==='conn') return 'conn';
+  if(L.k==='prim'){
+    const C=pi=>{const o={};for(const c of cstsOf(L.X))o[c]=B_[c]?B_[c][pi]:0;return o;};
+    return S.PS.every((P,pi)=>S.TS.every(t=>{const x={mode:'m',P,t,C:C(pi)};return close(dt(L.X,x),ev(L.Y,x),1e-4);}))?'ok':'ko';
+  }
+  for(let i=0;i+1<L.M.length;i++){const r=verifPaire(L.M[i],L.M[i+1],S,B_);if(r!=='ok')return r;}
+  return 'ok';
+}
+
+/* ===================== Jalons : correspondance de forme (symboles libres) ===================== */
+function freeCtx(){
+  const P=tirerP();
+  const memo={};const [t0,t1]=EX.trange;
+  return{mode:'f',P,t:t0+Math.random()*(t1-t0),C:{},free:k=>memo[k]??(memo[k]=0.5+2.5*Math.random())};
+}
+function memeForme(A1,B1,A2,B2){ // A1-B1 proportionnel à A2-B2
+  let r=null;
+  for(let i=0;i<12;i++){
+    const x=freeCtx(), d1=ev(A1,x)-ev(B1,x), d2=ev(A2,x)-ev(B2,x);
+    if(!isFinite(d1)||!isFinite(d2)) return false;
+    if(Math.abs(d2)<1e-9){ if(Math.abs(d1)>1e-7) return false; continue; }
+    const q=d1/d2; if(Math.abs(q)<1e-9) return false;
+    if(r===null) r=q; else if(!close(r,q,1e-6)) return false;
+  }
+  return r!==null;
+}
+const egal=(A,B)=>{for(let i=0;i<12;i++){const x=freeCtx();if(!close(ev(A,x),ev(B,x),1e-7))return false;}return true;};
+function jalonAtteint(J,L){
+  if(J.k==='cst') return !!(L.det&&L.det.includes(J.q));
+  if(J.k==='ci') return !!(L.ci&&L.ci.includes(J.q));
+  if(J.k==='prim') return L.k==='prim'&&egal(J.X,L.X)&&egal(J.Y,L.Y);
+  if(L.k!=='eq') return false;
+  for(let i=0;i<L.M.length;i++)for(let j=i+1;j<L.M.length;j++) if(memeForme(L.M[i],L.M[j],J.M[0],J.M[1])) return true;
+  return false;
+}
+
+/* ===================== Interface ===================== */
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+$('titre').textContent=EX.titre; $('consigne').textContent=EX.consigne;
+$('aide').innerHTML = EX.aide || `Tu peux aussi tout taper au clavier : <code>dvy/dt</code> · <code>vy(0)</code> · <code>v0 sin(alpha)</code> · <code>t^2</code> ou <code>t²</code> · le <code>*</code> est facultatif. Astuce : sélectionne une grandeur puis clique sur d( )/dt pour l'entourer.`;
+const JAL=(EX.jalons||[]).map(j=>({l:j.l,J:j.cst?{k:'cst',q:j.cst}:j.ci?{k:'ci',q:j.ci}:lireLigne(j.s)}));
+
+
+/* ===================== Aperçu "en beau" ===================== */
+const CONN_RE=new RegExp("^\\s*("+CONN_ALT+")(?![A-Za-zÀ-ÿ])\\s*[,:]?","i");
+const PHRASE_RE=/((?:à|pour)\s+(?:l['’]\s*instant\s+initial|t\s*=\s*0)\s*,?|\s+est\s+(?:une\s+)?constante?\b|\s+est\s+nul(?:le)?\b|\s+est\s+(?:une|la)\s+primitive\s+de\s+|\s+a\s+pour\s+primitive\s+|\s+est\s+la\s+dérivée\s+de\s+|(?:la\s+)?valeur\s+ini(?:tiale)?(?:\s+de)?\s+)/i;
+function lexJoli(s){
+  s=normaliser(s);
+  const T=[];let i=0,m;
+  while(i<s.length){
+    const r=s.slice(i);
+    if(/^\s/.test(r)){i++;continue;}
+    if((m=/^§([A-Za-z0-9]+)/.exec(r))){T.push({k:'der',v:m[1]});i+=m[0].length;continue;}
+    if((m=/^\d+([.,]\d+)?/.exec(r))){T.push({k:'num',v:m[0].replace('.',',')});i+=m[0].length;continue;}
+    if((m=/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9]*/.exec(r))){
+      const w0=m[0]; i+=w0.length;
+      const parts=/^[A-Za-z0-9]+$/.test(w0)?decoupe(w0):null;
+      if(parts) parts.forEach(e=>T.push({k:'id',v:e.n,t:e.k})); else T.push({k:'txt',v:w0});
+      continue;
+    }
+    if(r[0]==='('){T.push({k:'lp'});i++;continue;}
+    if(r[0]===')'){T.push({k:'rp'});i++;continue;}
+    T.push({k:'op',v:r[0]});i++;
+  }
+  return T;
+}
+function grouper(T){ // parenthèses -> groupes imbriqués
+  const pile=[[]];
+  for(const t of T){
+    if(t.k==='lp') pile.push([]);
+    else if(t.k==='rp'&&pile.length>1){const g=pile.pop();pile[pile.length-1].push({k:'grp',items:g});}
+    else pile[pile.length-1].push(t);
+  }
+  while(pile.length>1){const g=pile.pop();pile[pile.length-1].push({k:'grp',items:g,open:true});}
+  return pile[0];
+}
+const fracH=(a,b)=>`<span class="frac"><span>${a}</span><span>${b}</span></span>`;
+function idH(n,k){
+  if(k==='f') return `<span class="rm">${n==='sqrt'?'√':n}</span>`;
+  if(k==='pi') return 'π'; if(k==='t') return '<i>t</i>';
+  if(k==='c'&&n.length>2) return `<span class="rm">${n}</span>`;
+  return joli(n);
+}
+function rendreItems(items){
+  // 1) atomes
+  const A=[];
+  for(let j=0;j<items.length;j++){
+    const it=items[j];
+    if(it.k==='grp'){
+      const prev=A[A.length-1], inner=rendreItems(it.items);
+      if(prev&&prev.fn==='sqrt'){prev.h=`√<span class="rad">${inner}</span>`;prev.fn=null;prev.atom=true;continue;}
+      A.push({atom:true,h:`(${inner}${it.open?'':')'}`,nu:inner});continue;}
+    if(it.k==='num') A.push({atom:true,h:it.v,nu:it.v});
+    else if(it.k==='id') A.push({atom:true,h:idH(it.v,it.t),nu:idH(it.v,it.t),fn:it.t==='f'?it.v:null});
+    else if(it.k==='der') A.push({atom:true,h:fracH('d'+joli(it.v),'d<i>t</i>')});
+    else if(it.k==='txt') A.push({h:`<span class="bad" title="mot non reconnu">${esc(it.v)}</span>`});
+    else A.push({op:it.v});
+  }
+  // 2) puissances
+  for(let j=0;j<A.length;j++) if(A[j].op==='^'&&A[j-1]&&A[j+1]&&A[j+1].atom){
+    A[j-1]={atom:true,h:A[j-1].h+`<sup>${A[j+1].nu??A[j+1].h}</sup>`};A.splice(j,2);j--;}
+  // 3) fractions a/b
+  for(let j=0;j<A.length;j++) if(A[j].op==='/'&&A[j-1]&&A[j-1].atom&&A[j+1]&&A[j+1].atom){
+    A[j-1]={atom:true,h:fracH(A[j-1].nu??A[j-1].h,A[j+1].nu??A[j+1].h)};A.splice(j,2);j--;}
+  // 4) assemblage
+  return A.map((a,j)=>{
+    if(a.op===undefined) return a.h;
+    if(a.op==='-'&&(j===0||A[j-1].op!==undefined)) return '−';   // moins unaire collé
+    return {'+':' + ','-':' − ','=':' = ','*':'&#8239;','/':' / ','^':'^'}[a.op] ?? esc(a.op);
+  }).join('');
+}
+function ligneJolie(raw){ // découpe d'abord sur les connecteurs en milieu de ligne
+  const MC=new RegExp("(\\s+(?:"+MID_ALT+")\\s+)","i");
+  return raw.split(MC).map((x,j)=>j%2?`<span class="cn" style="margin-left:.35em">${esc(x.trim())}</span>`:ligneJolie1(x)).join('');
+}
+function ligneJolie1(raw){
+  let s=raw, h='', m;
+  while((m=CONN_RE.exec(s))&&m[0].trim()){const c=m[1];h+=`<span class="cn">${esc(c[0].toUpperCase()+c.slice(1))}</span>`;s=s.slice(m[0].length);}
+  s.split(JUST_RE).forEach((bloc,b)=>{
+  if(b%2){h+=`<span class="ju">(${esc(bloc.trim())})</span>`;return;}
+  bloc.split(PHRASE_RE).forEach((morceau,j)=>{
+    if(j%2) h+=`<span class="ph">${esc(morceau.trim())}</span>`;
+    else if(morceau.trim()) h+=rendreItems(grouper(lexJoli(morceau)));
+  });
+  });
+  return h;
+}
+function majApercu(){
+  $('apercu').innerHTML=$('txt').value.split('\n').map(l=>{
+    const m=/^\s*\[\[(.*?)\]?\]?\s*$/.exec(l);           // [[ … ]] = résultat encadré
+    if(m&&l.trim().startsWith('[[')){const rest=m[1].replace(/\]+\s*$/,'');return `<div class="al"><span class="box">${ligneJolie(rest)}</span></div>`;}
+    return `<div class="al">${l.trim()?ligneJolie(l):''}</div>`;}).join('');
+}
+$('txt').addEventListener('input',majApercu);
+
+/* ===================== Autocomplétion ===================== */
+const SUGG=[
+  ...CONNECTEURS.filter(t=>t.length>2).map(t=>({t:t==="on sait que"?"On sait que":t,c:'connecteur',e:' '})),
+  ...["est une primitive de","a pour primitive","est la dérivée de","valeur initiale de","la valeur initiale de","est constante","est nul"].map(t=>({t,c:'relation',e:' '})),
+  ...(EX.justifs||[]).map(j=>({t:`(${j})`,c:'justification',e:''}))
+];
+const norm=x=>x.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/’/g,"'");
+let AC={items:[],sel:0,open:false};
+function caretXY(ta){ // position du curseur via un miroir
+  const d=document.createElement('div'), cs=getComputedStyle(ta);
+  for(const k of ['fontFamily','fontSize','lineHeight','padding','border','boxSizing','width','letterSpacing','whiteSpace','wordWrap'])d.style[k]=cs[k];
+  d.style.position='absolute';d.style.visibility='hidden';d.style.whiteSpace='pre-wrap';d.style.wordWrap='break-word';
+  d.textContent=ta.value.slice(0,ta.selectionStart);
+  const sp=document.createElement('span');sp.textContent='​';d.appendChild(sp);
+  document.body.appendChild(d);const r={x:sp.offsetLeft,y:sp.offsetTop+sp.offsetHeight};d.remove();
+  return{x:r.x-ta.scrollLeft+ta.offsetLeft,y:r.y-ta.scrollTop+ta.offsetTop};
+}
+function majAC(){
+  const ta=$('txt'),c=ta.selectionStart;
+  if(c!==ta.selectionEnd){fermerAC();return;}
+  const debut=ta.value.lastIndexOf('\n',c-1)+1, ligne=ta.value.slice(debut,c);
+  // débuts de fragments possibles : début de ligne, après un espace, sur une parenthèse
+  const pos=[0];for(let i=1;i<ligne.length;i++) if(/\s/.test(ligne[i-1])&&!/\s/.test(ligne[i])||ligne[i]==='(') pos.push(i);
+  const res=[];
+  for(const sg of SUGG){
+    const ns=norm(sg.t);
+    for(const p of pos){
+      const f=ligne.slice(p); if(f.length<2||/\s$/.test(f)&&f.trim().length<2) continue;
+      const nf=norm(f);
+      if(ns.startsWith(nf)&&ns!==nf){res.push({...sg,from:debut+p,frag:f});break;}
+    }
+  }
+  res.sort((a,b)=>b.frag.length-a.frag.length);
+  if(!res.length){fermerAC();return;}
+  AC={items:res.slice(0,7),sel:0,open:true};
+  const box=$('ac'), xy=caretXY(ta);
+  box.innerHTML=AC.items.map((it,i)=>`<div data-i="${i}" class="${i?'':'sel'}"><span><b>${esc(it.t.slice(0,it.frag.length))}</b>${esc(it.t.slice(it.frag.length))}</span><small>${it.c}</small></div>`).join('');
+  box.style.left=Math.min(xy.x,ta.offsetLeft+ta.clientWidth-200)+'px'; box.style.top=(xy.y+2)+'px'; box.style.display='block';
+  box.querySelectorAll('div').forEach(d=>d.onmousedown=e=>{e.preventDefault();accepterAC(+d.dataset.i);});
+}
+function fermerAC(){AC.open=false;$('ac').style.display='none';}
+function accepterAC(i){
+  const it=AC.items[i], ta=$('txt');
+  let t=it.t; if(/^[A-ZÀ-Ý]/.test(it.frag)) t=t[0].toUpperCase()+t.slice(1); else if(/^[a-z]/.test(it.frag)&&it.c!=='justification') t=t[0].toLowerCase()+t.slice(1);
+  ta.setRangeText(t+it.e,it.from,ta.selectionStart,'end');
+  fermerAC(); ta.focus(); majApercu();
+}
+$('txt').addEventListener('input',majAC);
+$('txt').addEventListener('click',fermerAC);
+$('txt').addEventListener('blur',()=>setTimeout(fermerAC,150));
+$('txt').addEventListener('keydown',e=>{
+  if(!AC.open) return;
+  const n=AC.items.length;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();AC.sel=(AC.sel+(e.key==='ArrowDown'?1:n-1))%n;
+    $('ac').querySelectorAll('div').forEach((d,i)=>d.classList.toggle('sel',i===AC.sel));}
+  else if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();accepterAC(AC.sel);}
+  else if(e.key==='Escape'){e.preventDefault();fermerAC();}
+});
+
+
+/* ===================== Palette d'insertion ===================== */
+const GRECAFF={alpha:"α",beta:"β",theta:"θ",omega:"ω",lambda:"λ",phi:"φ",tau:"τ"};
+function joli(n){ // ax -> a<sub>x</sub>, v0 -> v<sub>0</sub>, alpha -> α
+  if(GRECAFF[n]) return GRECAFF[n];
+  const m=/^([a-zA-Z])([a-z0-9]+)$/.exec(n);
+  return m? `<i>${m[1]}</i><sub>${m[2]}</sub>` : `<i>${esc(n)}</i>`;
+}
+const ins=(n)=>GRECAFF[n]||n;   // texte inséré
+const PAL = EX.palette || [
+  ["Grandeurs",   Object.keys(EX.modele).map(n=>[joli(n), ins(n)])],
+  ["Dérivées",    [["<span class='frac'><span>d</span><span>dt</span></span>( )","d(|)/dt"]]
+                    .concat(Object.keys(EX.modele).map(n=>[`<span class='frac'><span>d${joli(n)}</span><span>dt</span></span>`,`d${n}/dt`]))],
+  ["Paramètres",  Object.keys(EX.params).map(n=>[joli(n), ins(n)]).concat([["<i>t</i>","t"],["cst","cst"],["X(0)","(0)"]])],
+  ["Opérations",  [["+"," + "],["−"," - "],["×","*"],["÷","/"],["x²","^2"],["xⁿ","^"],["( )","(|)"],["=", " = "],["sin","sin(|)"],["cos","cos(|)"],["√","sqrt(|)"]]],
+  ["Connecteurs logiques", [["On sait que","On sait que "],["et","et "],["or","or "],["donc","donc "],["soit","soit "],["d'où","d'où "],["il vient","il vient "],["on en déduit que","on en déduit que "],["ainsi","ainsi "],["par intégration","par intégration, "],["↵ ligne","\n"]].map(x=>[x[0],x[1],'cn'])],
+  ["Mise en forme", [["▭ encadrer le résultat final","#ENC#","txt enc"]]],
+  ["Relations",   [["… est une primitive de …"," est une primitive de "],["valeur initiale de","valeur initiale de "]].map(x=>[x[0],x[1],'ph'])],
+  ["Justifications", (EX.justifs||[]).map(j=>[`(${j})`,` (${j})`,'ju'])]
+];
+$('palette').innerHTML = PAL.map(([titre,bs])=>`<div class="pal-l"><span class="pal-t">${titre}</span>`+
+  bs.map(b=>`<button class="pb${b[2]?' txt '+b[2]:''}" data-i="${esc(b[1])}">${b[0]}</button>`).join('')+'</div>').join('');
+$('palette').querySelectorAll('.pb').forEach(b=>b.onclick=()=>{
+  if(b.dataset.i==='#ENC#'){ // encadre / désencadre la ligne du curseur
+    const ta=$('txt'),c=ta.selectionStart,d=ta.value.lastIndexOf('\n',c-1)+1;let f=ta.value.indexOf('\n',c);if(f<0)f=ta.value.length;
+    const l=ta.value.slice(d,f), nl=/^\s*\[\[.*\]\]\s*$/.test(l)?l.replace(/\[\[\s*/,'').replace(/\s*\]\]\s*$/,''):'[[ '+l.trim()+' ]]';
+    ta.setRangeText(nl,d,f,'end');ta.focus();majApercu();return;}
+  const ta=$('txt'), v=b.dataset.i, c=v.indexOf('|'), s=v.replace('|','');
+  const a=ta.selectionStart, e=ta.selectionEnd, sel=ta.value.slice(a,e);
+  const txt = c>=0 && sel ? v.slice(0,c)+sel+v.slice(c+1) : s;   // entoure la sélection pour d( )/dt, ( ), sin()…
+  ta.setRangeText(txt,a,e,'end');
+  if(c>=0 && !sel){ta.selectionStart=ta.selectionEnd=a+c;}
+  ta.focus(); majApercu();
+});
+
+// une ligne peut contenir plusieurs étapes : « ax = 0 donc dvx/dt = 0 donc vx = cst »
+const MID_RE=new RegExp("\\s+(?:"+MID_ALT+")\\s+","i");
+function verifierLigne(raw,S,B_){
+  if(!B_.__src){B_.__src={};B_.__det=new Set();}
+  if(!B_.__ci) B_.__ci=new Set();
+  raw=raw.replace(/\[\[|\]\]/g,' ');   // cadre ignoré
+  const T0_RE=/(?:à|a|pour)\s+(?:l['’]\s*instant\s+initial|t\s*=\s*0|la\s+date\s+t\s*=\s*0)\s*[,:]?/gi;
+  const t0=T0_RE.test(raw); raw=raw.replace(T0_RE,' ');
+  const segs=raw.split(MID_RE).flatMap(x=>x.split(/\s*;\s*|\s*:\s+(?=[^:]*=)|,\s+(?=[^,]*(?:=|primitive|dérivée|constante|\bnul))/i)).map(x=>x.replace(/[\s,;:]+$/,'')).filter(x=>x.trim()); let st='conn',msg='';const Ls=[];
+  const rang={conn:0,vec:0.5,ok:1,nc:2,ko:3};
+  const VEC=/(^|[^A-Za-z0-9_])(a|v|F|P|OG|OM|g)\s*(→|\b)/;   // relation vectorielle (m a = q E, a = g…)
+  const estVec=seg=>{const m=VEC.exec(seg.replace(/\(.*?\)/g,''));return !!m&&!ENT.some(e=>e.s===m[2]);};
+  for(const seg of segs){
+    let s1,m1='';
+    try{T0MODE=t0;let L;try{L=lireLigne(seg);}finally{T0MODE=false;}const avant=new Set(B_.__det),avCI=new Set(B_.__ci);s1=verifLigne(L,S,B_);
+      L.det=[...B_.__det].filter(x=>!avant.has(x)); L.ci=[...B_.__ci].filter(x=>!avCI.has(x));
+      if(s1==='nc')m1='trop de constantes';
+      if(s1==='ncst'){s1='nc';m1="constante non introduite par une primitive juste";}
+      if(s1==='ok') Ls.push(L);}
+    catch(e){s1='nc';m1=e.message;}
+    if(s1==='nc'&&estVec(seg.replace(/→/g,''))){s1='vec';m1='relation vectorielle : non vérifiée';}
+    if(rang[s1]>rang[st]){st=s1;msg=m1;}
+  }
+  return{st,msg,Ls};
+}
+$('verif').onclick=()=>{
+  const lignes=$('txt').value.split('\n').filter(l=>l.trim());
+  const S=echantillons(), B_={}, res=[];
+  B_.__src={};B_.__det=new Set();B_.__ci=new Set();
+  for(const raw of lignes) res.push({raw,...verifierLigne(raw,S,B_)});
+  const atteints=JAL.map(j=>res.some(r=>r.Ls.some(L=>jalonAtteint(j.J,L))));
+  const nOk=atteints.filter(Boolean).length, nKo=res.filter(r=>r.st==='ko').length;
+
+  $('resLignes').innerHTML = EX.fb>=1 ? '<h3>Analyse ligne par ligne</h3>'+res.map(r=> r.st==='conn' ?
+    `<div class="ligne" style="background:#fff"><span class="ico"></span><span style="color:#889">${esc(r.raw)}</span></div>` :
+    `<div class="ligne ${r.st}"><span class="ico">${r.st==='ok'?'✓':r.st==='ko'?'✗':r.st==='vec'?'·':'?'}</span><span>${esc(r.raw)}</span>`+
+    `<span class="msg">${r.st==='ok'?'':r.st==='ko'?'fausse':r.st==='vec'?'relation vectorielle : non vérifiée':'non comprise'+(r.msg?' : '+esc(r.msg):'')}</span></div>`).join('') : '';
+  $('resJalons').innerHTML = EX.fb>=2 && JAL.length ? '<h3>Étapes attendues</h3><div class="jalons">'+
+    JAL.map((j,i)=>`<span class="jal ${atteints[i]?'ok':'ko'}">${atteints[i]?'✓':'✗'} ${esc(j.l)}</span>`).join('')+'</div>' : '';
+  $('bilan').textContent=`Étapes attendues : ${nOk} / ${JAL.length}`+(nKo?` · ${nKo} ligne${nKo>1?'s':''} fausse${nKo>1?'s':''}`:'')+(nOk===JAL.length&&!nKo?' — bravo !':'');
+  $('bilan').style.color=nOk===JAL.length&&!nKo?'var(--ok)':'var(--txt)';
+};
+</script>
+</body>
+</html>
