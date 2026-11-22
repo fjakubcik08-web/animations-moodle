@@ -23,29 +23,37 @@ function decodeP(p){
   return JSON.parse(new TextDecoder().decode(u));
 }
 const DEF={
-  d:"basket",     // décor : "basket", "cornhole", "aucun" (d'autres viendront)
-  o:"sol",        // origine : "sol" (O au sol sous le point de départ) ou "depart" (O au point de départ)
+  d:"basket",     // décor : "basket", "cornhole", "aucun", "accel", "deviation", "jet", "oblique"
+  o:"sol",        // origine : "sol" / "depart" (lancers) ; "centre" / "plaque" (champ E)
   yd:"haut",      // sens de l'axe vertical : "haut" ou "bas"
-  ax:["x","y"],   // noms des axes
-  M:"M",          // nom du point étudié
-  v:"v0",         // nom de la vitesse initiale (affichée en vecteur)
+  ax:["x","y"],   // noms des axes ("" en 2e = pas d'axe vertical)
+  M:"M",          // nom du point étudié ("" = pas de nom)
+  v:"v0",         // nom de la vitesse initiale ("" = pas de vecteur)
   a:"alpha",      // nom de l'angle ("alpha", "theta"… ; "" = vitesse horizontale)
   aDeg:50,        // angle DESSINÉ (jamais affiché)
   h:"h",          // nom de la hauteur initiale ("" = pas de cote)
   L:"",           // nom de l'abscisse initiale ("" = départ à la verticale de O)
-  gr:1,           // 1 : graduations des axes (pas et unité fournis par le décor)
-  pD:"",          // basket : nom de la distance horizontale O -> centre de l'arceau ("" = pas de cote)
-  pH:"",          // basket : nom de la hauteur de l'arceau ("" = pas de cote)
-  pd:"",          // cible : nom du diamètre (arceau, trou…) ("" = pas de cote)
-  pC:"",          // cible : nom du centre ("" = pas de nom)
+  gr:1,           // 1 : graduations des axes
+  gp:null, gu:"", // pas et unité des graduations (null / "" = valeurs du décor)
+  pD:"", pH:"", pd:"", pC:"",   // cotes de la cible (distance, hauteur, diamètre, centre)
   hD:null,        // hauteur de départ DESSINÉE (m) ; null = valeur du décor
-  cx:null, cy:null // position DESSINÉE du centre de la cible (m) ; null = valeurs du décor
+  cx:null, cy:null,// position DESSINÉE du centre de la cible (m)
+  /* ---- décors champ électrique ---- */
+  q:"proton",     // particule : proton, electron, alpha, ion+, ion-, goutte-, goutte+
+  pp:"haut",      // plaque positive : haut / bas (plaques horizontales), gauche / droite (accel)
+  E:"",           // nom du vecteur champ : "" = NON dessiné (par défaut, c'est aux élèves de le tracer)
+  sg:1,           // 1 : signes + / − le long des plaques
+  pA:"", pB:"",   // noms des plaques (haut/gauche, bas/droite)
+  cd:"", cL:"", cD:"", cY:"", cX:"", cU:"",   // cotes : écart, longueur, distance écran, déviation, impact, tension
+  pS:"", pP:"",   // noms du point de sortie et du point d'impact
+  dd:null, dL:null, dD:null, dX:null, dev:null, // dimensions DESSINÉES (unité du décor), déviation (0..0,9)
+  tr:0            // 1 : trajectoire qualitative en pointillés
 };
-let P={...DEF};
 const Q=new URLSearchParams(location.search);
-if(Q.get('p')){try{P={...DEF,...decodeP(Q.get('p'))};}catch(e){console.warn('p invalide',e);}}
-for(const k of Object.keys(DEF)) if(Q.get(k)!==null && k!=='ax') P[k]= typeof DEF[k]==='number' ? +Q.get(k) : Q.get(k);   // clair prioritaire
-
+let DEC0={}; if(Q.get('p')){try{DEC0=decodeP(Q.get('p'));}catch(e){console.warn('p invalide',e);}}
+const CLAIR={}; for(const k of Object.keys(DEF)) if(Q.get(k)!==null && k!=='ax') CLAIR[k]= typeof DEF[k]==='number' ? +Q.get(k) : Q.get(k);   // clair prioritaire
+function defautsDecor(d){ return {...DEF, ...((DECORS[d]||{}).def||{}), d}; }
+let P;   // construit après la déclaration des décors
 const GREC={alpha:"α",alfa:"α",theta:"θ",beta:"β",phi:"φ",gamma:"γ"};
 const lettre=n=>GREC[n]||n;
 
@@ -151,8 +159,133 @@ const DECORS={
       el('path',{d:`M${x-9},${y-7} Q${x},${y-11} ${x+9},${y-7} Q${x+12},${y} ${x+9},${y+7} Q${x},${y+11} ${x-9},${y+7} Q${x-12},${y} ${x-9},${y-7} Z`,
                  fill:'#dc2626',stroke:'#222','stroke-width':2.2});
       ligne(x-6,y-3,x+6,y-3,{w:1,c:'#fff'}); ligne(x-6,y+3,x+6,y+3,{w:1,c:'#fff'}); }
-  }
+    },
+  /* ---------- Champ électrique : décors dessinés par dessinerE() ---------- */
+  accel:{ champE:1, vertical:1, x0:220, dim:{d:10,L:7,pas:2,unite:'cm'},     // accélération entre deux plaques percées
+    def:{q:'proton',pp:'gauche',o:'centre',a:'',v:'',M:'',pS:'S',ax:['x','']},
+    dessin(c){ const y=c.YC;
+      ligne(c.xA-150,y-18,c.xA-80,y-18); ligne(c.xA-80,y-18,c.xA-80,y+18); ligne(c.xA-80,y+18,c.xA-150,y+18); ligne(c.xA-150,y+18,c.xA-150,y-18);
+      texte('source',c.xA-115,y+36,{size:14,anchor:'middle'});
+      for(const k of [0,1,2]) cercle(c.xA-128+k*16,y,3,{f:'#999',w:1}); } },
+  deviation:{ champE:1, x0:240, dim:{d:2,L:4,D:4,pas:1,unite:'cm'},           // canon + plaques déflectrices + écran
+    def:{q:'electron',pp:'haut',o:'centre',a:'',v:'v0',M:''},
+    dessin(c){ const y=c.YC, xg=c.xa-180;
+      ligne(xg,y-22,xg+80,y-22); ligne(xg+80,y-22,xg+80,y+22); ligne(xg+80,y+22,xg,y+22); ligne(xg,y+22,xg,y-22);
+      let d=`M${xg+14},${y}`; for(let i=1;i<=6;i++) d+=` L${xg+14+i*7},${y+(i%2?-8:8)}`; el('path',{d,fill:'none',stroke:'#c2410c','stroke-width':2});
+      ligne(xg+70,y-14,xg+70,y-4,{w:3}); ligne(xg+70,y+4,xg+70,y+14,{w:3});
+      texte('canon à électrons',xg+40,y+40,{size:14,anchor:'middle'});
+      const h1=Math.max(36,y-170), h2=Math.min(444,y+170);
+      ligne(c.xs,h1,c.xs,h2,{w:5,c:'#444'}); texte('écran',c.xs,h2+16,{size:15,anchor:'middle'}); } },
+  jet:{ champE:1, x0:260, dim:{d:0.8,L:1.6,D:1.6,pas:0.5,unite:'cm'},        // imprimante à jet d'encre continu
+    def:{q:'goutte-',pp:'haut',o:'centre',a:'',v:'v0',M:''},
+    dessin(c){ const y=c.YC, xb=c.xa-200;
+      ligne(xb-40,y,xb,y,{w:5,c:'#555'});
+      el('path',{d:`M${xb},${y-16} L${xb+38},${y-5} L${xb+38},${y+5} L${xb},${y+16} Z`,fill:'#bbb',stroke:'#222','stroke-width':2.2});
+      texte('buse',xb+18,y+36,{size:14,anchor:'middle'});
+      ligne(xb+72,y-18,xb+112,y-18,{w:4}); ligne(xb+72,y+18,xb+112,y+18,{w:4});
+      texte('électrode',xb+92,y+38,{size:14,anchor:'middle'}); texte('de charge',xb+92,y+54,{size:14,anchor:'middle'});
+      for(const k of [52,92,135]) cercle(xb+k,y,3.5,{f:'#0284c7',w:1});
+      el('rect',{x:c.xs,y:44,width:10,height:380,fill:'#fff',stroke:'#222','stroke-width':2});
+      texte('feuille',c.xs+5,440,{size:15,anchor:'middle'});
+      const g=c.xs-50; ligne(g,y-6,g,y+16,{w:2.4}); ligne(g,y+16,g+26,y+16,{w:2.4}); ligne(g+26,y+16,g+26,y-6,{w:2.4});
+      texte('gouttière',g+13,y+32,{size:13,anchor:'middle'}); } },
+  oblique:{ champE:1, x0:140, dim:{d:6,L:16,X:11,pas:2,unite:'cm'},          // entrée oblique, retour sur une plaque
+    def:{q:'proton',pp:'haut',o:'plaque',a:'alpha',aDeg:40,v:'v0',M:''},
+    dessin(){} }
 };
+P={...defautsDecor(DEC0.d||CLAIR.d||DEF.d), ...DEC0, ...CLAIR};
+
+/* ================== Rendu des décors champ électrique ================== */
+const PART={proton:{s:1,t:'+',c:'#dc2626'}, electron:{s:-1,t:'−',c:'#1f5fa8'}, alpha:{s:1,t:'2+',c:'#ea580c'},
+  'ion+':{s:1,t:'+',c:'#7c3aed'}, 'ion-':{s:-1,t:'−',c:'#7c3aed'}, 'goutte-':{s:-1,t:'−',c:'#0284c7',g:1}, 'goutte+':{s:1,t:'+',c:'#0284c7',g:1}};
+const VIOLET='#7c3aed';
+const num=(v,d)=>(v!=null&&v!=='')?+v:d;
+function particule(x,y,type){ const p=PART[type]||PART.proton;
+  if(p.g) el('path',{d:`M${x-17},${y} Q${x-6},${y-9} ${x+1},${y-9} A9 9 0 1 1 ${x+1},${y+9} Q${x-6},${y+9} ${x-17},${y} Z`,fill:p.c,stroke:'#222','stroke-width':2});
+  else cercle(x,y,11,{f:p.c,w:2});
+  texte(p.t,x+(p.g?1:0),y+1,{size:p.t.length>1?11:17,anchor:'middle',c:'#fff'}); }
+function plaque(x,y,w,h){ el('rect',{x,y,width:w,height:h,fill:'#d6d3d1'}); ligne(x,y,x+w,y,{w:2}); ligne(x+w,y,x+w,y+h,{w:2}); ligne(x+w,y+h,x,y+h,{w:2}); ligne(x,y+h,x,y,{w:2}); }
+function rangSignes(x1,y1,x2,y2,s){ const n=Math.max(2,Math.round(Math.hypot(x2-x1,y2-y1)/42));
+  for(let i=0;i<=n;i++){const t=(i+0.5)/(n+1), px=x1+(x2-x1)*t, py=y1+(y2-y1)*t; if(Math.hypot(px-G.Ox,py-G.Oy)<36) continue; texte(s,x1+(x2-x1)*t,y1+(y2-y1)*t,{size:24,anchor:'middle',c:s==='+'?'#b91c1c':'#1d4ed8'});} }
+function tirets(x1,y1,x2,y2){ ligne(x1,y1,x2,y2,{w:1.2,dash:'6 5'}); }
+
+function dessinerE(dec){
+  const D=dec.dim, d=num(P.dd,D.d), L=num(P.dL,D.L), Dd=num(P.dD,D.D??0), X=num(P.dX,D.X??0.7*L);
+  const part=PART[P.q]||PART.proton, o=(P.o==='centre'||P.o==='plaque')?P.o:dec.def.o;
+  let pas=num(P.gp,D.pas); const unite=P.gu||D.unite, T=12, YC=236;
+  const c={YC};
+  if(dec.vertical){
+    c.S=Math.min(K/pas,(W-150-dec.x0)/d,300/L);
+    c.xA=dec.x0; c.xB=c.xA+d*c.S; const Hp=L*c.S, gap=9, plusG=P.pp!=='droite'; G.Ox=G.Mx=c.xA; G.Oy=G.My=YC;
+    dec.dessin(c);
+    plaque(c.xA-T,YC-Hp/2,T,Hp/2-gap); plaque(c.xA-T,YC+gap,T,Hp/2-gap);
+    plaque(c.xB,YC-Hp/2,T,Hp/2-gap); plaque(c.xB,YC+gap,T,Hp/2-gap);
+    if(+P.sg){ rangSignes(c.xA-T-15,YC-Hp/2,c.xA-T-15,YC+Hp/2,plusG?'+':'−'); rangSignes(c.xB+T+15,YC-Hp/2,c.xB+T+15,YC+Hp/2,plusG?'−':'+'); }
+    if(P.pA) texte(P.pA,c.xA-T/2,YC-Hp/2-18,{size:21,italic:true,anchor:'middle'});
+    if(P.pB) texte(P.pB,c.xB+T/2,YC-Hp/2-18,{size:21,italic:true,anchor:'middle'});
+    if(P.E){ const x1=plusG?c.xA+16:c.xB-16, x2=plusG?c.xB-16:c.xA+16;
+      for(const f of [-0.3,0.3]) fleche(x1,YC+Hp*f,x2,YC+Hp*f,{w:2,c:VIOLET,s:11});
+      vecteurNom(P.E,(c.xA+c.xB)/2,YC-Hp*0.3-20,{anchor:'middle'}); }
+    if(P.cd){ const y=YC+Hp/2+34; tirets(c.xA,YC+Hp/2,c.xA,y+6); tirets(c.xB,YC+Hp/2,c.xB,y+6); cote(c.xA,y,c.xB,y,P.cd,{dy:16}); }
+    if(P.cU){ const y=YC-Hp/2-52, xm=plusG?c.xB:c.xA, xp=plusG?c.xA:c.xB; fleche(xm,y,xp,y,{w:2}); texte(P.cU,(c.xA+c.xB)/2,y-16,{size:21,italic:true,anchor:'middle'}); }
+    G.Ox=G.Mx=c.xA; G.Oy=G.My=YC; c.sortie={x:c.xB,y:YC};
+    if(+P.tr) ligne(c.xA,YC,c.xB+T+40,YC,{w:1.8,dash:'7 6',c:part.c});
+  } else {
+    const xa0=o==='plaque'?dec.x0-40:dec.x0;
+    c.S=Math.min(K/pas,(W-(Dd?(P.cY?120:70):60)-xa0)/(L+Dd),260/d);
+    c.xa=xa0; c.xe=xa0+L*c.S; c.xs=Dd?c.xe+Dd*c.S:null;
+    c.yTop=YC-d*c.S/2; c.yBot=YC+d*c.S/2;
+    const plusH=P.pp!=='bas';
+    G.Ox=G.Mx=dec.x0; G.Oy=G.My=(o==='plaque'?c.yBot:YC); G.labDy=o==='plaque'?50:20;
+    dec.dessin(c);
+    plaque(c.xa,c.yTop-T,c.xe-c.xa,T); plaque(c.xa,c.yBot,c.xe-c.xa,T);
+    if(+P.sg){ rangSignes(c.xa,c.yTop-T-14,c.xe,c.yTop-T-14,plusH?'+':'−'); rangSignes(c.xa,c.yBot+T+15,c.xe,c.yBot+T+15,plusH?'−':'+'); }
+    if(P.pA) texte(P.pA,c.xe+10,c.yTop-T/2,{size:21,italic:true});
+    if(P.pB) texte(P.pB,c.xe+10,c.yBot+T/2,{size:21,italic:true});
+    const sF=(plusH?1:-1)*(PART[P.q]||PART.proton).s;   // +1 : force vers le bas de l'écran
+    if(P.E){ const dir=plusH?1:-1, xs=[0.5,0.7,0.9].map(f=>c.xa+(c.xe-c.xa)*f);
+      for(const x of xs) fleche(x,YC-dir*(d*c.S/2-14),x,YC+dir*(d*c.S/2-14),{w:2,c:VIOLET,s:11});
+      vecteurNom(P.E,xs[0]-12,o==='plaque'?YC:YC-sF*d*c.S/4,{anchor:'end'}); }
+    const xr=c.xe+((P.pA||P.pB)?44:26);
+    if(P.cd){ cote(xr,c.yTop,xr,c.yBot,P.cd,{dx:14,dy:o==='plaque'?0:-d*c.S/4,anchor:'start'}); }
+    if(P.cU){ const xu=xr+(P.cd?54:0), ym=plusH?c.yBot:c.yTop, yp=plusH?c.yTop:c.yBot; fleche(xu,ym,xu,yp,{w:2}); texte(P.cU,xu+14,YC,{size:21,italic:true}); }
+    if(P.cL){ const y=c.yTop-T-42; tirets(c.xa,c.yTop-T,c.xa,y-6); tirets(c.xe,c.yTop-T,c.xe,y-6); cote(c.xa,y,c.xe,y,P.cL,{dy:-16}); }
+    if(P.cD&&c.xs){ const y=c.yBot+T+46; tirets(c.xe,c.yBot+T,c.xe,y+6); tirets(c.xs,c.yBot+T,c.xs,y+6); cote(c.xe,y,c.xs,y,P.cD,{dy:16}); }
+    if(c.xs){                                        // déviation / jet : sortie puis ligne droite
+      const yS=G.Oy+sF*num(P.dev,0.55)*(d*c.S/2), m=2*(yS-G.Oy)/(c.xe-G.Ox);
+      const yP=Math.max(50,Math.min(420,yS+m*(c.xs-c.xe)));
+      c.sortie={x:c.xe,y:yS}; c.impact={x:c.xs,y:yP};
+      if(+P.tr) el('path',{d:`M${G.Ox},${G.Oy} Q${(G.Ox+c.xe)/2},${G.Oy} ${c.xe},${yS} L${c.xs},${yP}`,fill:'none',stroke:part.c,'stroke-width':1.8,'stroke-dasharray':'7 6'});
+      if(P.cY){ const x=c.xs+34; tirets(c.xs,G.Oy,x+6,G.Oy); tirets(c.xs,yP,x+6,yP); cote(x,G.Oy,x,yP,P.cY,{dx:18,anchor:'start'}); }
+    } else {                                         // oblique : retour sur la plaque du bas
+      const xP=G.Ox+X*c.S, ta=Math.tan((P.a?+P.aDeg:0)*Math.PI/180);
+      c.impact={x:xP,y:G.Oy};
+      if(+P.tr) el('path',{d:`M${G.Ox},${G.Oy} Q${(G.Ox+xP)/2},${G.Oy-ta*(xP-G.Ox)/2} ${xP},${G.Oy}`,fill:'none',stroke:part.c,'stroke-width':1.8,'stroke-dasharray':'7 6'});
+      if(P.cX){ const y=c.yBot+T+76; tirets(xP,c.yBot+T,xP,y+6); tirets(G.Ox,c.yBot+T,G.Ox,y+6); cote(G.Ox,y,xP,y,P.cX,{dy:16}); }
+    }
+  }
+  // repère
+  G.S=c.S; while(c.S*pas<34) pas*=2;
+  const bas=P.yd==="bas";
+  fleche(G.Ox,G.Oy,W-30,G.Oy,{w:2.2});
+  texte(P.ax[0],W-36,G.Oy-18,{size:22,italic:true});
+  if(P.ax[1]){ if(bas) fleche(G.Ox,G.Oy,G.Ox,H-22,{w:2.2}); else fleche(G.Ox,G.Oy,G.Ox,28,{w:2.2});
+               texte(P.ax[1],G.Ox+12,bas?H-30:34,{size:22,italic:true}); }
+  texte('O',G.Ox+(dec.vertical?8:-20),G.Oy+(bas?-16:(dec.vertical?22:o==='plaque'?30:18)),{size:21});
+  if(+P.gr) graduations({pas,unite,px:pas*c.S},bas);
+  // points de sortie / d'impact
+  if(P.pS&&c.sortie){ cercle(c.sortie.x,c.sortie.y,3.5,{f:'#222'}); texte(P.pS,c.sortie.x+(dec.vertical?-24:6),c.sortie.y+(dec.vertical?-18:(c.sortie.y>=G.Oy?20:-18)),{size:21,italic:true}); }
+  if((P.pP||P.cY||P.cX)&&c.impact){ cercle(c.impact.x,c.impact.y,5,{f:part.c}); if(P.pP) texte(P.pP,c.impact.x+(c.xs?-24:10),c.impact.y-20,{size:21,italic:true}); }
+  // particule, vitesse, angle
+  particule(G.Mx,G.My,P.q);
+  if(P.M) texte(P.M,G.Mx-6,G.My-26,{size:21,italic:true,anchor:'end'});
+  if(P.v){ const a=(P.a?+P.aDeg:0)*Math.PI/180, Lv=(c.xs?72:105), vx=G.Mx+Lv*Math.cos(a), vy=G.My-Lv*Math.sin(a);
+    fleche(G.Mx+14*Math.cos(a),G.My-14*Math.sin(a),vx,vy,{w:3,c:'#1f5fa8',s:15}); vecteurNom(P.v,vx+6,vy-16,{});
+    if(P.a){ let dd='';for(let i=0;i<=12;i++){const t=a*i/12;dd+=(i?'L':'M')+(G.Mx+52*Math.cos(t))+','+(G.My-52*Math.sin(t))+' ';}
+      el('path',{d:dd,fill:'none',stroke:'#222','stroke-width':1.6}); texte(lettre(P.a),G.Mx+66*Math.cos(a/2)+2,G.My-66*Math.sin(a/2),{size:22,italic:true}); } }
+}
+
+
 
 /* ================== Cotes de la cible (panier, trou…) : communes à tous les décors ================== */
 function cotesCible(){
@@ -170,18 +303,18 @@ function cotesCible(){
 /* ================== Graduations (pas et unité selon le décor) ================== */
 const fr=v=>(Math.round(v*1000)/1000).toString().replace('.',',');
 function graduations(gd,bas){
-  const pas=gd.pas, px=K;                      // K pixels = 1 unité
+  const pas=gd.pas, px=gd.px||K, ldy=G.labDy||20;   // px pixels = 1 pas
   for(let i=1;G.Ox+i*px<W-45;i++){              // axe x
     const x=G.Ox+i*px; ligne(x,G.Oy-6,x,G.Oy+6,{w:1.6});
-    texte(fr(i*pas),x,G.Oy+(bas?-18:20),{size:15,anchor:'middle'});
+    texte(fr(i*pas),x,G.Oy+(bas?-18:ldy),{size:15,anchor:'middle'});
   }
-  for(let i=1;;i++){                             // axe y
+  for(let i=1;P.ax[1]!=='';i++){                  // axe y
     const y=bas?G.Oy+i*px:G.Oy-i*px; if(bas?y>H-35:y<G.top+45) break;
     ligne(G.Ox-6,y,G.Ox+6,y,{w:1.6});
     texte(fr(i*pas),G.Ox-12,y,{size:15,anchor:'end'});
   }
   texte(`(${gd.unite})`,W-36,G.Oy+(bas?-40:40),{size:15,anchor:'middle'});
-  texte(`(${gd.unite})`,G.Ox+40,bas?Math.min(H-28,G.Oy+250):G.top+34,{size:15});
+  if(P.ax[1]!=='') texte(`(${gd.unite})`,G.Ox+40,bas?Math.min(H-28,G.Oy+250):G.top+34,{size:15});
 }
 
 /* ================== Papier grands carreaux (Seyès) ================== */
@@ -202,6 +335,8 @@ function dessiner(){
   svg.setAttribute('viewBox',`0 ${G.top} ${W} ${H-G.top}`);
   papier();
   const dec=DECORS[P.d]||DECORS.aucun;
+  G.labDy=20;
+  if(dec.champE){ dessinerE(dec); return; }
   // sol
   ligne(20,SOL,W-20,SOL,{w:2});
   for(let x=35;x<W-30;x+=26) ligne(x,SOL+2,x-12,SOL+14,{w:1.2,c:'#777'});
@@ -242,6 +377,73 @@ function dessiner(){
 
 }
 dessiner();
+
+/* ================== Menu secret (seulement si l'URL n'a AUCUN paramètre) ================== */
+function encodeP(o){ const raw=new TextEncoder().encode(JSON.stringify(o)), k=new TextEncoder().encode(KEY);
+  let b=''; raw.forEach((x,i)=>b+=String.fromCharCode(x^k[i%k.length])); return btoa(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+const SPEC=[ // [clé JS, argument Python, libellé, type, groupe]
+ ['d','decor','Décor','sel:basket,cornhole,aucun,accel,deviation,jet,oblique','Commun'],
+ ['ax0','axes','Axe horizontal','txt','Commun'], ['ax1','axes','Axe vertical ("" = aucun)','txt','Commun'],
+ ['o','origine','Origine','sel:sol,depart,centre,plaque','Commun'], ['yd','axe_y','Axe vertical vers','sel:haut,bas','Commun'],
+ ['M','point','Nom du point','txt','Commun'], ['v','vitesse','Vitesse initiale','txt','Commun'],
+ ['a','angle','Angle','txt','Commun'], ['aDeg','angle_dessin','Angle dessiné (°)','num','Commun'],
+ ['gr','graduations','Graduations','chk','Commun'], ['gp','pas','Pas des graduations','num','Commun'], ['gu','unite','Unité','txt','Commun'],
+ ['h','hauteur','Cote hauteur départ','txt','Lancers'], ['L','abscisse','Cote abscisse départ','txt','Lancers'],
+ ['hD','hauteur_dessin','Hauteur dessinée (m)','num','Lancers'],
+ ['pD','panier_distance','Cote distance cible','txt','Lancers'], ['pH','panier_hauteur','Cote hauteur cible','txt','Lancers'],
+ ['pd','panier_diametre','Cote diamètre cible','txt','Lancers'], ['pC','panier_centre','Nom du centre','txt','Lancers'],
+ ['cx','cible_dessin','Cible dessinée x (m)','num','Lancers'], ['cy','cible_dessin','Cible dessinée y (m)','num','Lancers'],
+ ['q','particule','Particule','sel:proton,electron,alpha,ion+,ion-,goutte-,goutte+','Champ E'],
+ ['pp','plaque_plus','Plaque +','sel:haut,bas,gauche,droite','Champ E'], ['E','nom_E','Vecteur champ ("" = caché)','txt','Champ E'],
+ ['sg','signes','Signes + / −','chk','Champ E'], ['tr','trajectoire','Trajectoire en pointillés','chk','Champ E'],
+ ['pA','plaques','Nom plaque haut/gauche','txt','Champ E'], ['pB','plaques','Nom plaque bas/droite','txt','Champ E'],
+ ['cd','cote_d','Cote écart plaques','txt','Champ E'], ['cL','cote_L','Cote longueur plaques','txt','Champ E'],
+ ['cD','cote_D','Cote plaques → écran','txt','Champ E'], ['cY','cote_Y','Cote déviation écran','txt','Champ E'],
+ ['cX','cote_X','Cote O → impact','txt','Champ E'], ['cU','cote_U','Cote tension','txt','Champ E'],
+ ['pS','point_sortie','Point de sortie','txt','Champ E'], ['pP','point_impact',"Point d'impact",'txt','Champ E'],
+ ['dd','ecart_dessin','Écart dessiné','num','Champ E'], ['dL','longueur_dessin','Longueur dessinée','num','Champ E'],
+ ['dD','distance_dessin','Distance écran dessinée','num','Champ E'], ['dX','impact_dessin','Impact dessiné','num','Champ E'],
+ ['dev','deviation_dessin','Déviation dessinée (0–0,9)','num','Champ E']
+];
+const lire=k=>k==='ax0'?P.ax[0]:k==='ax1'?P.ax[1]:P[k];
+const pyv=v=>typeof v==='string'?JSON.stringify(v):(v===true?'True':v===false?'False':String(v));
+function appelPython(){
+  const ref=defautsDecor(P.d), args=[JSON.stringify(P.d)], vu=new Set(['d']), diff=k=>{const a=P[k],b=ref[k];return String(a??'')!==String(b??'');};
+  for(const [k,py,,t] of SPEC){ if(vu.has(py)) continue;
+    if(py==='axes'){ if(P.ax[0]!==ref.ax[0]||P.ax[1]!==ref.ax[1]) args.push(`axes=(${pyv(P.ax[0])}, ${pyv(P.ax[1])})`); }
+    else if(py==='cible_dessin'){ if(diff('cx')||diff('cy')) args.push(`cible_dessin=(${num(P.cx,0)}, ${num(P.cy,0)})`); }
+    else if(py==='plaques'){ if(diff('pA')||diff('pB')) args.push(`plaques=(${pyv(P.pA)}, ${pyv(P.pB)})`); }
+    else if(diff(k)){ args.push(`${py}=${t==='chk'?(+P[k]?'True':'False'):t==='num'?num(P[k],'None'):pyv(P[k])}`); }
+    vu.add(py); }
+  return `sch = schema_iframe(schema_params(${args.join(', ')}))`;
+}
+function majSortie(){ const o={}; const ref=defautsDecor(P.d);
+  for(const k of Object.keys(DEF)) if(k==='d'||JSON.stringify(P[k])!==JSON.stringify(ref[k])) o[k]=P[k];
+  document.getElementById('py').textContent=appelPython();
+  document.getElementById('url').textContent=location.pathname.split('/').pop()+'?p='+encodeP(o); }
+function menu(){
+  const box=document.createElement('div'); box.style.cssText='max-width:860px;margin:8px auto;padding:8px;font:14px system-ui,sans-serif';
+  const grp={}; let html='<b>Menu secret</b> — visible seulement sans paramètre dans l’URL.';
+  for(const [k,,lab,t,g] of SPEC){ grp[g]=grp[g]||''; let f;
+    if(t.startsWith('sel:')) f=`<select data-k="${k}">${t.slice(4).split(',').map(x=>`<option>${x}</option>`).join('')}</select>`;
+    else if(t==='chk') f=`<input type="checkbox" data-k="${k}">`;
+    else f=`<input data-k="${k}" ${t==='num'?'type="number" step="any"':''} style="width:90px">`;
+    grp[g]+=`<label style="display:inline-flex;gap:4px;align-items:center;margin:3px 12px 3px 0">${lab} ${f}</label>`; }
+  for(const g in grp) html+=`<fieldset style="margin:6px 0;border:1px solid #ccc;border-radius:8px"><legend>${g}</legend>${grp[g]}</fieldset>`;
+  html+='<div>Appel Python :</div><pre id="py" style="white-space:pre-wrap;background:#f3f4f6;padding:6px;border-radius:6px;user-select:all"></pre>';
+  html+='<div>URL de test :</div><pre id="url" style="white-space:pre-wrap;word-break:break-all;background:#f3f4f6;padding:6px;border-radius:6px;user-select:all"></pre>';
+  box.innerHTML=html; document.body.appendChild(box);
+  const champs=[...box.querySelectorAll('[data-k]')];
+  const remplir=()=>champs.forEach(e=>{const v=lire(e.dataset.k); if(e.type==='checkbox') e.checked=!!+v; else e.value=v??'';});
+  champs.forEach(e=>e.addEventListener(e.tagName==='SELECT'||e.type==='checkbox'?'change':'input',()=>{
+    const k=e.dataset.k, v=e.type==='checkbox'?(e.checked?1:0):e.value;
+    if(k==='d'){ P=defautsDecor(v); remplir(); }
+    else if(k==='ax0') P.ax=[v,P.ax[1]]; else if(k==='ax1') P.ax=[P.ax[0],v];
+    else P[k]=(e.type==='number')?(v===''?null:+v):v;
+    dessiner(); majSortie(); }));
+  remplir(); majSortie();
+}
+if(!location.search) menu();
 </script>
 </body>
 </html>
