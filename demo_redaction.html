@@ -165,7 +165,7 @@ function tokenise(s){
 }
 
 /* ===================== Analyse syntaxique -> arbre ===================== */
-let T0MODE=false;
+let T0MODE=false, PTMODE=false, PT_T=null;   // PTMODE : grandeurs évaluées au point imposé (x = L)
 function parseExpr(src){
   const T=tokenise(prepare(src)); let p=0;
   const is2=v=>T[p+1]&&T[p+1].k==='o'&&T[p+1].v===v;
@@ -186,7 +186,9 @@ function parseExpr(src){
     if(t.k==='q'&&T0MODE&&!is2('(')){p++;return{k:'at',v:t.v,a:{k:'n',v:0}};}
     if(t.k==='q'){p++;
       if(is('(')){p++;const a=expr();if(!eat(')'))throw new Error("parenthèse manquante");
-        return (a.k==='t'||a.k==='q')?{k:'q',v:t.v}:{k:'at',v:t.v,a};}   // vy(t), y(x) : la grandeur elle-même
+        if(PTMODE&&!(a.k==='n'&&a.v===0)) return{k:'at',v:t.v,a:PT_T};          // y(L), y(xC) : au point imposé
+        return (a.k==='t'||a.k==='q')?(PTMODE?{k:'at',v:t.v,a:PT_T}:{k:'q',v:t.v}):{k:'at',v:t.v,a};}   // vy(t), y(x)
+      if(PTMODE) return{k:'at',v:t.v,a:PT_T};
       return{k:'q',v:t.v};}
     if(t.k==='f'){p++;let ex=null;if(eat('^'))ex=atom();      // cos^2(α)
       const a=is('(')?atom():power();const n={k:'f',f:t.v,a};return ex?{k:'b',o:'^',a:n,b:ex}:n;}
@@ -202,6 +204,9 @@ function depT(n){let d=false;walk(n,x=>{if(x.k==='t'||x.k==='q'||x.k==='d')d=tru
 
 /* ===================== Modèle & évaluation ===================== */
 const MOD={}; for(const [k,v] of Object.entries(EX.modele)) MOD[k]=parseExpr(v);
+/* point imposé : EX.point = {q:"x", x:"L", t:"L/(v0*cos(alpha))"} -> « x = L » puis grandeurs à cet instant */
+const PT_X = EX.point ? parseExpr(EX.point.x) : null;
+if(EX.point) PT_T = parseExpr(EX.point.t);
 function q(name,P,t){return ev(MOD[name],{mode:'m',P,t,C:{}});}
 function ev(n,x){
   switch(n.k){
@@ -244,6 +249,12 @@ function lireLigne(raw){
   if((m=/^(.+?)\s+est\s+la\s+dérivée\s+de\s+(.+)$/i.exec(s)))           return{k:'prim',X:parseExpr(m[2]),Y:parseExpr(m[1])};
   const parts=s.split('=');
   if(parts.length<2) return{k:'conn'};   // texte sans égalité (« On remplace dans y ») : neutre
+  if(EX.point && parts.length===2 && !PTMODE){                    // « x = L » : on se place au point imposé
+    const M2=parts.map(parseExpr), qx=EX.point.q||'x';
+    for(const [U,V] of [[M2[0],M2[1]],[M2[1],M2[0]]])
+      if(U.k==='q'&&U.v===qx&&egal(V,PT_X)) return{k:'pt'};
+    return{k:'eq',M:M2};
+  }
   return{k:'eq',M:parts.map(parseExpr)};
 }
 
@@ -294,6 +305,7 @@ function verifPaire(A,B,S,B_){ // B_ : liaisons des constantes {nom:[valeur par 
 }
 function verifLigne(L,S,B_){
   if(L.k==='conn') return 'conn';
+  if(L.k==='pt'){ B_.__pt=true; return 'ok'; }
   if(L.k==='prim'){
     const C=pi=>{const o={};for(const c of cstsOf(L.X))o[c]=B_[c]?B_[c][pi]:0;return o;};
     return S.PS.every((P,pi)=>S.TS.every(t=>{const x={mode:'m',P,t,C:C(pi)};return close(dt(L.X,x),ev(L.Y,x),1e-4);}))?'ok':'ko';
@@ -322,6 +334,7 @@ function memeForme(A1,B1,A2,B2){ // A1-B1 proportionnel à A2-B2
 const egal=(A,B)=>{for(let i=0;i<12;i++){const x=freeCtx();if(!close(ev(A,x),ev(B,x),1e-7))return false;}return true;};
 function jalonAtteint(J,L){
   if(J.k==='cst') return !!(L.det&&L.det.includes(J.q));
+  if(J.k==='pt') return L.k==='pt';
   if(J.k==='ci') return !!(L.ci&&L.ci.includes(J.q));
   if(J.k==='prim') return L.k==='prim'&&egal(J.X,L.X)&&egal(J.Y,L.Y);
   if(L.k!=='eq') return false;
@@ -334,7 +347,8 @@ const $=id=>document.getElementById(id);
 const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 $('titre').textContent=EX.titre; $('consigne').textContent=EX.consigne;
 $('aide').innerHTML = EX.aide || `Tu peux aussi tout taper au clavier : <code>dvy/dt</code> · <code>vy(0)</code> · <code>v0 sin(alpha)</code> · <code>t^2</code> ou <code>t²</code> · le <code>*</code> est facultatif. Astuce : sélectionne une grandeur puis clique sur d( )/dt pour l'entourer.`;
-const JAL=(EX.jalons||[]).map(j=>({l:j.l,J:j.cst?{k:'cst',q:j.cst}:j.ci?{k:'ci',q:j.ci}:lireLigne(j.s)}));
+const JAL=(EX.jalons||[]).map(j=>({l:j.l,J:j.cst?{k:'cst',q:j.cst}:j.ci?{k:'ci',q:j.ci}:j.pt0?{k:'pt'}:
+  j.pt?(()=>{PTMODE=true;try{return lireLigne(j.s);}finally{PTMODE=false;}})():lireLigne(j.s)}));
 
 
 /* ===================== Aperçu "en beau" ===================== */
@@ -536,6 +550,7 @@ const MID_RE=new RegExp("\\s+(?:"+MID_ALT+")\\s+","i");
 function verifierLigne(raw,S,B_){
   if(!B_.__src){B_.__src={};B_.__det=new Set();}
   if(!B_.__ci) B_.__ci=new Set();
+  if(B_.__pt===undefined) B_.__pt=false;
   raw=raw.replace(/\[\[|\]\]/g,' ');   // cadre ignoré
   const T0_RE=/(?:à|a|pour)\s+(?:l['’]\s*instant\s+initial|t\s*=\s*0|la\s+date\s+t\s*=\s*0)\s*[,:]?/gi;
   const t0=T0_RE.test(raw); raw=raw.replace(T0_RE,' ');
@@ -545,7 +560,7 @@ function verifierLigne(raw,S,B_){
   const estVec=seg=>{const m=VEC.exec(seg.replace(/\(.*?\)/g,''));return !!m&&!ENT.some(e=>e.s===m[2]);};
   for(const seg of segs){
     let s1,m1='';
-    try{T0MODE=t0;let L;try{L=lireLigne(seg);}finally{T0MODE=false;}const avant=new Set(B_.__det),avCI=new Set(B_.__ci);s1=verifLigne(L,S,B_);
+    try{T0MODE=t0;PTMODE=!!B_.__pt;let L;try{L=lireLigne(seg);}finally{T0MODE=false;PTMODE=false;}const avant=new Set(B_.__det),avCI=new Set(B_.__ci);s1=verifLigne(L,S,B_);
       L.det=[...B_.__det].filter(x=>!avant.has(x)); L.ci=[...B_.__ci].filter(x=>!avCI.has(x));
       if(s1==='nc')m1='trop de constantes';
       if(s1==='ncst'){s1='nc';m1="constante non introduite par une primitive juste";}
