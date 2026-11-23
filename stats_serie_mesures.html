@@ -190,6 +190,24 @@ h1 { font-size: 1rem; color: #1a5a9a; letter-spacing: 0.4px; }
   border: 1px solid #e8b0b0;
 }
 
+#colsel {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+  background: #fff8e8;
+  border: 1px solid #e8d4a0;
+  border-radius: 7px;
+  padding: 6px 8px;
+}
+#colsel.on { display: flex; }
+.cs-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+#colsel select {
+  flex: 1; min-width: 0;
+  font-size: 0.72rem; color: #1a3a60;
+  border: 1px solid #b8cce0; border-radius: 5px; padding: 2px 3px; background: #fff;
+}
+
 #shortcut-hint {
   font-size: 0.56rem;
   color: #c0ccd8;
@@ -237,7 +255,7 @@ h1 { font-size: 1rem; color: #1a5a9a; letter-spacing: 0.4px; }
 
 /* ── COLONNE DROITE : stats ── */
 #stats-panel {
-  width: 210px;
+  width: 240px;
   flex-shrink: 0;
   background: #f8fbff;
   border-left: 2px solid #d0dce8;
@@ -299,6 +317,13 @@ h1 { font-size: 1rem; color: #1a5a9a; letter-spacing: 0.4px; }
   color: #3a6010;
   font-size: 0.72rem;
 }
+.stat-desc {
+  display: block;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 0.6rem;
+  color: #6a8a40;
+  line-height: 1.1;
+}
 .stat-val {
   font-family: 'Courier New', monospace;
   color: #1a4800;
@@ -358,6 +383,11 @@ h1 { font-size: 1rem; color: #1a5a9a; letter-spacing: 0.4px; }
     <span class="paste-label">Colle le tableau Moodle ici :</span>
     <textarea id="paste-area"
       placeholder="Une valeur par ligne&#10;&#10;Ex :&#10;47.3&#10;48.1&#10;46.9&#10;47.8&#10;…"></textarea>
+
+    <div id="colsel">
+      <div class="cs-row"><span class="ctrl-label">Mesures</span><select id="sel-x"></select></div>
+      <div class="cs-row"><span class="ctrl-label">Effectifs</span><select id="sel-n"></select></div>
+    </div>
 
     <div id="controls">
       <div id="classes-control">
@@ -480,6 +510,8 @@ function reset() {
   textarea.value = '';
   currentData = null;
   currentBins = null;
+  table = null;
+  colsel.classList.remove('on');
   nTag.style.display = 'none';
   statsContent.innerHTML = '';
   placeholder.style.display = 'flex';
@@ -488,22 +520,99 @@ function reset() {
   textarea.focus();
 }
 
-/* ── PARSING ── */
-function parseData(raw) {
-  const normalized = raw
-    .replace(/(\d),(\d)/g, '$1.$2')   // virgule décimale française
-    .replace(/[;,\t|]/g, ' ');
-  const nums = normalized.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi);
-  if (!nums) return null;
-  return nums.map(Number).filter(n => isFinite(n));
+/* ── PARSING ──
+   Le tableau collé est lu par colonnes :
+   - une colonne d'heures (08:00) ou de texte est ignorée (étiquettes) ;
+   - une colonne dont le titre contient « effectif » sert de pondération ;
+   - sinon, la dernière colonne numérique contient les mesures.
+   L'élève peut corriger le choix avec les menus « Mesures » / « Effectifs ».      */
+const selX = document.getElementById('sel-x');
+const selN = document.getElementById('sel-n');
+const colsel = document.getElementById('colsel');
+let table = null;   // { names, cols:[[...]], kinds:[...] }
+
+const RE_NUM  = /^[-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?$/i;
+const RE_TIME = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+const RE_EFF  = /effectif|^eff\.?$|^n_?i$|nombre de|occurrence/i;
+
+function splitLine(line) {
+  const l = line.replace(/(\d),(\d)/g, '$1.$2').trim();
+  if (!l) return [];
+  return l.split(/\t|;|\||\s{2,}/).map(t => t.trim()).filter(Boolean)
+          .flatMap(t => (t.split(/\s+/).every(u => RE_NUM.test(u) || RE_TIME.test(u)) ? t.split(/\s+/) : [t]));
 }
+
+function parseTable(raw) {
+  const lines = raw.split(/\r?\n/).map(splitLine).filter(r => r.length);
+  const isData = r => r.some(t => RE_NUM.test(t));
+  const first = lines.findIndex(isData);
+  if (first < 0) return null;
+  const headers = lines.slice(0, first).flat();
+  const rows = lines.slice(first).filter(isData);
+  // une seule ligne (ou des lignes de longueurs variables) : toutes les valeurs sont des mesures
+  const w = rows[0].length;
+  if (rows.length === 1 || rows.some(r => r.length !== w)) {
+    const vals = rows.flat().filter(t => RE_NUM.test(t)).map(Number);
+    return { names: ['valeurs'], cols: [vals], kinds: ['num'] };
+  }
+  const cols = [], kinds = [];
+  for (let j = 0; j < w; j++) {
+    const c = rows.map(r => r[j]);
+    kinds.push(c.every(t => RE_NUM.test(t)) ? 'num' : c.every(t => RE_TIME.test(t)) ? 'time' : 'text');
+    cols.push(kinds[j] === 'num' ? c.map(Number) : c);
+  }
+  const names = headers.length === w ? headers : cols.map((_, j) => 'colonne ' + (j + 1));
+  return { names, cols, kinds };
+}
+
+function fillSelectors(t) {
+  const numIdx = t.kinds.map((k, j) => k === 'num' ? j : -1).filter(j => j >= 0);
+  const effIdx = numIdx.find(j => RE_EFF.test(t.names[j]));
+  const xIdx   = [...numIdx].reverse().find(j => j !== effIdx);
+  selX.innerHTML = numIdx.map(j => `<option value="${j}">${t.names[j]}</option>`).join('');
+  selN.innerHTML = '<option value="-1">— aucun —</option>' + numIdx.map(j => `<option value="${j}">${t.names[j]}</option>`).join('');
+  selX.value = xIdx !== undefined ? xIdx : numIdx[0];
+  selN.value = effIdx !== undefined && effIdx !== xIdx ? effIdx : -1;
+  syncEff();
+  colsel.classList.toggle('on', t.cols.length > 1);
+}
+// la colonne des mesures ne peut pas etre aussi celle des effectifs
+function syncEff() {
+  [...selN.options].forEach(o => { o.hidden = o.disabled = (o.value === selX.value); });
+  if (selN.value === selX.value) selN.value = -1;
+}
+
+function buildData(t) {
+  const xi = +selX.value, ni = +selN.value;
+  const xs = t.cols[xi];
+  if (ni < 0 || ni === xi) return xs.filter(isFinite);
+  const ns = t.cols[ni], out = [];
+  for (let i = 0; i < xs.length; i++) {
+    const k = ns[i];
+    if (!Number.isInteger(k) || k < 0) throw new Error('Les effectifs doivent être des entiers positifs.');
+    if (out.length + k > 200000) throw new Error('Effectif total trop grand.');
+    for (let m = 0; m < k; m++) out.push(xs[i]);
+  }
+  return out;
+}
+selX.addEventListener('change', () => { syncEff(); if (table) compute(); });
+selN.addEventListener('change', () => { if (table) compute(); });
 
 /* ── ANALYSER ── */
 function analyse() {
   hideError();
   const raw = textarea.value.trim();
   if (!raw) { showError('Aucune donnée collée.'); return; }
-  const data = parseData(raw);
+  table = parseTable(raw);
+  if (!table || !table.kinds.includes('num')) { showError('Données invalides : aucune valeur numérique.'); return; }
+  fillSelectors(table);
+  compute();
+}
+
+function compute() {
+  hideError();
+  let data;
+  try { data = buildData(table); } catch (e) { showError(e.message); return; }
   if (!data || data.length < 2) { showError('Données invalides (min. 2 valeurs).'); return; }
   currentData = data.slice().sort((a, b) => a - b);
   nTag.textContent = `n = ${data.length} mesures`;
@@ -582,21 +691,21 @@ function displayStats(sorted) {
   const s = computeStats(sorted);
   const groups = [
     { title: '— Effectif & position —', rows: [
-        { name: 'n',       val: s.n.toString() },
-        { name: 'x̄',      val: fmt(s.mean)    },
-        { name: 'Σx',      val: fmt(s.sumX)    },
+        { name: 'n',       d: 'effectif total',             val: s.n.toString() },
+        { name: 'x̄',      d: 'moyenne',                    val: fmt(s.mean)    },
+        { name: 'Σx',      d: 'somme des valeurs',          val: fmt(s.sumX)    },
     ]},
     { title: '— Dispersion —', rows: [
-        { name: 'σn',      val: fmt(s.sigN)    },
-        { name: 'σn-1',    val: fmt(s.sigN1)   },
-        { name: 'étendue', val: fmt(s.etendue) },
+        { name: 'σn',      d: 'écart type (population)',    val: fmt(s.sigN)    },
+        { name: 'σn-1',    d: 'écart type de l\'échantillon', val: fmt(s.sigN1)   },
+        { name: 'étendue', d: 'max − min',                  val: fmt(s.etendue) },
     ]},
     { title: '— Quartiles —', rows: [
-        { name: 'min',  val: fmt(s.min) },
-        { name: 'Q1',   val: fmt(s.q1)  },
-        { name: 'méd',  val: fmt(s.med) },
-        { name: 'Q3',   val: fmt(s.q3)  },
-        { name: 'max',  val: fmt(s.max) },
+        { name: 'min',  d: 'plus petite valeur', val: fmt(s.min) },
+        { name: 'Q1',   d: '1er quartile',       val: fmt(s.q1)  },
+        { name: 'méd',  d: 'médiane',            val: fmt(s.med) },
+        { name: 'Q3',   d: '3e quartile',        val: fmt(s.q3)  },
+        { name: 'max',  d: 'plus grande valeur', val: fmt(s.max) },
     ]},
   ];
 
@@ -612,7 +721,7 @@ function displayStats(sorted) {
     group.rows.forEach(r => {
       const row = document.createElement('div');
       row.className = 'stat-row';
-      row.innerHTML = `<span class="stat-name">${r.name}</span><span class="stat-val">${r.val}</span>`;
+      row.innerHTML = `<span class="stat-name">${r.name}<small class="stat-desc">${r.d}</small></span><span class="stat-val">${r.val}</span>`;
       block.appendChild(row);
       setTimeout(() => row.classList.add('visible'), delay);
       delay += 55;
@@ -738,7 +847,7 @@ function drawHistogram(sorted, nBars) {
     for (let i = 0; i <= nBars; i += skipStep) {
       const xval = min + i * step;
       const xpx  = PAD_L + i * barW;
-      ctx.fillText(fmtAxis(xval, step), xpx, PAD_T + plotH + 14);
+      if (xpx < PAD_L + plotW - 34) ctx.fillText(fmtAxis(xval, step), xpx, PAD_T + plotH + 14);   // evite le chevauchement avec le max
       ctx.strokeStyle = '#c0ccd8'; ctx.lineWidth = 0.5;
       ctx.beginPath(); ctx.moveTo(xpx, PAD_T + plotH); ctx.lineTo(xpx, PAD_T + plotH + 4); ctx.stroke();
     }
