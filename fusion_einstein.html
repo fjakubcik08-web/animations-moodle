@@ -20,6 +20,8 @@
   button{font-family:inherit;font-size:15px;color:#222;background:#fff;border:2px solid #222;border-radius:9px 7px 10px 6px;padding:3px 12px;cursor:pointer;}
   button:hover{background:#eef4fb;}
   #help{font-size:14px;color:#555;flex:1 1 260px;}
+  #cpz{display:inline-flex;gap:6px;align-items:center;}
+  #cpv{font:bold 16px "Courier New",monospace;width:170px;padding:3px 6px;border:2px solid #222;border-radius:7px 9px 6px 10px;background:#cfe3c8;color:#1f3a1f;}
 </style>
 </head>
 <body>
@@ -30,7 +32,8 @@
     <label>🌡️ Température du cœur : <input type="range" id="T" min="1" max="30" step="1" value="5"></label>
     <span id="Tv"></span>
     <button id="rst">↺ Ranger les noyaux</button>
-    <span id="help">Glisse (ou clique) un noyau sur la balance pour le peser. Un seul à la fois !</span>
+    <span id="cpz"><input id="cpv" type="text" readonly value="" placeholder="masse pesée" title="Sélectionner puis Ctrl+C"></span>
+    <span id="help">Glisse (ou clique) un noyau sur la balance pour le peser. Un seul à la fois ! La masse pesée s'affiche aussi dans le champ vert : sélectionne-la puis Ctrl+C.</span>
   </div>
 </div>
 <script>
@@ -38,7 +41,8 @@
 "use strict";
 /* =====================================================================
    PARAMETRES  (?p= JSON -> UTF-8 -> XOR cle "PBayle-Fusion#E=mc2" -> base64url sans =)
-   { md:kg, mt:kg, mh:kg, mn:kg }   masses du deuterium, tritium, helium 4, neutron
+   { md:kg, mt:kg, mh:kg, mn:kg, cs:8 }   masses du deuterium, tritium, helium 4, neutron
+   cs = nombre de chiffres significatifs affiches par la balance (defaut 8 : arrondi negligeable devant dm)
    Parametres en clair (?md=...&mt=...) prioritaires sur ?p=.
    ===================================================================== */
 const XKEY = "PBayle-Fusion#E=mc2";
@@ -52,9 +56,9 @@ function decodeP(p){
   }catch(e){ return {}; }
 }
 const Q = new URLSearchParams(location.search);
-const P = Object.assign({md:3.34449e-27, mt:5.00736e-27, mh:6.64466e-27, mn:1.67493e-27},
+const P = Object.assign({md:3.34449e-27, mt:5.00736e-27, mh:6.64466e-27, mn:1.67493e-27, cs:8},
                         Q.get('p') ? decodeP(Q.get('p')) : {});
-['md','mt','mh','mn'].forEach(k=>{ if(Q.get(k)!==null && isFinite(+Q.get(k))) P[k]=+Q.get(k); });
+['md','mt','mh','mn','cs'].forEach(k=>{ if(Q.get(k)!==null && isFinite(+Q.get(k))) P[k]=+Q.get(k); });
 window.__P = P; // tests
 
 /* ---------- reaction ecrite ---------- */
@@ -239,10 +243,20 @@ function put(k){ if(onPlate&&onPlate!==k) home(onPlate); onPlate=k; items[k].on=
 ORDER.forEach(home);
 document.getElementById('rst').onclick=()=>{ ORDER.forEach(home); onPlate=null; };
 
+function rawMass(m){ const d=Math.max(1,Math.min(12,Math.round(P.cs)))-1; return m.toExponential(d).replace('e','E').replace('E+','E'); }
+const cpv=document.getElementById('cpv');
+let cpShown=null;
+function syncCopy(){
+  const k=(onPlate&&settle===0)?onPlate:null;
+  if(k===cpShown) return; cpShown=k;
+  cpv.value = k ? rawMass(NUC[k].m()) : '';
+}
+cpv.addEventListener('focus',()=>cpv.select());
 function fmtMass(m){
   if(!(m>0)) return '0 kg';
+  const d=Math.max(1,Math.min(12,Math.round(P.cs)))-1;
   const e=Math.floor(Math.log10(m)); let man=m/Math.pow(10,e);
-  let s=man.toFixed(5); if(s.startsWith('10')){ s=(man/10).toFixed(5); return s.replace('.',',')+' × 10'+sup(e+1)+' kg'; }
+  let s=man.toFixed(d); if(s.startsWith('10')){ s=(man/10).toFixed(d); return s.replace('.',',')+' × 10'+sup(e+1)+' kg'; }
   return s.replace('.',',')+' × 10'+sup(e)+' kg';
 }
 function sup(e){ const m={'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'}; return String(e).split('').map(c=>m[c]).join(''); }
@@ -262,9 +276,9 @@ function drawBalance(now){
   if(!onPlate) disp='0 kg';
   else if(settle>0){ const d='0123456789'; disp=Array.from({length:7},(_,i)=>d[Math.floor((now/60+i*3)%10)]).join('').replace(/^(.)/,'$1,')+' kg'; }
   else disp=fmtMass(NUC[onPlate].m());
-  ctx.font='bold 24px "Courier New",monospace'; ctx.fillStyle='#1f3a1f'; ctx.textAlign='right'; ctx.textBaseline='middle';
+  ctx.font='bold '+(P.cs>7?20:24)+'px "Courier New",monospace'; ctx.fillStyle='#1f3a1f'; ctx.textAlign='right'; ctx.textBaseline='middle';
   ctx.fillText(disp,sx+sw-12,sy+sh/2+1);
-  txt('kg · 6 chiffres significatifs',x+w/2,PLATE.y+150,13,'#555');
+  txt('kg · '+Math.round(P.cs)+' chiffres significatifs',x+w/2,PLATE.y+150,13,'#555');
   // plateau
   ctx.beginPath(); ctx.ellipse(PLATE.x,PLATE.y,PLATE.rx,PLATE.ry,0,0,2*Math.PI); ctx.fillStyle='#d5dde6'; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=INK; ctx.stroke();
   // plateau de rangement
@@ -306,6 +320,7 @@ function frame(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
   stepCol(dt);
   if(settle>0) settle=Math.max(0,settle-dt);
+  syncCopy();
   ORDER.forEach(k=>{ const it=items[k]; if(drag!==k){ it.x+=(it.tx-it.x)*Math.min(1,dt*12); it.y+=(it.ty-it.y)*Math.min(1,dt*12); } });
   ctx.clearRect(0,0,W,H);
   drawCore(now);
