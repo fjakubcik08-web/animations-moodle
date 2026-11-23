@@ -45,6 +45,7 @@
   <div id="out">
     <div class="card"><b>🌅 Lever du Soleil (heure solaire)</b><span id="oLev"></span></div>
     <div class="card"><b>🌇 Coucher du Soleil (heure solaire)</b><span id="oCou"></span></div>
+    <div class="card"><b>⏱ Durée du jour</b><span id="oD"></span></div>
     <div class="card"><b>📐 Hauteur du Soleil</b><span id="oH"></span></div>
     <div class="card"><b>☀️ Éclairement (ciel dégagé)</b><span id="oE"></span></div>
   </div>
@@ -59,7 +60,7 @@
    { n:"Paris", la:48.86, lo:2.35, d:172, h:12, v:[["Lima",-12.05,-77.04], ...] }
      v  : villes que l'eleve peut retrouver avec le bouton Localisation (en plus de la ville de depart)
      n  : nom de la ville          la/lo : latitude / longitude (deg)
-     d  : jour de depart (1-365)   h     : heure solaire de depart (0-24)
+     d  : jour de depart (1-365, defaut 1 = 1er janvier)   h : heure solaire de depart (0-24, defaut 6)
    Parametres en clair (?la=..&d=..) prioritaires sur ?p=.
    ===================================================================== */
 const XKEY="PBayle-JourneeSolaire#24h";
@@ -71,7 +72,7 @@ function decodeP(p){
   }catch(e){ return {}; }
 }
 const Q=new URLSearchParams(location.search);
-const P=Object.assign({n:"Sedan",la:49.70,lo:4.94,d:172,h:12}, Q.get('p')?decodeP(Q.get('p')):{});
+const P=Object.assign({n:"Sedan",la:49.70,lo:4.94,d:1,h:6}, Q.get('p')?decodeP(Q.get('p')):{});
 ['la','lo','d','h'].forEach(k=>{ if(Q.get(k)!==null&&isFinite(+Q.get(k))) P[k]=+Q.get(k); });
 if(Q.get('n')) P.n=Q.get('n');
 window.__P=P;
@@ -144,6 +145,7 @@ function upd(){
   const polar=w0>=Math.PI-1e-9, nuit=w0<=1e-9;
   document.getElementById('oLev').textContent=polar?'jour polaire':nuit?'nuit polaire':hTxt(lev);
   document.getElementById('oCou').textContent=polar?'jour polaire':nuit?'nuit polaire':hTxt(cou);
+  document.getElementById('oD').textContent=polar?'24 h 00':nuit?'0 h 00':(m=>Math.floor(m/60)+' h '+String(m%60).padStart(2,'0'))(Math.round(cou*60)-Math.round(lev*60));
   document.getElementById('oH').textContent=fr(h,1)+' °';
   document.getElementById('oE').textContent=Math.round(E)+' W/m²';
   draw();
