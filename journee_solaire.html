@@ -42,6 +42,8 @@
   @keyframes flipc{0%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
   .flip{animation:flipc .09s linear;}
   .confetti{position:absolute;width:9px;height:14px;border-radius:2px;pointer-events:none;z-index:50;}
+  .loc{display:block;font-size:13px;color:#666;font-weight:normal;font-family:inherit;margin-top:1px;}
+  #htxtL{display:inline;margin-left:8px;}
   .flou{filter:blur(7px);user-select:none;}
   #oLev,#oCou,#oD{transition:filter .5s;}
   #calcRow{margin-top:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
@@ -62,12 +64,12 @@
     <input type="range" id="day" min="1" max="365" step="1"><span class="big" id="dtxt"></span><button id="bDate">📅 Choisir</button>
   </div>
   <div class="row" id="rowHeure">🕒 Heure solaire :
-    <input type="range" id="hr" min="0" max="1440" step="1"><span class="big" id="htxt"></span><button id="bHeure">🕒 Choisir</button>
+    <input type="range" id="hr" min="0" max="1440" step="1"><span class="big" id="htxt"></span><small class="loc" id="htxtL"></small><button id="bHeure">🕒 Choisir</button>
   </div>
   <div id="calcRow"><button id="bCalc">▶ Calculer la durée du jour</button><span id="oDcalc"></span></div>
   <div id="out">
-    <div class="card"><b>🌅 Lever du Soleil (heure solaire)</b><span id="oLev"></span></div>
-    <div class="card"><b>🌇 Coucher du Soleil (heure solaire)</b><span id="oCou"></span></div>
+    <div class="card"><b>🌅 Lever du Soleil (heure solaire)</b><span id="oLev"></span><small class="loc" id="oLevL"></small></div>
+    <div class="card"><b>🌇 Coucher du Soleil (heure solaire)</b><span id="oCou"></span><small class="loc" id="oCouL"></small></div>
     <div class="card"><b>⏱ Durée du jour</b><span id="oD"></span></div>
     <div class="card"><b>📐 Hauteur du Soleil</b><span id="oH"></span></div>
     <div class="card"><b>☀️ Éclairement (ciel dégagé)</b><span id="oE"></span></div>
@@ -82,6 +84,8 @@
    PARAMETRES  (?p= JSON -> UTF-8 -> XOR cle "PBayle-JourneeSolaire#24h" -> base64url sans =)
    { n:"Paris", la:48.86, lo:2.35, d:172, h:12, v:[["Lima",-12.05,-77.04], ...] }
      v  : villes que l'eleve peut retrouver avec le bouton Localisation (en plus de la ville de depart)
+     tz : fuseau IANA de la ville (ex. "Europe/Paris") -> heure locale (heure d'ete comprise) affichee entre ( ) ;
+          absent ou vide -> pas d'heure locale
      lib: 1 = latitude reglable au curseur (le bouton Localisation disparait)
      ld : 1 = date imposee (reglage cache)     lh : 1 = heure imposee (reglage cache)
      n  : nom de la ville          la/lo : latitude / longitude (deg)
@@ -97,9 +101,10 @@ function decodeP(p){
   }catch(e){ return {}; }
 }
 const Q=new URLSearchParams(location.search);
-const P=Object.assign({n:"Sedan",la:49.70,lo:4.94,d:1,h:6}, Q.get('p')?decodeP(Q.get('p')):{});
+const P=Object.assign({n:"Sedan",la:49.70,lo:4.94,d:1,h:6,tz:"Europe/Paris"}, Q.get('p')?decodeP(Q.get('p')):{});
 ['la','lo','d','h','lib','ld','lh'].forEach(k=>{ if(Q.get(k)!==null&&isFinite(+Q.get(k))) P[k]=+Q.get(k); });
 if(Q.get('n')) P.n=Q.get('n');
+if(Q.get('tz')) P.tz=Q.get('tz');
 window.__P=P;
 
 /* ---------- astronomie (memes formules que analyseur-solaire / duree_jour en Python) ---------- */
@@ -155,8 +160,8 @@ function showVille(){
 }
 showVille();
 // villes localisables : liste v du parametre + la ville de depart
-const VILLES=(Array.isArray(P.v)?P.v:[]).filter(c=>Array.isArray(c)&&c.length===3&&isFinite(c[1])&&isFinite(c[2]));
-if(!VILLES.some(c=>c[0]===P.n)) VILLES.push([P.n,P.la,P.lo]);
+const VILLES=(Array.isArray(P.v)?P.v:[]).filter(c=>Array.isArray(c)&&c.length>=3&&isFinite(c[1])&&isFinite(c[2]));
+if(!VILLES.some(c=>c[0]===P.n)) VILLES.push([P.n,P.la,P.lo,P.tz||'']);
 const norm=t=>String(t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 
 /* ---------- canvas ---------- */
@@ -183,12 +188,27 @@ const sDay=document.getElementById('day'), sHr=document.getElementById('hr');
 sDay.value=Math.max(1,Math.min(365,Math.round(P.d))); sHr.value=Math.round(Math.max(0,Math.min(24,P.h))*60/5)*5;
 sDay.oninput=upd; sHr.oninput=upd;
 
+function eqTempsMin(N){ const B=(N-1)*2*Math.PI/365;
+  return 229.18*(0.000075+0.001868*Math.cos(B)-0.032077*Math.sin(B)-0.014615*Math.cos(2*B)-0.040849*Math.sin(2*B)); }
+function heureLocale(N,Hs){
+  if(!P.tz) return null;
+  try{
+    const utcMin=Hs*60-P.lo*4-eqTempsMin(N);
+    const t=Date.UTC(2026,0,1)+(N-1)*864e5+utcMin*6e4;
+    const f=new Intl.DateTimeFormat('fr-FR',{timeZone:P.tz,hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+    const [h,m]=f.format(new Date(t)).split(':');
+    return h+' h '+m;
+  }catch(e){ return null; }
+}
+function locTxt(N,H){ const l=heureLocale(N,H); return l?'('+l+' heure locale)':''; }
 let S={};
 let REV={lev:false,cou:false,d:false}, revKey='', calcRun=false;
 function applyFlou(){
   document.getElementById('oLev').classList.toggle('flou',!REV.lev);
   document.getElementById('oCou').classList.toggle('flou',!REV.cou);
   document.getElementById('oD').classList.toggle('flou',!REV.d);
+  document.getElementById('oLevL').classList.toggle('flou',!REV.lev);
+  document.getElementById('oCouL').classList.toggle('flou',!REV.cou);
 }
 function upd(){
   const N=+sDay.value, Hs=+sHr.value/60, phi=P.la*rad, dl=decl(N), w0=omega0(phi,dl);
@@ -200,9 +220,12 @@ function upd(){
     document.getElementById('oDcalc').textContent=''; const b=document.getElementById('bCalc'); if(b){ b.disabled=false; b.textContent='▶ Calculer la durée du jour'; } }
   document.getElementById('dtxt').textContent=dateTxt(N);
   document.getElementById('htxt').textContent=hTxt(Hs);
+  document.getElementById('htxtL').textContent=locTxt(N,Hs);
   const polar=w0>=Math.PI-1e-9, nuit=w0<=1e-9;
   document.getElementById('oLev').textContent=polar?'jour polaire':nuit?'nuit polaire':hTxt(lev);
   document.getElementById('oCou').textContent=polar?'jour polaire':nuit?'nuit polaire':hTxt(cou);
+  document.getElementById('oLevL').textContent=(polar||nuit)?'':locTxt(N,lev);
+  document.getElementById('oCouL').textContent=(polar||nuit)?'':locTxt(N,cou);
   document.getElementById('oD').textContent=polar?'24 h 00':nuit?'0 h 00':(m=>Math.floor(m/60)+' h '+String(m%60).padStart(2,'0'))(Math.round(cou*60)-Math.round(lev*60));
   document.getElementById('oH').textContent=fr(h,2)+' °';
   document.getElementById('oE').textContent=fr(E,1)+' W/m²';
@@ -449,8 +472,8 @@ document.getElementById('bLoc').onclick=()=>{
     if(!c){ f.querySelector('#locMsg').textContent='🤔 Ville inconnue : vérifie l\'orthographe.'; return; }
     pop.classList.remove('on'); goVille(c); };
 };
-function goVille([n,la,lo]){
-  P.n=n; P.la=la; P.lo=lo; showVille(); stopSpin(); K2.psi=null; K2.tilt=20*rad; upd();
+function goVille([n,la,lo,tz]){
+  P.n=n; P.la=la; P.lo=lo; P.tz=tz||''; showVille(); stopSpin(); K2.psi=null; K2.tilt=20*rad; upd();
   // le globe tourne jusqu'a la ville (bim !)
   const from=(camMode==='free'&&cam)?cam:camFor(camMode); camMode='free';
   const tgt=sph(la*rad,lo*rad), t0=performance.now(), D=1200;
@@ -513,6 +536,7 @@ cv.addEventListener('dblclick',ev=>{ const [x,y]=cpos(ev); stopSpin();
   resetVues(); });
 cv.addEventListener('pointerup',()=>{ dragG=null; dragS=null; cv.style.cursor='default'; });
 if(+P.lib===1){
+  P.tz='';   // latitude libre : pas de ville, donc pas de fuseau
   document.getElementById('bLoc').style.display='none';
   const sl=document.getElementById('lat'), lt=document.getElementById('latTxt');
   document.getElementById('rowLat').style.display='';
