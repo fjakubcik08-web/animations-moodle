@@ -28,13 +28,32 @@
   #popC{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
   #popC .sec{width:100%;font-size:14px;color:#666;margin-top:6px;}
   #popC button.sel{background:#2f6fb0;color:#fff;}
+  @keyframes popc{0%{transform:scale(1)}35%{transform:scale(1.35) rotate(-4deg)}60%{transform:scale(.9) rotate(3deg)}80%{transform:scale(1.08)}100%{transform:scale(1)}}
+  .pop{display:inline-block;animation:popc .6s ease-out;}
+  @keyframes flashc{0%{background:#fff3c4;box-shadow:0 0 0 0 rgba(255,176,0,.9)}50%{background:#ffe27a;box-shadow:0 0 0 10px rgba(255,176,0,0)}100%{background:#fbfbf4;box-shadow:none}}
+  .card.flash{animation:flashc 1s ease-out;}
+  @keyframes tamponc{0%{transform:scale(2.2) rotate(-10deg);opacity:0}45%{transform:scale(.92) rotate(2deg);opacity:1}60%{transform:translate(-3px,1px) rotate(-1deg)}70%{transform:translate(3px,-1px) rotate(1deg)}80%{transform:translate(-2px,0)}100%{transform:none}}
+  .card.tampon{animation:tamponc .7s cubic-bezier(.2,.8,.3,1.2);background:#fff6cf;}
+  .flapzone{display:inline-flex;gap:2px;align-items:center;}
+  .flap{display:inline-block;min-width:.75em;text-align:center;background:#1f3a1f;color:#ffd23f;border-radius:4px;padding:0 2px;
+        box-shadow:inset 0 -2px 0 rgba(0,0,0,.35);transform-origin:50% 50%;}
+  .flap.ok{background:#2f6fb0;color:#fff;}
+  .flapsep{padding:0 2px;}
+  @keyframes flipc{0%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+  .flip{animation:flipc .09s linear;}
+  .confetti{position:absolute;width:9px;height:14px;border-radius:2px;pointer-events:none;z-index:50;}
+  .flou{filter:blur(7px);user-select:none;}
+  #oLev,#oCou,#oD{transition:filter .5s;}
+  #calcRow{margin-top:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  #bCalc{font-size:16px;font-weight:bold;background:#fff3c4;}
+  #oDcalc{font-size:15px;color:#7a3fa0;font-weight:bold;}
   #note{font-size:13px;color:#666;margin-top:6px;}
 </style>
 </head>
 <body>
 <div id="wrap">
   <div id="head"><span id="ville"></span><span id="coord"></span></div>
-  <div class="row" style="margin:0 0 4px;"><button id="bLoc">📍 Localisation</button><button id="bVue">👁 Changer de vue</button><span style="font-size:14px;color:#666;">(le globe et le paysage se tournent à la souris · double-clic = vue par défaut qui tourne)</span></div>
+  <div class="row" style="margin:0 0 4px;"><button id="bLoc">📍 Localisation</button><span style="font-size:14px;color:#666;">(globe et paysage se tournent aussi à la souris · double-clic = vue par défaut qui tourne)</span></div>
   <canvas id="cv"></canvas>
   <div class="row" id="rowLat" style="display:none">🌐 Latitude :
     <input type="range" id="lat" min="-89" max="89" step="1"><span class="big" id="latTxt"></span>
@@ -45,6 +64,7 @@
   <div class="row" id="rowHeure">🕒 Heure solaire :
     <input type="range" id="hr" min="0" max="1440" step="1"><span class="big" id="htxt"></span><button id="bHeure">🕒 Choisir</button>
   </div>
+  <div id="calcRow"><button id="bCalc">▶ Calculer la durée du jour</button><span id="oDcalc"></span></div>
   <div id="out">
     <div class="card"><b>🌅 Lever du Soleil (heure solaire)</b><span id="oLev"></span></div>
     <div class="card"><b>🌇 Coucher du Soleil (heure solaire)</b><span id="oCou"></span></div>
@@ -164,11 +184,20 @@ sDay.value=Math.max(1,Math.min(365,Math.round(P.d))); sHr.value=Math.round(Math.
 sDay.oninput=upd; sHr.oninput=upd;
 
 let S={};
+let REV={lev:false,cou:false,d:false}, revKey='', calcRun=false;
+function applyFlou(){
+  document.getElementById('oLev').classList.toggle('flou',!REV.lev);
+  document.getElementById('oCou').classList.toggle('flou',!REV.cou);
+  document.getElementById('oD').classList.toggle('flou',!REV.d);
+}
 function upd(){
   const N=+sDay.value, Hs=+sHr.value/60, phi=P.la*rad, dl=decl(N), w0=omega0(phi,dl);
   const lev=12-w0/rad/15, cou=12+w0/rad/15;
   const h=hauteurSP(P.la,N,Hs), E=eclairementSP(P.la,N,Hs);
   S={N,Hs,phi,dl,w0,lev,cou,h,E};
+  const key=N+'|'+P.la;
+  if(key!==revKey){ revKey=key; REV={lev:false,cou:false,d:false}; calcRun=false;
+    document.getElementById('oDcalc').textContent=''; const b=document.getElementById('bCalc'); if(b){ b.disabled=false; b.textContent='▶ Calculer la durée du jour'; } }
   document.getElementById('dtxt').textContent=dateTxt(N);
   document.getElementById('htxt').textContent=hTxt(Hs);
   const polar=w0>=Math.PI-1e-9, nuit=w0<=1e-9;
@@ -177,6 +206,7 @@ function upd(){
   document.getElementById('oD').textContent=polar?'24 h 00':nuit?'0 h 00':(m=>Math.floor(m/60)+' h '+String(m%60).padStart(2,'0'))(Math.round(cou*60)-Math.round(lev*60));
   document.getElementById('oH').textContent=fr(h,2)+' °';
   document.getElementById('oE').textContent=fr(E,1)+' W/m²';
+  applyFlou();
   draw();
 }
 
@@ -250,7 +280,7 @@ function globe(){
   txt(P.n,q.x+14,q.y-14,15,INK,'left',true); ctx.globalAlpha=1;
   // direction du Soleil
   const sp=pr(s), sx=sp.x-G.cx, sy=sp.y-G.cy, sl=Math.hypot(sx,sy);
-  if(camMode==='sun'&&!cam.free) txt('☀️ le Soleil est derrière toi',20,46,14,'#8a6d00','left');
+  if(camMode==='sun'&&!cam.free) txt('☀️ le Soleil est derrière toi',G.cx,G.cy+G.R+18,14,'#8a6d00','center');
   else if(sl>5){ const ux=sx/sl, uy=sy/sl, bx=G.cx+ux*(G.R+38), by=G.cy+uy*(G.R+38);
     txt('☀️',bx,by,26); wline(bx-ux*16,by-uy*16,G.cx+ux*(G.R+6),G.cy+uy*(G.R+6),2,'#e0a020'); }
   txt(camMode==='sun'?'Vu du Soleil':camMode==='side'?'Vu de côté':'Vue libre',20,22,18,INK,'left',true);
@@ -284,13 +314,19 @@ function sky(){
   // sol
   ctx.beginPath(); for(let i=0;i<=72;i++){ const a=i/72*2*Math.PI, q=pr([Math.sin(a),Math.cos(a),0]); i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y); }
   ctx.closePath(); ctx.fillStyle=mix('#d8ecc4','#25331f',nf*0.85); ctx.fill(); ctx.lineWidth=2.2; ctx.strokeStyle=INK; ctx.stroke();
-  // ombres des arbres (Soleil au-dessus de l'horizon)
-  if(vS[2]>0.005){
-    const hz=Math.hypot(vS[0],vS[1])||1e-6, L=Math.min(0.75,0.085*hz/vS[2]), dE=-vS[0]/hz, dN=-vS[1]/hz;
-    ctx.globalAlpha=Math.min(0.45,0.15+vS[2]*1.2);
-    TREESPOS().forEach(({E,N})=>{ const a=pr([E,N,0]), b=pr([E+dE*L,N+dN*L,0]), m=pr([E+dE*L*0.72,N+dN*L*0.72,0]);
-      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(m.x,m.y); ctx.lineWidth=3; ctx.strokeStyle='#1f2d1a'; ctx.stroke();
-      const rr=Math.max(4,Math.hypot(b.x-m.x,b.y-m.y)*0.9); ctx.beginPath(); ctx.ellipse((m.x+b.x)/2,(m.y+b.y)/2,rr*0.75,rr*0.45,Math.atan2(b.y-a.y,b.x-a.x),0,2*Math.PI); ctx.fillStyle='#1f2d1a'; ctx.fill(); });
+  // ombres des arbres : calculees dans le plan du sol puis projetees comme le sol
+  // (leur forme suit la perspective du paysage, leur longueur ne depend que de la hauteur du Soleil)
+  if(S.h>0.3){
+    const hz=Math.hypot(vS[0],vS[1])||1e-6, dE=-vS[0]/hz, dN=-vS[1]/hz, wE=-dN, wN=dE;
+    const tanh=Math.tan(S.h*rad), Ht=0.085, L=Math.min(0.9,Ht/tanh);
+    const rc=0.032, ra=Math.min(rc/Math.sin(S.h*rad),0.14);              // tache du feuillage, etiree quand le Soleil est bas
+    ctx.globalAlpha=Math.min(0.45,0.15+Math.sin(S.h*rad)*1.2); ctx.fillStyle='#1f2d1a'; ctx.strokeStyle='#1f2d1a';
+    TREESPOS().forEach(({E,N})=>{
+      const a=pr([E,N,0]), cE=E+dE*L*0.78, cN=N+dN*L*0.78, m=pr([E+dE*L*0.6,N+dN*L*0.6,0]);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(m.x,m.y); ctx.lineWidth=3; ctx.stroke();
+      ctx.beginPath();
+      for(let k=0;k<=24;k++){ const t=k/24*2*Math.PI, q2=pr([cE+dE*ra*Math.cos(t)+wE*rc*Math.sin(t), cN+dN*ra*Math.cos(t)+wN*rc*Math.sin(t), 0]); k?ctx.lineTo(q2.x,q2.y):ctx.moveTo(q2.x,q2.y); }
+      ctx.fill(); });
     ctx.globalAlpha=1;
   }
   // arbres sur le sol (positions fixes, du fond vers l'avant)
@@ -328,7 +364,21 @@ function sky(){
     txt(lab,pl.x,pl.y,13,'#7a3fa0','center',true);
     ctx.beginPath(); ctx.arc(q.x,q.y,13,0,2*Math.PI); ctx.fillStyle='#ffd23f'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=INK; ctx.stroke();
   } else wline(O.x,O.y,q.x,q.y,1.6,'rgba(192,57,43,.7)',[5,4]);
-  if(S.h<=0){ txt('🌙 le Soleil est sous l\'horizon',K2.cx,by+20,15,nf>0.5?'#e8ecf5':'#555'); }
+  if(BUL){ const age=(performance.now()-BUL.t0)/1000;
+    if(age>1.3) BUL=null; else {
+      const sc=age<0.25?age/0.25*1.2:(age<0.4?1.2-(age-0.25)/0.15*0.2:1), bx=q.x, byy=q.y-46;
+      // etincelles
+      for(let i=0;i<8;i++){ const a=i/8*2*Math.PI+age*3, r=18+age*55; ctx.globalAlpha=Math.max(0,1-age/1.3);
+        txt('✦',q.x+Math.cos(a)*r,q.y+Math.sin(a)*r,14+4*(i%2),i%2?'#ffb000':'#e04b3a','center',true); }
+      ctx.globalAlpha=1;
+      ctx.save(); ctx.translate(bx,byy); ctx.scale(sc,sc);
+      ctx.font='bold 18px '+FONT; const w=ctx.measureText(BUL.txt).width+22;
+      ctx.beginPath(); ctx.ellipse(0,0,w/2,19,0,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2.4; ctx.strokeStyle=INK; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-6,17); ctx.lineTo(4,30); ctx.lineTo(6,16); ctx.fillStyle='#fff'; ctx.fill(); ctx.stroke();
+      txt(BUL.txt,0,0,18,'#c0392b','center',true); ctx.restore();
+      requestAnimationFrame(()=>draw());
+    } }
+  if(S.h<=0){ txt('🌙 le Soleil est sous l\'horizon',K2.cx,by+bh-22,15,nf>0.5?'#e8ecf5':'#555'); }
 }
 
 /* ---------- vue 2 : frise 0-24 h ---------- */
@@ -336,8 +386,8 @@ function frise(){
   const x0=60, x1=W-40, y=592, h=30, X=t=>x0+t/24*(x1-x0);
   const polar=S.w0>=Math.PI-1e-9, nuit=S.w0<=1e-9;
   ctx.fillStyle='#3d4f6b'; ctx.fillRect(x0,y-h/2,x1-x0,h);
-  if(polar){ ctx.fillStyle='#ffd23f'; ctx.fillRect(x0,y-h/2,x1-x0,h); }
-  else if(!nuit){ ctx.fillStyle='#ffd23f'; ctx.fillRect(X(S.lev),y-h/2,X(S.cou)-X(S.lev),h); }
+  if(polar&&REV.d){ ctx.fillStyle='#ffd23f'; ctx.fillRect(x0,y-h/2,x1-x0,h); }
+  else if(!nuit&&!polar&&REV.lev){ const fin=REV.cou?S.cou:Math.min(S.Hs,S.cou); if(fin>S.lev){ ctx.fillStyle='#ffd23f'; ctx.fillRect(X(S.lev),y-h/2,X(fin)-X(S.lev),h); } }
   wline(x0,y-h/2,x1,y-h/2,2); wline(x1,y-h/2,x1,y+h/2,2); wline(x1,y+h/2,x0,y+h/2,2); wline(x0,y+h/2,x0,y-h/2,2);
   for(let t=0;t<=24;t++){ const xx=X(t); ctx.beginPath(); ctx.moveTo(xx,y+h/2); ctx.lineTo(xx,y+h/2+(t%6?5:9)); ctx.lineWidth=1.5; ctx.strokeStyle=INK; ctx.stroke();
     if(t%3===0) txt(t+' h',xx,y+h/2+20,13,'#444'); }
@@ -347,6 +397,9 @@ function frise(){
   for(let i=0;i<=288;i++){ const t=i/12, hh=hauteur(S.phi,S.dl,t); if(hh>0){ const yy=top-hh*sc; st?ctx.lineTo(X(t),yy):ctx.moveTo(X(t),yy); st=true; } else st=false; }
   ctx.lineWidth=2.2; ctx.strokeStyle='#e08a00'; ctx.stroke();
   txt('hauteur du Soleil',x0+4,top-14,13,'#e08a00','left'); txt('heure solaire',x1,y+h/2+34,13,'#444','right',true);
+  // reperes lever / coucher une fois calcules
+  if(!polar&&!nuit){ [['lever',S.lev,REV.lev],['coucher',S.cou,REV.cou]].forEach(([l,t,ok])=>{ if(!ok) return;
+    wline(X(t),y-h/2-6,X(t),y+h/2+4,2.4,'#7a3fa0'); txt(l,X(t),y-h/2-14,12,'#7a3fa0','center',true); }); }
   // heure choisie
   const xs=X(S.Hs);
   wline(xs,top-92,xs,y+h/2,2,'#c0392b',[5,4]);
@@ -354,7 +407,26 @@ function frise(){
   txt('🕒',xs,y,16);
 }
 
-function draw(){ if(!S.N) return; ctx.clearRect(0,0,W,H); globe(); sky(); frise(); }
+let BTNS=[];
+function vueBtns(){
+  BTNS=[];
+  const mk=(x,y,label,sel,f)=>{ ctx.font='bold 13px '+FONT; const w=ctx.measureText(label).width+16, h=24;
+    BTNS.push({x,y,w,h,f});
+    ctx.beginPath(); ctx.roundRect(x,y,w,h,[9,6,10,7]); ctx.fillStyle=sel?'#2f6fb0':'rgba(255,255,255,.92)'; ctx.fill();
+    ctx.lineWidth=1.8; ctx.strokeStyle=INK; ctx.stroke(); txt(label,x+w/2,y+h/2+1,13,sel?'#fff':INK,'center',true); return w+6; };
+  // globe
+  let x=20; const yg=36;
+  x+=mk(x,yg,'☀️ Soleil',camMode==='sun'&&!spin,()=>{ stopSpin(); camMode='sun'; draw(); });
+  x+=mk(x,yg,'↔ Côté',camMode==='side'&&!spin,()=>{ stopSpin(); camMode='side'; draw(); });
+  // paysage
+  const ps=K2.psi===null?null:Math.round((((K2.psi/rad)%360)+360)%360), eo=(P.la>=0?180:0);
+  x=476; const yk=44;
+  x+=mk(x,yk,'Est – Ouest',!spin&&ps===eo,()=>{ stopSpin(); K2.psi=eo*rad; K2.tilt=14*rad; draw(); });
+  x+=mk(x,yk,'Nord – Sud',!spin&&ps===90,()=>{ stopSpin(); K2.psi=90*rad; K2.tilt=14*rad; draw(); });
+  x+=mk(x,yk,'De biais',!spin&&K2.psi===null,()=>{ stopSpin(); K2.psi=null; K2.tilt=20*rad; draw(); });
+  mk(x,yk,spin?'■ Stop':'🔄 Tourne',spin,()=>{ if(spin){ stopSpin(); draw(); } else startSpin(); });
+}
+function draw(){ if(!S.N) return; ctx.clearRect(0,0,W,H); globe(); sky(); frise(); vueBtns(); }
 /* ---------- fenetre de choix (une seule, contenu selon le bouton) ---------- */
 const pop=document.getElementById('pop'), popT=document.getElementById('popT'), popC=document.getElementById('popC');
 function openPop(title,items){ popT.textContent=title; popC.innerHTML='';
@@ -393,18 +465,7 @@ let spin=false;
 function stopSpin(){ spin=false; }
 function startSpin(){ if(spin) return; spin=true; if(camMode!=='free'){ cam=camFor(camMode); camMode='free'; } lastSpin=performance.now(); requestAnimationFrame(spinLoop); }
 function resetVues(){ stopSpin(); camMode='sun'; K2.psi=null; K2.tilt=20*rad; draw(); startSpin(); }
-document.getElementById('bVue').onclick=()=>openPop('Changer de vue',[
-  {t:'↺ Vue par défaut (ça tourne tout seul)', f:resetVues},
-  {sec:'🌍 Le globe'},
-  {t:'☀️ Vu du Soleil', sel:camMode==='sun', f:()=>{ stopSpin(); camMode='sun'; draw(); }},
-  {t:'↔ Vu de côté', sel:camMode==='side', f:()=>{ stopSpin(); camMode='side'; draw(); }},
-  {sec:'🌳 Le paysage'},
-  {t:'Est – Ouest', f:()=>{ stopSpin(); K2.psi=(P.la>=0?180:0)*rad; K2.tilt=14*rad; draw(); }},
-  {t:'Nord – Sud', f:()=>{ stopSpin(); K2.psi=90*rad; K2.tilt=14*rad; draw(); }},
-  {t:'De biais', f:()=>{ stopSpin(); K2.psi=null; K2.tilt=20*rad; draw(); }},
-  {sec:'🔄 Animation'},
-  {t:spin?'⏸ Arrêter la rotation':'🔄 Ça tourne tout seul', f:()=>{ if(spin) stopSpin(); else startSpin(); }}
-]);
+
 let lastSpin=0;
 function spinLoop(now){ if(!spin) return; const dt=Math.min(0.05,(now-lastSpin)/1000); lastSpin=now;
   if(K2.psi===null) K2.psi=(P.la>=0?240:60)*rad;
@@ -434,10 +495,13 @@ document.getElementById('bHeure').onclick=()=>{ const H0=Math.round(+sHr.value/6
 let dragG=null;
 function cpos(ev){ const r=cv.getBoundingClientRect(); return [(ev.clientX-r.left)*W/r.width,(ev.clientY-r.top)*H/r.height]; }
 let dragS=null;
-cv.addEventListener('pointerdown',ev=>{ const [x,y]=cpos(ev); stopSpin();
+cv.addEventListener('pointerdown',ev=>{ const [x,y]=cpos(ev);
+  const bt=BTNS.find(b=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h); if(bt){ bt.f(); return; }
+  stopSpin();
   if(x>468&&y>38&&y<508){ dragS=[x,y]; cv.setPointerCapture(ev.pointerId); cv.style.cursor='grabbing'; return; }
   if(Math.hypot(x-G.cx,y-G.cy)<G.R){ dragG=[x,y]; cam=camMode==='free'?cam:camFor(camMode); camMode='free'; cv.setPointerCapture(ev.pointerId); cv.style.cursor='grabbing'; } });
 cv.addEventListener('pointermove',ev=>{ const [x,y]=cpos(ev);
+  if(!dragG&&!dragS&&BTNS.some(b=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h)){ cv.style.cursor='pointer'; return; }
   if(dragS){ K2.psi-=(x-dragS[0])/150; K2.tilt=Math.max(2*rad,Math.min(80*rad,K2.tilt+(y-dragS[1])/250)); dragS=[x,y]; draw(); return; }
   if(x>468&&y>38&&y<508){ cv.style.cursor='grab'; return; }
   if(dragG){ const dx=(x-dragG[0])/G.R, dy=(y-dragG[1])/G.R; dragG=[x,y];
@@ -457,6 +521,65 @@ if(+P.lib===1){
 }
 if(+P.ld===1) document.getElementById('rowDate').style.display='none';
 if(+P.lh===1) document.getElementById('rowHeure').style.display='none';
+/* ---------- bouton : calculer la duree du jour (la journee defile) ---------- */
+const bCalc=document.getElementById('bCalc');
+function popCarte(id, final){
+  const e=document.getElementById(id), card=e.closest('.card');
+  card.classList.remove('flash','tampon'); void card.offsetWidth; card.classList.add(final?'tampon':'flash');
+  // panneau a palettes (facon tableau des departs) : chaque chiffre tourne puis se fige, de gauche a droite
+  const cible=e.textContent; e.textContent=''; e.classList.add('flapzone');
+  const cells=[...cible].map(ch=>{ const c=document.createElement('span'); c.className=/\d/.test(ch)?'flap':'flapsep'; c.textContent=/\d/.test(ch)?'0':ch; e.appendChild(c); return {c,ch}; });
+  const t0=performance.now();
+  cells.forEach(({c,ch},k)=>{ if(!/\d/.test(ch)) return;
+    const fin=200+k*70;
+    const tick=()=>{ const el=performance.now()-t0;
+      if(el>=fin){ c.textContent=ch; c.classList.remove('flip'); void c.offsetWidth; c.classList.add('flip','ok'); return; }
+      c.textContent=String(Math.floor(Math.random()*10)); c.classList.remove('flip'); void c.offsetWidth; c.classList.add('flip');
+      setTimeout(tick,55); };
+    tick(); });
+  const tot=200+cells.length*70+250;
+  setTimeout(()=>{ e.classList.remove('flapzone'); e.textContent=cible; if(final) confettis(card); }, tot);
+}
+function confettis(card){
+  const r=card.getBoundingClientRect(), cols=['#ffd23f','#e04b3a','#2f6fb0','#5f9e48','#7a3fa0','#ff8c2a'];
+  for(let i=0;i<40;i++){
+    const d=document.createElement('div'); d.className='confetti';
+    d.style.left=(r.left+r.width/2)+'px'; d.style.top=(r.top+r.height/2+window.scrollY)+'px';
+    d.style.background=cols[i%cols.length]; document.body.appendChild(d);
+    const a=Math.random()*2*Math.PI, v=60+Math.random()*110;
+    d.animate([{transform:'translate(0,0) rotate(0deg)',opacity:1},
+               {transform:`translate(${Math.cos(a)*v}px,${Math.sin(a)*v-40}px) rotate(${Math.random()*720}deg)`,opacity:1,offset:.6},
+               {transform:`translate(${Math.cos(a)*v*1.2}px,${Math.sin(a)*v+90}px) rotate(${Math.random()*1080}deg)`,opacity:0}],
+              {duration:1300+Math.random()*500,easing:'cubic-bezier(.2,.7,.4,1)'}).onfinish=()=>d.remove();
+  }
+}
+let BUL=null;   // {txt, t0}
+function bulle(t){ BUL={txt:t,t0:performance.now()}; }
+const hm=m=>Math.floor(m/60)+' h '+String(m%60).padStart(2,'0');
+bCalc.onclick=()=>{
+  if(calcRun) return;
+  const polar=S.w0>=Math.PI-1e-9, nuit=S.w0<=1e-9;
+  REV={lev:false,cou:false,d:false};
+  if(polar||nuit){ REV={lev:true,cou:true,d:true}; document.getElementById('oDcalc').textContent=polar?'Le Soleil ne se couche pas : jour polaire (24 h).':'Le Soleil ne se lève pas : nuit polaire (0 h).'; upd(); return; }
+  calcRun=true; bCalc.disabled=true; document.getElementById('oDcalc').textContent='';
+  const key=revKey, lev=S.lev, cou=S.cou, t0=Math.max(0,lev-0.7), t1=Math.min(24,cou+0.7), vit=(t1-t0)/5; // ~5 s
+  let t=t0, last=performance.now(), pause=0;
+  const setH=x=>{ sHr.value=Math.round(x*60); upd(); };
+  setH(t);
+  (function step(now){
+    if(!calcRun||revKey!==key) return;
+    const dt=Math.min(0.05,(now-last)/1000); last=now;
+    if(pause>0){ pause-=dt; requestAnimationFrame(step); return; }
+    const tn=t+vit*dt;
+    if(!REV.lev&&tn>=lev){ t=lev; setH(t); REV.lev=true; applyFlou(); popCarte('oLev'); bulle('Lever !'); draw(); pause=1.0; requestAnimationFrame(step); return; }
+    if(!REV.cou&&tn>=cou){ t=cou; setH(t); REV.cou=true; applyFlou(); popCarte('oCou'); bulle('Coucher !'); draw(); pause=1.0; requestAnimationFrame(step); return; }
+    t=tn; setH(Math.min(t,t1));
+    if(t>=t1){ REV.d=true; applyFlou(); draw(); calcRun=false; bCalc.disabled=false; bCalc.textContent='↺ Recommencer';
+      popCarte('oD',true); bulle('Ta-daa !');
+      return; }
+    requestAnimationFrame(step);
+  })(last);
+};
 resize(); upd(); startSpin();
 })();
 </script>
