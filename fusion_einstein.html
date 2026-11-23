@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fusion au cœur du Soleil</title>
+<style>
+  html,body{margin:0;padding:0;background:#fff;overflow-x:hidden;overflow-y:auto;}
+  body{font-family:'xkcd Script','Comic Neue','Comic Sans MS','Chalkboard SE',cursive;color:#222;}
+  #wrap{max-width:980px;margin:0 auto;padding:8px 10px 14px;box-sizing:border-box;}
+  #reac{text-align:center;font-size:26px;margin:4px 0 8px;letter-spacing:1px;}
+  .nuc{display:inline-flex;align-items:center;margin:0 4px;}
+  .az{display:inline-flex;flex-direction:column;align-items:flex-end;font-size:14px;line-height:15px;margin-right:2px;}
+  .op{margin:0 6px;}
+  canvas{display:block;width:100%;touch-action:none;}
+  #bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin-top:6px;font-size:16px;}
+  #bar label{white-space:nowrap;}
+  #T{width:220px;accent-color:#2f6fb0;vertical-align:middle;}
+  #Tv{display:inline-block;min-width:150px;font-weight:bold;color:#2f6fb0;}
+  button{font-family:inherit;font-size:15px;color:#222;background:#fff;border:2px solid #222;border-radius:9px 7px 10px 6px;padding:3px 12px;cursor:pointer;}
+  button:hover{background:#eef4fb;}
+  #help{font-size:14px;color:#555;flex:1 1 260px;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="reac"></div>
+  <canvas id="cv"></canvas>
+  <div id="bar">
+    <label>🌡️ Température du cœur : <input type="range" id="T" min="1" max="30" step="1" value="5"></label>
+    <span id="Tv"></span>
+    <button id="rst">↺ Ranger les noyaux</button>
+    <span id="help">Glisse (ou clique) un noyau sur la balance pour le peser. Un seul à la fois !</span>
+  </div>
+</div>
+<script>
+(function(){
+"use strict";
+/* =====================================================================
+   PARAMETRES  (?p= JSON -> UTF-8 -> XOR cle "PBayle-Fusion#E=mc2" -> base64url sans =)
+   { md:kg, mt:kg, mh:kg, mn:kg }   masses du deuterium, tritium, helium 4, neutron
+   Parametres en clair (?md=...&mt=...) prioritaires sur ?p=.
+   ===================================================================== */
+const XKEY = "PBayle-Fusion#E=mc2";
+function decodeP(p){
+  try{
+    let b = p.replace(/-/g,'+').replace(/_/g,'/'); while(b.length%4) b+='=';
+    const raw = atob(b), kb = new TextEncoder().encode(XKEY);
+    const u = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) u[i] = raw.charCodeAt(i) ^ kb[i%kb.length];
+    return JSON.parse(new TextDecoder().decode(u));
+  }catch(e){ return {}; }
+}
+const Q = new URLSearchParams(location.search);
+const P = Object.assign({md:3.34449e-27, mt:5.00736e-27, mh:6.64466e-27, mn:1.67493e-27},
+                        Q.get('p') ? decodeP(Q.get('p')) : {});
+['md','mt','mh','mn'].forEach(k=>{ if(Q.get(k)!==null && isFinite(+Q.get(k))) P[k]=+Q.get(k); });
+window.__P = P; // tests
+
+/* ---------- reaction ecrite ---------- */
+const nucHTML=(s,z,a)=>`<span class="nuc"><span class="az"><span>${a}</span><span>${z}</span></span>${s}</span>`;
+document.getElementById('reac').innerHTML =
+  nucHTML('H',1,2)+'<span class="op">+</span>'+nucHTML('H',1,3)+'<span class="op">→</span>'+
+  nucHTML('He',2,4)+'<span class="op">+</span>'+nucHTML('n',0,1);
+
+/* ---------- canvas ---------- */
+const W=960, H=500;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const FONT="'xkcd Script','Comic Neue','Comic Sans MS','Chalkboard SE',cursive";
+const INK='#222', PROT='#e4685f', NEUT='#a9bccf', BLUE='#2f6fb0';
+function resize(){
+  const r=window.devicePixelRatio||1, w=cv.clientWidth||W;
+  cv.style.height=(w*H/W)+'px';
+  cv.width=Math.round(w*r); cv.height=Math.round(w*H/W*r);
+  ctx.setTransform(cv.width/W,0,0,cv.height/H,0,0);
+}
+window.addEventListener('resize',resize);
+
+/* ---------- traits "a main levee" (bruit deterministe, pas de scintillement) ---------- */
+function nz(a,b){ const s=Math.sin(a*12.9898+b*78.233)*43758.5453; return s-Math.floor(s)-0.5; }
+function wpath(pts,closed){
+  ctx.beginPath();
+  const n=pts.length;
+  for(let i=0;i<(closed?n:n-1);i++){
+    const [x1,y1]=pts[i], [x2,y2]=pts[(i+1)%n];
+    const L=Math.hypot(x2-x1,y2-y1), seg=Math.max(2,Math.round(L/18));
+    const nx=-(y2-y1)/(L||1), ny=(x2-x1)/(L||1);
+    if(i===0) ctx.moveTo(x1,y1);
+    for(let k=1;k<=seg;k++){
+      const t=k/seg, x=x1+(x2-x1)*t, y=y1+(y2-y1)*t, j=(k===seg)?0:nz(x,y)*2.4;
+      ctx.lineTo(x+nx*j,y+ny*j);
+    }
+  }
+  if(closed) ctx.closePath();
+}
+function wline(x1,y1,x2,y2,w=2,c=INK){ wpath([[x1,y1],[x2,y2]],false); ctx.lineWidth=w; ctx.strokeStyle=c; ctx.lineCap='round'; ctx.stroke(); }
+function wrect(x,y,w,h,fill,lw=2.2){ wpath([[x,y],[x+w,y],[x+w,y+h],[x,y+h]],true); if(fill){ctx.fillStyle=fill;ctx.fill();} ctx.lineWidth=lw; ctx.strokeStyle=INK; ctx.lineJoin='round'; ctx.stroke(); }
+function wcirc(x,y,r,fill,lw=1.8){
+  ctx.beginPath();
+  const N=18;
+  for(let i=0;i<=N;i++){ const a=i/N*2*Math.PI, rr=r*(1+nz(Math.round(r*10)+i,i*3)*0.06); const px=x+rr*Math.cos(a), py=y+rr*Math.sin(a); i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+  if(fill){ctx.fillStyle=fill;ctx.fill();} ctx.lineWidth=lw; ctx.strokeStyle=INK; ctx.stroke();
+}
+function txt(s,x,y,size=18,col=INK,align='center',bold=false){ ctx.font=(bold?'bold ':'')+size+'px '+FONT; ctx.fillStyle=col; ctx.textAlign=align; ctx.textBaseline='middle'; ctx.fillText(s,x,y); }
+
+/* ---------- noyaux ---------- */
+const NUC = {
+  D :{nm:'deutérium', s:'²H',  p:1, n:1, m:()=>P.md},
+  T :{nm:'tritium',   s:'³H',  p:1, n:2, m:()=>P.mt},
+  He:{nm:'hélium 4',  s:'⁴He', p:2, n:2, m:()=>P.mh},
+  n :{nm:'neutron',   s:'n',   p:0, n:1, m:()=>P.mn},
+};
+const LAYOUT={1:[[0,0]],2:[[-0.55,0],[0.55,0]],3:[[-0.55,0.35],[0.55,0.35],[0,-0.6]],4:[[-0.55,-0.5],[0.55,-0.5],[-0.55,0.5],[0.55,0.5]]};
+function plus(x,y,r){ const a=r*0.5; ctx.lineWidth=Math.max(1.6,r*0.16); ctx.strokeStyle='#fff'; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-a,y); ctx.lineTo(x+a,y); ctx.moveTo(x,y-a); ctx.lineTo(x,y+a); ctx.stroke(); }
+function drawNuc(key,x,y,r=11,rot=0){
+  const d=NUC[key], tot=d.p+d.n, lay=LAYOUT[tot];
+  // ordre : alterne protons/neutrons
+  const kinds=[]; let p=d.p, n=d.n; for(let i=0;i<tot;i++){ if((i%2===0&&p)||!n){kinds.push('p');p--;} else {kinds.push('n');n--;} }
+  const c=Math.cos(rot), s=Math.sin(rot);
+  lay.forEach(([u,v],i)=>{ const px=x+(u*c-v*s)*r*1.6, py=y+(u*s+v*c)*r*1.6; wcirc(px,py,r,kinds[i]==='p'?PROT:NEUT); if(kinds[i]==='p') plus(px,py,r); });
+}
+function nucRadius(key){ const t=NUC[key].p+NUC[key].n; return t===1?13:t===2?24:29; }
+
+/* =====================================================================
+   PARTIE 1 : coeur du Soleil (collisions D + T)
+   ===================================================================== */
+const BOX={x:18,y:16,w:500,h:430};
+const TTH=12;            // seuil de fusion (millions K) : en dessous, rebond
+const RC=66;             // distance de contact
+let col={};
+function resetCol(){ col={ph:'app', r:BOX.w*0.78, dir:-1, t:0, rot:Math.random()*6}; }
+resetCol();
+const Tsl=document.getElementById('T'), Tv=document.getElementById('Tv');
+function Tval(){ return +Tsl.value; }
+function showT(){ Tv.textContent = Tval()+' millions de K'; }
+Tsl.addEventListener('input',()=>{ showT(); if(col.ph!=='app') resetCol(); });
+showT();
+
+function stepCol(dt){
+  const T=Tval(), v0=60+16*Math.sqrt(T)*6;
+  const rmin = (T>=TTH) ? 0 : RC + (TTH-T)/TTH*170 + 18;
+  col.t+=dt;
+  if(col.ph==='app'){
+    const f = rmin>0 ? Math.max(0.04, 1-rmin/col.r) : 1;
+    col.r += col.dir * v0*Math.sqrt(f) * dt;
+    if(col.dir<0){
+      if(rmin===0 && col.r<=RC){ col.ph='flash'; col.t=0; col.r=RC; }
+      else if(rmin>0 && col.r<=rmin){ col.r=rmin; col.dir=1; col.bounce=0.9; }
+    } else if(col.r>BOX.w*0.82){ resetCol(); }
+  } else if(col.ph==='flash'){
+    if(col.t>0.45){ col.ph='prod'; col.t=0; }
+  } else if(col.ph==='prod'){
+    if(col.t>3.6) resetCol();
+  }
+  if(col.bounce) col.bounce=Math.max(0,col.bounce-dt);
+}
+function star(x,y,R,n,fill){
+  ctx.beginPath();
+  for(let i=0;i<=2*n;i++){ const a=i/(2*n)*2*Math.PI, rr=(i%2?R*0.45:R)*(1+nz(i,7)*0.15); const px=x+rr*Math.cos(a),py=y+rr*Math.sin(a); i?ctx.lineTo(px,py):ctx.moveTo(px,py);}
+  ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=INK; ctx.stroke();
+}
+function squiggle(x,y,a,L,ph){
+  ctx.beginPath();
+  for(let s=0;s<=L;s+=3){ const w=Math.sin(s*0.35-ph*12)*5; const px=x+Math.cos(a)*s-Math.sin(a)*w, py=y+Math.sin(a)*s+Math.cos(a)*w; s?ctx.lineTo(px,py):ctx.moveTo(px,py);}
+  ctx.lineWidth=2; ctx.strokeStyle='#e0a020'; ctx.stroke();
+}
+function drawCore(now){
+  // fond "soleil"
+  wrect(BOX.x,BOX.y,BOX.w,BOX.h,'#fff6dc',2.5);
+  // petit soleil en haut a gauche + fleche vers son coeur
+  const sx=BOX.x+64, sy=BOX.y+66, sr=28;
+  for(let i=0;i<12;i++){ const a=i/12*2*Math.PI+0.13; wline(sx+Math.cos(a)*(sr+6),sy+Math.sin(a)*(sr+6),sx+Math.cos(a)*(sr+17),sy+Math.sin(a)*(sr+17),2.2,'#e0a020'); }
+  wcirc(sx,sy,sr,'#ffd23f',2.2);
+  wcirc(sx,sy,7,'#ff8c2a',1.6);
+  ctx.beginPath(); ctx.moveTo(sx+150,sy-14); ctx.quadraticCurveTo(sx+70,sy-42,sx+10,sy-3);
+  ctx.lineWidth=2.2; ctx.strokeStyle=INK; ctx.lineCap='round'; ctx.stroke();
+  const ang=Math.atan2(-3-(-42),10-70);
+  wline(sx+10,sy-3,sx+10-13*Math.cos(ang-0.45),sy-3-13*Math.sin(ang-0.45),2.2);
+  wline(sx+10,sy-3,sx+10-13*Math.cos(ang+0.45),sy-3-13*Math.sin(ang+0.45),2.2);
+  txt('Au cœur du Soleil',sx+158,sy-14,22,INK,'left',true);
+  const cx=BOX.x+BOX.w/2, cy=BOX.y+BOX.h/2+14;
+  const T=Tval();
+  if(col.ph==='app'){
+    // --- repulsion electrique (sans texte) : halos +, eclairs, fleches qui ecartent ---
+    const far=BOX.w*0.7, k=Math.max(0,Math.min(1,(far-col.r)/(far-RC)))**1.5;
+    const xl=cx-col.r/2, xr=cx+col.r/2, sh=(col.bounce>0.6)?(Math.random()-0.5)*6:0;
+    if(k>0.02){
+      [xl,xr].forEach(x=>{ const g=ctx.createRadialGradient(x,cy,10,x,cy,46+30*k);
+        g.addColorStop(0,'rgba(228,104,95,'+(0.45*k)+')'); g.addColorStop(1,'rgba(228,104,95,0)');
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,cy,46+30*k,0,2*Math.PI); ctx.fill(); });
+      // eclairs entre les deux noyaux
+      const a1=xl+30, a2=xr-30;
+      if(a2>a1){ for(let e=0;e<2;e++){ ctx.beginPath(); const N=7; for(let i=0;i<=N;i++){ const x=a1+(a2-a1)*i/N, y=cy+(e?14:-14)+((i===0||i===N)?0:(Math.random()-0.5)*18*k); i?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.strokeStyle='rgba(192,57,43,'+(0.85*k)+')'; ctx.lineWidth=2.2; ctx.stroke(); } }
+      // fleches de repulsion vers l'exterieur
+      const L=18+50*k;
+      ctx.globalAlpha=Math.min(1,k*1.3);
+      [[xl-38,-1],[xr+42,1]].forEach(([x0,d])=>{ const x1=x0+d*L;
+        wline(x0,cy-46,x1,cy-46,3,'#c0392b'); wline(x1,cy-46,x1-d*11,cy-53,3,'#c0392b'); wline(x1,cy-46,x1-d*11,cy-39,3,'#c0392b'); });
+      ctx.globalAlpha=1;
+    }
+    drawNuc('D',xl+sh,cy,17,col.rot);
+    drawNuc('T',xr-sh,cy,17,-col.rot*0.7);
+    txt('²H',xl,cy+58,18); txt('³H',xr,cy+64,18);
+  } else if(col.ph==='flash'){
+    const k=col.t/0.45;
+    star(cx,cy,30+90*k,12,'#ffe14d');
+    star(cx,cy,18+40*k,9,'#fff');
+    txt('FUSION !',cx,cy-120,30,'#c0392b','center',true);
+  } else {
+    const t=col.t;
+    // rayonnement emis
+    for(let i=0;i<10;i++){ const a=i/10*2*Math.PI+0.3; squiggle(cx+Math.cos(a)*(30+t*40),cy+Math.sin(a)*(30+t*40),a,46,now/1000+i); }
+    drawNuc('He',cx-t*38,cy+t*10,17,col.rot+t);
+    drawNuc('n',Math.min(cx+50+t*160,BOX.x+BOX.w-26),cy-t*30,17);
+    txt('⁴He',cx-t*38,cy+t*10+64,18);
+    if(cx+50+t*160<BOX.x+BOX.w-26) txt('n',cx+50+t*160,cy-t*30+36,18);
+    const pul=1+0.12*Math.sin(now/160);
+    ctx.save(); ctx.translate(cx,BOX.y+122); ctx.scale(pul,pul);
+    txt('Énergie libérée ΔE = ??',0,0,28,'#c0392b','center',true); ctx.restore();
+  }
+  // legende
+  const ly=BOX.y+BOX.h-26;
+  wcirc(BOX.x+28,ly,9,PROT); plus(BOX.x+28,ly,9); txt('proton',BOX.x+44,ly,15,INK,'left');
+  wcirc(BOX.x+128,ly,9,NEUT); txt('neutron',BOX.x+144,ly,15,INK,'left');
+}
+
+/* =====================================================================
+   PARTIE 2 : balance de precision (un seul noyau a la fois)
+   ===================================================================== */
+const BAL={x:560,y:60,w:360};
+const PLATE={x:BAL.x+BAL.w/2, y:178, rx:110, ry:18};
+const TRAY_Y=436;
+const ORDER=['D','T','He','n'];
+const slot=k=>({x:BAL.x+20+ (ORDER.indexOf(k)+0.5)*(BAL.w-40)/4, y:TRAY_Y});
+let items={}; ORDER.forEach(k=>items[k]={x:slot(k).x,y:slot(k).y,on:false});
+let onPlate=null, drag=null, settle=0;
+function home(k){ items[k].on=false; items[k].tx=slot(k).x; items[k].ty=slot(k).y; }
+function put(k){ if(onPlate&&onPlate!==k) home(onPlate); onPlate=k; items[k].on=true; items[k].tx=PLATE.x; items[k].ty=PLATE.y-nucRadius(k)+2; settle=0.7; }
+ORDER.forEach(home);
+document.getElementById('rst').onclick=()=>{ ORDER.forEach(home); onPlate=null; };
+
+function fmtMass(m){
+  if(!(m>0)) return '0 kg';
+  const e=Math.floor(Math.log10(m)); let man=m/Math.pow(10,e);
+  let s=man.toFixed(5); if(s.startsWith('10')){ s=(man/10).toFixed(5); return s.replace('.',',')+' × 10'+sup(e+1)+' kg'; }
+  return s.replace('.',',')+' × 10'+sup(e)+' kg';
+}
+function sup(e){ const m={'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'}; return String(e).split('').map(c=>m[c]).join(''); }
+
+function drawBalance(now){
+  const x=BAL.x, w=BAL.w;
+  txt('Balance de précision',x+w/2,BAL.y-30,22,INK,'center',true);
+  // pied du plateau
+  wline(PLATE.x,PLATE.y+4,PLATE.x,PLATE.y+42,4);
+  // corps
+  wpath([[x+20,PLATE.y+40],[x+w-20,PLATE.y+40],[x+w,PLATE.y+170],[x,PLATE.y+170]],true);
+  ctx.fillStyle='#e9eef3'; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=INK; ctx.stroke();
+  // ecran
+  const sx=x+34, sy=PLATE.y+70, sw=w-68, sh=56;
+  wrect(sx,sy,sw,sh,'#cfe3c8',2.2);
+  let disp;
+  if(!onPlate) disp='0 kg';
+  else if(settle>0){ const d='0123456789'; disp=Array.from({length:7},(_,i)=>d[Math.floor((now/60+i*3)%10)]).join('').replace(/^(.)/,'$1,')+' kg'; }
+  else disp=fmtMass(NUC[onPlate].m());
+  ctx.font='bold 24px "Courier New",monospace'; ctx.fillStyle='#1f3a1f'; ctx.textAlign='right'; ctx.textBaseline='middle';
+  ctx.fillText(disp,sx+sw-12,sy+sh/2+1);
+  txt('kg · 6 chiffres significatifs',x+w/2,PLATE.y+150,13,'#555');
+  // plateau
+  ctx.beginPath(); ctx.ellipse(PLATE.x,PLATE.y,PLATE.rx,PLATE.ry,0,0,2*Math.PI); ctx.fillStyle='#d5dde6'; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=INK; ctx.stroke();
+  // plateau de rangement
+  wrect(x+10,TRAY_Y-48,w-20,96,'#f7f7f7',2);
+  txt('Les noyaux à peser',x+w/2,TRAY_Y-62,15,'#555');
+  ORDER.forEach(k=>{ if(!items[k].on || drag===k){} const s=slot(k); txt(NUC[k].nm,s.x,TRAY_Y+38,13,'#555'); });
+  // noyaux (celui traine en dernier)
+  ORDER.filter(k=>k!==drag).forEach(k=>drawNuc(k,items[k].x,items[k].y,11));
+  if(drag) drawNuc(drag,items[drag].x,items[drag].y,11);
+}
+
+/* ---------- interactions ---------- */
+function pos(ev){ const r=cv.getBoundingClientRect(); return [(ev.clientX-r.left)*W/r.width,(ev.clientY-r.top)*H/r.height]; }
+let downAt=null;
+cv.addEventListener('pointerdown',ev=>{
+  const [mx,my]=pos(ev);
+  for(const k of [...ORDER].reverse()){ const it=items[k]; if(Math.hypot(mx-it.x,my-it.y)<nucRadius(k)+8){ drag=k; downAt=[mx,my]; it.dx=it.x-mx; it.dy=it.y-my; cv.setPointerCapture(ev.pointerId); return; } }
+});
+cv.addEventListener('pointermove',ev=>{
+  const [mx,my]=pos(ev);
+  if(drag){ const it=items[drag]; it.x=it.tx=mx+it.dx; it.y=it.ty=my+it.dy; cv.style.cursor='grabbing'; return; }
+  const over=ORDER.some(k=>Math.hypot(mx-items[k].x,my-items[k].y)<nucRadius(k)+8);
+  cv.style.cursor=over?'grab':'default';
+});
+cv.addEventListener('pointerup',ev=>{
+  if(!drag) return;
+  const [mx,my]=pos(ev), k=drag; drag=null; cv.style.cursor='default';
+  const click=Math.hypot(mx-downAt[0],my-downAt[1])<6;
+  const it=items[k];
+  const onP=Math.abs(it.x-PLATE.x)<PLATE.rx+10 && it.y>PLATE.y-90 && it.y<PLATE.y+40;
+  if(click){ if(onPlate===k){ home(k); onPlate=null; } else put(k); }
+  else if(onP) put(k);
+  else { home(k); if(onPlate===k) onPlate=null; }
+});
+
+/* ---------- boucle ---------- */
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  stepCol(dt);
+  if(settle>0) settle=Math.max(0,settle-dt);
+  ORDER.forEach(k=>{ const it=items[k]; if(drag!==k){ it.x+=(it.tx-it.x)*Math.min(1,dt*12); it.y+=(it.ty-it.y)*Math.min(1,dt*12); } });
+  ctx.clearRect(0,0,W,H);
+  drawCore(now);
+  drawBalance(now);
+  requestAnimationFrame(frame);
+}
+resize();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
