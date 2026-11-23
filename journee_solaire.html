@@ -309,10 +309,26 @@ function sky(){
   // la ville au centre
   ctx.beginPath(); ctx.arc(K2.cx,K2.cy+30,6,0,2*Math.PI); ctx.fillStyle='#c0392b'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#fff'; ctx.stroke();
   // le Soleil maintenant
-  const v=sunLocal(S.Hs), q=pr(v);
-  wline(K2.cx,K2.cy+30,q.x,q.y,1.6,'rgba(192,57,43,.7)',[5,4]);
-  if(v[2]>0){ ctx.beginPath(); ctx.arc(q.x,q.y,13,0,2*Math.PI); ctx.fillStyle='#ffd23f'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=INK; ctx.stroke(); }
-  else { txt('🌙 le Soleil est sous l\'horizon',K2.cx,by+20,15,nf>0.5?'#e8ecf5':'#555'); }
+  // direction du Soleil : azimut de la trajectoire, hauteur = celle affichee dans la carte (meme calcul)
+  const v0=sunLocal(S.Hs), hz0=Math.hypot(v0[0],v0[1])||1e-9, hr=S.h*rad;
+  const uE=v0[0]/hz0, uN=v0[1]/hz0;
+  const v=[Math.cos(hr)*uE, Math.cos(hr)*uN, Math.sin(hr)], q=pr(v);
+  const O={x:K2.cx,y:K2.cy+30};
+  if(S.h>0){
+    // materialisation de la hauteur h : projection au sol + rayon + arc
+    const g=pr([uE*0.92,uN*0.92,0]);
+    wline(O.x,O.y,g.x,g.y,2.4,'#7a3fa0',[7,5]);                       // droite du sol vers le pied du Soleil
+    wline(O.x,O.y,q.x,q.y,2.4,'#7a3fa0');                             // direction du Soleil
+    const R=0.30; ctx.beginPath();
+    for(let i=0;i<=30;i++){ const t=hr*i/30, p2=pr([Math.cos(t)*uE*R,Math.cos(t)*uN*R,Math.sin(t)*R]); i?ctx.lineTo(p2.x,p2.y):ctx.moveTo(p2.x,p2.y); }
+    ctx.lineWidth=2.6; ctx.strokeStyle='#7a3fa0'; ctx.stroke();
+    const tm=hr/2, pl=pr([Math.cos(tm)*uE*(R+0.1),Math.cos(tm)*uN*(R+0.1),Math.sin(tm)*(R+0.1)]);
+    const lab='h = '+fr(S.h,1)+'°'; ctx.font='bold 13px '+FONT; const lw=ctx.measureText(lab).width+8;
+    ctx.fillStyle='rgba(255,255,255,.85)'; ctx.fillRect(pl.x-lw/2,pl.y-9,lw,18);
+    txt(lab,pl.x,pl.y,13,'#7a3fa0','center',true);
+    ctx.beginPath(); ctx.arc(q.x,q.y,13,0,2*Math.PI); ctx.fillStyle='#ffd23f'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=INK; ctx.stroke();
+  } else wline(O.x,O.y,q.x,q.y,1.6,'rgba(192,57,43,.7)',[5,4]);
+  if(S.h<=0){ txt('🌙 le Soleil est sous l\'horizon',K2.cx,by+20,15,nf>0.5?'#e8ecf5':'#555'); }
 }
 
 /* ---------- vue 2 : frise 0-24 h ---------- */
