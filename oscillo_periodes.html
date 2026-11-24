@@ -37,7 +37,6 @@ button:hover{transform:rotate(0) scale(1.08);box-shadow:6px 6px 0 #111}
 button:active{transform:translate(3px,3px) scale(1.02);box-shadow:1px 1px 0 #111}
 #zmm,#zpp{background-color:#ff5a4e;color:#fff;text-shadow:1px 1px 0 #111}
 #zm,#zp{background-color:#4fb3ff;min-width:48px;font-size:20px;padding:3px 12px}
-#bAuto{background-color:#7ee081}
 #bCur{background-color:#7ee081}
 #bHelp,#bHelp2{background-color:#c79bff}
 #bExp{background-color:#ffb27a}
@@ -71,7 +70,6 @@ button:active{transform:translate(3px,3px) scale(1.02);box-shadow:1px 1px 0 #111
       <button id="zm" title="Dézoomer un peu">−</button>
       <button id="zp" title="Zoomer un peu">+</button>
       <button id="zpp" title="Zoomer beaucoup">++ (×10)</button>
-      <button id="bAuto">⚡ AUTO</button>
       <button id="bCur">🎯 Replacer les curseurs</button>
       <button id="bHelp">❓ C'est quoi une période ?</button>
       <button id="bExp" style="display:none">🔎 Période (mode expert)</button>
@@ -291,7 +289,6 @@ const W_MIN=1e-16,W_MAX=2e10;
 function zoom(f,quiet){if(!st)return;const c=st.off+st.win/2;st.win=Math.min(W_MAX,Math.max(W_MIN,st.win/f));st.off=c-st.win/2;if(quiet)return;SPEED={t0:T,dir:f>1?1:-1};if(Math.abs(Math.log10(f))>0.5)addFX((f>1?ONO_IN:ONO_OUT)[Math.floor(Math.random()*4)],f>1?"#ff5a4e":"#2f7fd8");}
 document.getElementById("zmm").onclick=()=>zoom(0.1);document.getElementById("zm").onclick=()=>zoom(1/1.25);
 document.getElementById("zp").onclick=()=>zoom(1.25);document.getElementById("zpp").onclick=()=>zoom(10);
-document.getElementById("bAuto").onclick=()=>{if(!st)return;const P=PER[cur];st.win=P*(2.2+Math.random()*1.2);st.off=-P*Math.random();SPEED={t0:T,dir:1};addFX("AUTOSET !","#2f9e44");};
 document.getElementById("bCur").onclick=()=>{if(st){st.a=0.3;st.b=0.6;addFX("CLAC !","#2f9e44");}};
 cv.addEventListener("wheel",e=>{e.preventDefault();zoom(Math.exp(-e.deltaY*0.0015),true);},{passive:false});
 window.addEventListener("resize",()=>{if(cur!==null)resize();});
