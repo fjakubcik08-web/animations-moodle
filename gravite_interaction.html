@@ -39,6 +39,7 @@
     <button id="bZp" class="small" title="Zoomer">🔍+</button>
     <button id="bZm" class="small" title="Dézoomer">🔍−</button>
     <button id="bZr" class="small" title="Vue initiale">⟲</button>
+    <button id="bEsp" class="small" title="Fond spatial / fond papier">🌌 Espace</button>
     <span id="legend"></span>
   </div>
   <div id="conshelp">
@@ -89,7 +90,7 @@
 const KEY = "Gravite-1SPE-P01";
 const G = 6.67e-11;
 const DEF = { pts:[[500,600,4.2e16],[1300,650,1.5e16]], sc:2e9, g:100, W:2000, H:1200, u:"km", uf:1000,
-              sol:0, s:0, tl:10, ta:8, t:-1, tot:0, cons:0 };
+              sol:0, s:0, tl:10, ta:8, t:-1, tot:0, cons:0, esp:0 };
 
 function decode(s){
   try{
@@ -106,6 +107,7 @@ if(Q.get('p')){ const d = decode(Q.get('p')); if(d) Object.assign(P, d); }
 if(Q.get('sol')!==null) P.sol = +Q.get('sol');
 if(Q.get('len')!==null) P.len = +Q.get('len');
 if(Q.get('cons')!==null) P.cons = +Q.get('cons');
+if(Q.get('esp')!==null) P.esp = +Q.get('esp');
 window.__decode = decode; // pour test round-trip
 window.__test = ()=>({code:(sc,n)=>makeCode(P.s,sc,n), score:scoreDrawing, exp:expectedVectors, forces, cvecs:(typeof cvecs!=='undefined'?cvecs:[])});
 
@@ -194,6 +196,19 @@ function zoomAt(f, px, py){
 }
 function resetView(){ pxPerNm=s0; x0=0; y0=0; draw(); }
 
+/* ================= Fond spatial ================= */
+let SPACE = !!P.esp;
+const SPMAP = {'#222':'#e6e9f5','#7b2fbf':'#c99bff','#2a9d4b':'#6ee79a','#1f9d55':'#6ee79a','#888':'#b8b8c8','#555':'#d0d0dc','#c07800':'#ffbe4d','#e0a000':'#ffd23f'};
+const SC = c => SPACE ? (SPMAP[c]||c) : c;
+const LBG = a => SPACE ? 'rgba(12,16,34,'+a+')' : 'rgba(255,255,255,'+a+')';
+const STARS = (()=>{ const r=rng(4242), L=[]; for(let i=0;i<260;i++) L.push([r(),r(),0.4+r()*1.3*r(),0.25+0.75*r(),r()<0.12]); return L; })();
+function drawStars(L,T,W,H){
+  ctx.save(); const gr=ctx.createRadialGradient(L+W*0.7,T+H*0.3,0,L+W*0.7,T+H*0.3,Math.max(W,H));
+  gr.addColorStop(0,'#1b2147'); gr.addColorStop(1,'#05060f'); ctx.fillStyle=gr; ctx.fillRect(L,T,W,H);
+  STARS.forEach(s=>{ ctx.globalAlpha=s[3]; ctx.fillStyle=s[4]?'#cfe0ff':'#fff';
+    ctx.beginPath(); ctx.arc(L+s[0]*W,T+s[1]*H,s[2],0,2*Math.PI); ctx.fill(); });
+  ctx.restore();
+}
 /* ================= Style xkcd ================= */
 function rng(seed){ seed = Math.abs(Math.floor(seed))%2147483646+1; return ()=>{ seed=(seed*16807)%2147483647; return (seed-1)/2147483646; }; }
 function wpath(x1,y1,x2,y2,amp){
@@ -208,7 +223,7 @@ function wpath(x1,y1,x2,y2,amp){
   ctx.lineTo(x2,y2);
 }
 function wline(x1,y1,x2,y2,col,w,amp,dash){
-  ctx.save(); ctx.strokeStyle=col||'#222'; ctx.lineWidth=w||2; ctx.lineCap='round';
+  ctx.save(); ctx.strokeStyle=SC(col||'#222'); ctx.lineWidth=w||2; ctx.lineCap='round';
   if(dash) ctx.setLineDash(dash);
   ctx.beginPath(); wpath(x1,y1,x2,y2,amp); ctx.stroke(); ctx.restore();
 }
@@ -216,7 +231,7 @@ function wcircle(cx,cy,R,fill,stroke,w){
   const r = rng((cx-X(0))*3+(cy-Y(0))*5+R*11); ctx.beginPath();
   const n=28; for(let i=0;i<=n;i++){ const a=i/n*2*Math.PI+0.2, rr=R+(i===n?0:(r()-0.5)*1.6);
     const px=cx+rr*Math.cos(a), py=cy+rr*Math.sin(a); i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
-  ctx.closePath(); if(fill){ctx.fillStyle=fill;ctx.fill();} if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=w||2;ctx.stroke();}
+  ctx.closePath(); if(fill){ctx.fillStyle=fill;ctx.fill();} if(stroke){ctx.strokeStyle=SC(stroke);ctx.lineWidth=w||2;ctx.stroke();}
 }
 function arrow(x1,y1,x2,y2,col,w,dash){
   const L=Math.hypot(x2-x1,y2-y1); if(L<3) return;
@@ -227,14 +242,14 @@ function arrow(x1,y1,x2,y2,col,w,dash){
 }
 function txt(s,x,y,size,col,align,base){
   ctx.save(); ctx.font=(size||15)+'px system-ui,"Segoe UI",Roboto,Arial,sans-serif';
-  ctx.fillStyle=col||'#222'; ctx.textAlign=align||'left'; ctx.textBaseline=base||'alphabetic';
+  ctx.fillStyle=SC(col||'#222'); ctx.textAlign=align||'left'; ctx.textBaseline=base||'alphabetic';
   ctx.fillText(s,x,y); ctx.restore();
 }
 function label(s,x,y){ // étiquette avec fond blanc
   ctx.save(); ctx.font='15px system-ui,"Segoe UI",Roboto,Arial,sans-serif';
   const w=ctx.measureText(s).width+12; let bx=x+12, by=y-30;
   if(bx+w>CW-4) bx=x-12-w; if(by<4) by=y+12;
-  ctx.fillStyle='rgba(255,255,255,0.95)'; ctx.fillRect(bx,by,w,24);
+  ctx.fillStyle=LBG(0.95); ctx.fillRect(bx,by,w,24);
   ctx.restore(); wline(bx,by,bx+w,by,'#222',1.5,0.6); wline(bx+w,by,bx+w,by+24,'#222',1.5,0.6);
   wline(bx+w,by+24,bx,by+24,'#222',1.5,0.6); wline(bx,by+24,bx,by,'#222',1.5,0.6);
   txt(s,bx+6,by+17,15);
@@ -336,12 +351,12 @@ function drawAxes(){
   const L=M.l, R=CW-M.r, T=M.t, B=CH-M.b;
   ctx.save(); ctx.beginPath(); ctx.rect(L,T,R-L,B-T); ctx.clip();
   // fond « grands carreaux » (Seyès) : lignes fines horizontales tous les 1/4 de carreau, carreaux en violet
-  ctx.fillStyle='#fffefa'; ctx.fillRect(L,T,R-L,B-T);
+  if(SPACE){ cv.style.background='#05060f'; drawStars(L,T,R-L,B-T); } else { cv.style.background='#fff'; ctx.fillStyle='#fffefa'; ctx.fillRect(L,T,R-L,B-T); }
   const sub=g/4;
-  if(sub*pxPerNm>=4){ ctx.save(); ctx.strokeStyle='#cddcf2'; ctx.lineWidth=0.8; ctx.beginPath();
+  if(sub*pxPerNm>=4){ ctx.save(); ctx.strokeStyle=SPACE?'rgba(140,160,220,0.10)':'#cddcf2'; ctx.lineWidth=0.8; ctx.beginPath();
     for(let j=Math.ceil(ya/sub);j*sub<=yb;j++){ if(j%4===0) continue; const y=Math.round(Y(j*sub))+0.5; ctx.moveTo(L,y); ctx.lineTo(R,y); }
     ctx.stroke(); ctx.restore(); }
-  ctx.save(); ctx.strokeStyle='#b3a9de'; ctx.lineWidth=1.1; ctx.beginPath();
+  ctx.save(); ctx.strokeStyle=SPACE?'rgba(160,170,240,0.28)':'#b3a9de'; ctx.lineWidth=1.1; ctx.beginPath();
   for(let i=Math.ceil(xa/g);i*g<=xb;i++){ const x=Math.round(X(i*g))+0.5; ctx.moveTo(x,T); ctx.lineTo(x,B); }
   for(let j=Math.ceil(ya/g);j*g<=yb;j++){ const y=Math.round(Y(j*g))+0.5; ctx.moveTo(L,y); ctx.lineTo(R,y); }
   ctx.stroke(); ctx.restore();
@@ -386,7 +401,7 @@ function drawParticle(p,i){
     [-0.5,-0.1,0.3,0.65].forEach(f=>{ ctx.beginPath(); ctx.moveTo(cx-R,cy+f*R); ctx.quadraticCurveTo(cx,cy+f*R+R*0.12,cx+R,cy+f*R); ctx.stroke(); }); }
   ctx.restore();
   // contour façon trait à main levée
-  if(p.k===0){ ctx.save(); blob(cx,cy,R,sd,0.45); ctx.strokeStyle='#222'; ctx.lineWidth=2; ctx.stroke(); ctx.restore(); }
+  if(p.k===0){ ctx.save(); blob(cx,cy,R,sd,0.45); ctx.strokeStyle=SC('#222'); ctx.lineWidth=2; ctx.stroke(); ctx.restore(); }
   else wcircle(cx,cy,R,null,'#222',2);
   ctx.save(); ctx.fillStyle='#222'; ctx.beginPath(); ctx.arc(cx,cy,2.2,0,2*Math.PI); ctx.fill(); ctx.restore(); // centre
   txt(NM(i),cx-R-4,cy-R-2,18,'#222','right');
@@ -408,7 +423,7 @@ function seg(x1,y1,x2,y2,col,nm){
   const mx=(p1[0]+p2[0])/2, my=(p1[1]+p2[1])/2;
   const s=(nm||'d')+' = '+fmtN(d,MDEC)+' '+P.u;
   ctx.save(); ctx.font='14px system-ui,"Segoe UI",Roboto,Arial,sans-serif'; const w=ctx.measureText(s).width+8; ctx.restore();
-  ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillRect(mx-w/2,my-26,w,20);
+  ctx.fillStyle=LBG(0.9); ctx.fillRect(mx-w/2,my-26,w,20);
   txt(s,mx,my-11,14,col,'center');
 }
 function vecName(sub,np,col,extraH){
@@ -419,7 +434,7 @@ function vecName(sub,np,col,extraH){
   const off=8+(Math.abs(np[2])*(w+4)+Math.abs(np[3])*h)/2;
   const cx=np[0]+np[2]*off, cy=np[1]+np[3]*off;
   const x=cx-w/2, y=cy-h/2+24;
-  ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fillRect(x-2,y-24,w+4,32);
+  ctx.fillStyle=LBG(0.85); ctx.fillRect(x-2,y-24,w+4,32);
   txt('F',x,y,18,col); txt(sub,x+wF+2,y+5,13,col);
   arrow(x,y-17,x+wF+1,y-17,col,1.5);
   return {x:x-2,y:y-24,w:w+4,h:32};
@@ -590,6 +605,8 @@ cv.addEventListener('wheel',ev=>{ ev.preventDefault(); const m=pos(ev); hidePop(
 bZp.onclick=()=>{ hidePop(); zoomAt(1.3,M.l+PW()/2,M.t+PH()/2); };
 bZm.onclick=()=>{ hidePop(); zoomAt(1/1.3,M.l+PW()/2,M.t+PH()/2); };
 bZr.onclick=()=>{ hidePop(); resetView(); };
+function applySpace(){ bEsp.classList.toggle('on',SPACE); bEsp.textContent=SPACE?'📄 Papier':'🌌 Espace'; draw(); }
+bEsp.onclick=()=>{ SPACE=!SPACE; applySpace(); };
 cv.addEventListener('pointerleave',()=>{ if(!drag){hover=-1;mouse=null;draw();} });
 
 const codebox=document.getElementById('codebox');
@@ -645,7 +662,7 @@ document.getElementById('legend').innerHTML =
   'Échelle des forces : 1 carreau ↔ '+sciHTML(P.sc,1)+' N &nbsp;|&nbsp; 1 carreau = '+fmtN(P.g,Math.max(0,-Math.floor(Math.log10(P.g)+1e-9)))+' '+P.u;
 
 window.addEventListener('resize',resize);
-help(); resize();
+help(); resize(); applySpace();
 })();
 </script>
 </body>
