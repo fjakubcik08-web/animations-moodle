@@ -165,7 +165,8 @@ function tokenise(s){
 }
 
 /* ===================== Analyse syntaxique -> arbre ===================== */
-let T0MODE=false, PTMODE=false, PT_T=null;   // PTMODE : grandeurs évaluées au point imposé (x = L)
+let T0MODE=false, PTMODE=false, PT_T=null;
+const PTST=!!(EX.point&&EX.point.st);   // point.st=1 : au point imposé, t vaut aussi la date du point (sommet…)   // PTMODE : grandeurs évaluées au point imposé (x = L)
 function parseExpr(src){
   const T=tokenise(prepare(src)); let p=0;
   const is2=v=>T[p+1]&&T[p+1].k==='o'&&T[p+1].v===v;
@@ -179,7 +180,7 @@ function parseExpr(src){
     const t=pk(); if(!t) throw new Error("expression incomplète");
     if(t.k==='n'){p++;return{k:'n',v:t.v};}
     if(t.k==='pi'){p++;return{k:'n',v:Math.PI};}
-    if(t.k==='t'){p++;return{k:'t'};}
+    if(t.k==='t'){p++;return (PTMODE&&PTST)?PT_T:{k:'t'};}
     if(t.k==='p'){p++;return{k:'p',v:t.v};}
     if(t.k==='c'){p++;return{k:'c',v:t.v};}
     if(t.k==='d'){p++;return{k:'d',v:t.v};}
@@ -225,7 +226,7 @@ const close=(a,b,tol)=>isFinite(a)&&isFinite(b)&&Math.abs(a-b)<=tol*Math.max(1,M
 
 /* ===================== Lecture d'une ligne ===================== */
 /* ===================== Connecteurs logiques (liste unique) ===================== */
-const CONNECTEURS=["on sait que","on a","or","donc","soit","soit encore","d'où","et","ainsi","alors","par conséquent","comme","avec","car","puisque","puis","de plus","enfin","finalement",
+const CONNECTEURS=["on sait que","au sommet","on a","or","donc","soit","soit encore","d'où","et","ainsi","alors","par conséquent","comme","avec","car","puisque","puis","de plus","enfin","finalement",
   "il vient","on en déduit que","on en déduit","on obtient","on trouve","ce qui donne","c'est-à-dire","de même","par intégration","en intégrant","après intégration","sachant que","on peut écrire","on remarque que"];
 const CONN_ALT=CONNECTEURS.slice().sort((a,b)=>b.length-a.length).map(c=>c.replace(/['’]/g,"['’]\\s*").replace(/é/g,'[ée]').replace(/ù/g,'[uù]').replace(/-/g,'[\\s-]').replace(/\s+/g,'\\s+')).join('|');
 const MID_ALT=CONNECTEURS.filter(c=>!["comme","avec","car","puisque","on a","sachant que"].includes(c)).sort((a,b)=>b.length-a.length).map(c=>c.replace(/['’]/g,"['’]\\s*").replace(/é/g,'[ée]').replace(/ù/g,'[uù]').replace(/-/g,'[\\s-]').replace(/\s+/g,'\\s+')).join('|');
@@ -248,7 +249,11 @@ function lireLigne(raw){
   if((m=/^(.+?)\s+a\s+pour\s+primitive\s+(.+)$/i.exec(s)))             return{k:'prim',X:parseExpr(m[2]),Y:parseExpr(m[1])};
   if((m=/^(.+?)\s+est\s+la\s+dérivée\s+de\s+(.+)$/i.exec(s)))           return{k:'prim',X:parseExpr(m[2]),Y:parseExpr(m[1])};
   const parts=s.split('=');
-  if(parts.length<2) return{k:'conn'};   // texte sans égalité (« On remplace dans y ») : neutre
+  if(parts.length<2) return{k:'conn'};
+  if(PTMODE&&PTST){                                                // « t = v0/g » : date du point imposé
+    let T0=null; try{T0=tokenise(prepare(parts[0]));}catch(e){}
+    if(T0&&T0.length===1&&T0[0].k==='t') return{k:'tpt',E:parts.slice(1).map(parseExpr)};
+  }   // texte sans égalité (« On remplace dans y ») : neutre
   if(EX.point && parts.length===2 && !PTMODE){                    // « x = L » : on se place au point imposé
     const M2=parts.map(parseExpr), qx=EX.point.q||'x';
     for(const [U,V] of [[M2[0],M2[1]],[M2[1],M2[0]]])
@@ -306,6 +311,7 @@ function verifPaire(A,B,S,B_){ // B_ : liaisons des constantes {nom:[valeur par 
 function verifLigne(L,S,B_){
   if(L.k==='conn') return 'conn';
   if(L.k==='pt'){ B_.__pt=true; return 'ok'; }
+  if(L.k==='tpt') return L.E.every(E=>S.PS.every(P=>{const x={mode:'m',P,t:0,C:{}};return close(ev(E,x),ev(PT_T,x),1e-6);}))?'ok':'ko';
   if(L.k==='prim'){
     const C=pi=>{const o={};for(const c of cstsOf(L.X))o[c]=B_[c]?B_[c][pi]:0;return o;};
     return S.PS.every((P,pi)=>S.TS.every(t=>{const x={mode:'m',P,t,C:C(pi)};return close(dt(L.X,x),ev(L.Y,x),1e-4);}))?'ok':'ko';
@@ -335,6 +341,7 @@ const egal=(A,B)=>{for(let i=0;i<12;i++){const x=freeCtx();if(!close(ev(A,x),ev(
 function jalonAtteint(J,L){
   if(J.k==='cst') return !!(L.det&&L.det.includes(J.q));
   if(J.k==='pt') return L.k==='pt';
+  if(J.k==='tpt') return L.k==='tpt';
   if(J.k==='ci') return !!(L.ci&&L.ci.includes(J.q));
   if(J.k==='prim') return L.k==='prim'&&egal(J.X,L.X)&&egal(J.Y,L.Y);
   if(L.k!=='eq') return false;
