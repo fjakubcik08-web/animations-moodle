@@ -374,7 +374,7 @@ function lexJoli(s){
     if((m=/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9]*/.exec(r))){
       const w0=m[0]; i+=w0.length;
       const parts=/^[A-Za-z0-9]+$/.test(w0)?decoupe(w0):null;
-      if(parts) parts.forEach(e=>T.push({k:'id',v:e.n,t:e.k})); else T.push({k:'txt',v:w0});
+      if(parts) parts.forEach(e=>T.push({k:'id',v:e.n,t:e.k,s:e.s})); else T.push({k:'txt',v:w0});
       continue;
     }
     if(r[0]==='('){T.push({k:'lp'});i++;continue;}
@@ -410,7 +410,8 @@ function rendreItems(items){
       if(prev&&prev.fn==='sqrt'){prev.h=`√<span class="rad">${inner}</span>`;prev.fn=null;prev.atom=true;continue;}
       A.push({atom:true,h:`(${inner}${it.open?'':')'}`,nu:inner});continue;}
     if(it.k==='num') A.push({atom:true,h:it.v,nu:it.v});
-    else if(it.k==='id') A.push({atom:true,h:idH(it.v,it.t),nu:idH(it.v,it.t),fn:it.t==='f'?it.v:null});
+    else if(it.k==='id'){ const hh=(EX.aff&&EX.aff[it.s])||idH(it.v,it.t);   // aff : affichage d'un alias (tmax -> t_max)
+      A.push({atom:true,h:hh,nu:hh,fn:it.t==='f'?it.v:null}); }
     else if(it.k==='der') A.push({atom:true,h:fracH('d'+joli(it.v),'d<i>t</i>')});
     else if(it.k==='txt') A.push({h:`<span class="bad" title="mot non reconnu">${esc(it.v)}</span>`});
     else A.push({op:it.v});
