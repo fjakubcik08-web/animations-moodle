@@ -256,8 +256,10 @@ function lireLigne(raw){
   }   // texte sans égalité (« On remplace dans y ») : neutre
   if(EX.point && parts.length===2 && !PTMODE){                    // « x = L » : on se place au point imposé
     const M2=parts.map(parseExpr), qx=EX.point.q||'x';
-    for(const [U,V] of [[M2[0],M2[1]],[M2[1],M2[0]]])
+    for(const [U,V] of [[M2[0],M2[1]],[M2[1],M2[0]]]){
       if(((U.k==='q'&&U.v===qx)||(U.k==='d'&&EX.point.qd&&U.v===EX.point.qd))&&egal(V,PT_X)) return{k:'pt'};   // qd : « dy/dt = 0 » accepté
+      if(EX.point.tt&&U.k==='t'&&egal(V,PT_T)) return{k:'pt'};   // tt : « tmax = v0/g » (date donnée) place au point
+    }
     return{k:'eq',M:M2};
   }
   return{k:'eq',M:parts.map(parseExpr)};
