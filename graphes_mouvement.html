@@ -48,13 +48,13 @@ function decodeP(s) {
   for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i) ^ k[i % k.length];
   return JSON.parse(new TextDecoder().decode(b));
 }
-const DEF = {v: 10, al: 45, h: 2, g: 9.81, tau: 0, o: 1, pt: 1, cv: 1, ch: 1, lab: 1, nm: 1, sh: 0, mn: 1, zm: 1,
+const DEF = {v: 10, al: 45, h: 2, g: 9.81, tau: 0, o: 1, pt: 1, cv: 1, ch: 1, lab: 1, nm: 1, sh: 0, mn: 1, zm: 1, pr: 0,
              gr: [["traj", 0, 0]]};
 function getParams() {
   const q = new URLSearchParams(location.search);
   const P = Object.assign({}, DEF);
   if (q.get("p")) { try { Object.assign(P, decodeP(q.get("p"))); } catch (e) { console.log("p invalide", e); } }
-  for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn", "zm"])
+  for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn", "zm", "pr"])
     if (q.has(k)) P[k] = parseFloat(q.get(k));            // parametres en clair prioritaires
   if (q.has("gr")) { try { P.gr = JSON.parse(q.get("gr")); } catch (e) {} }
   return P;
@@ -64,12 +64,13 @@ const P = getParams();
 if (EXPERT) P.gr = [["traj", 1, 1], ["vx+vy", 1, 1], ["x", 0, 1], ["y", 0, 1]];
 
 /* ============ Physique : tir parabolique sans frottements ============ */
-let AR, VX, VY, G, Y0, T, TAU, NK, TK;
+let AR, VX, VY, G, Y0, T, TAU, NK, TK, PR;
 const TAUS = [0.02, 0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 1, 2];
 function autoTau() { let b = TAUS[0]; for (const t of TAUS) if (Math.floor(T / t + 1e-9) >= 8) b = t; return b; }
 function computePhys() {
   AR = P.al * Math.PI / 180; VX = P.v * Math.cos(AR); VY = P.v * Math.sin(AR); G = P.g;
   Y0 = P.o ? P.h : 0;                                      // o=1 : origine au sol
+  PR = P.pr > 0 ? P.pr : 0;                                // duree de la propulsion avant t = 0 (0 = aucune)
   T = (VY + Math.sqrt(VY * VY + 2 * G * P.h)) / G;         // duree du vol
   TAU = P.tau > 0 ? P.tau : autoTau();
   NK = Math.floor(T / TAU - 1e-9);                         // points M0..M_NK
@@ -77,13 +78,22 @@ function computePhys() {
 }
 computePhys();
 
+/* propulsion (t entre -PR et 0) : vitesse qui croit lineairement de 0 a v0 ; avant -PR : repos */
+const PH = t => (t >= 0 || !PR) ? 2 : (t < -PR ? 0 : 1);   // 0 repos, 1 propulsion, 2 vol
+const vxf = t => [0, VX * (t + PR) / PR, VX][PH(t)];
+const vyf = t => [0, VY * (t + PR) / PR, VY - G * t][PH(t)];
+const axf = t => [0, VX / PR, 0][PH(t)];
+const ayf = t => [0, VY / PR, -G][PH(t)];
+const qf = t => (t + PR) * (t + PR) / (2 * PR) - PR / 2;
+const xf = t => [-VX * PR / 2, VX * qf(t), VX * t][PH(t)];
+const yf = t => [Y0 - VY * PR / 2, Y0 + VY * qf(t), Y0 + VY * t - G * t * t / 2][PH(t)];
 const CURVES = {
-  x:  {f: t => VX * t,                    d: t => VX,         n: "x",   u: "m",    fam: "pos"},
-  y:  {f: t => Y0 + VY * t - G * t * t / 2, d: t => VY - G * t, n: "y",   u: "m",    fam: "pos"},
-  vx: {f: t => VX,                        d: t => 0,          n: "v_x", u: "m/s",  fam: "v"},
-  vy: {f: t => VY - G * t,                d: t => -G,         n: "v_y", u: "m/s",  fam: "v"},
-  ax: {f: t => 0,                         d: t => 0,          n: "a_x", u: "m/s²", fam: "a"},
-  ay: {f: t => -G,                        d: t => 0,          n: "a_y", u: "m/s²", fam: "a"}
+  x:  {f: xf,  d: vxf, n: "x",   u: "m",    fam: "pos"},
+  y:  {f: yf,  d: vyf, n: "y",   u: "m",    fam: "pos"},
+  vx: {f: vxf, d: axf, n: "v_x", u: "m/s",  fam: "v"},
+  vy: {f: vyf, d: ayf, n: "v_y", u: "m/s",  fam: "v"},
+  ax: {f: axf, d: t => 0, n: "a_x", u: "m/s²", fam: "a"},
+  ay: {f: ayf, d: t => 0, n: "a_y", u: "m/s²", fam: "a"}
 };
 const FAMNAME = {v: "v (m/s)", a: "a (m/s²)"};
 
@@ -157,7 +167,8 @@ const ML = 70, MR = 26, MT = 48, MB = 44, HMAX = 470;
 
 function buildGraph(spec, idx, c0) {
   const [code, tg, cd] = [spec[0], !!spec[1], !!spec[2]];
-  const nm = spec.length > 3 ? !!spec[3] : !!P.nm;
+  const nm = (spec.length > 3 && spec[3] !== null && spec[3] !== "") ? !!spec[3] : !!P.nm;
+  const win = (spec.length > 5 && isFinite(spec[4]) && isFinite(spec[5]) && spec[5] > spec[4]) ? [+spec[4], +spec[5]] : null;
   const traj = code === "traj";
   const keys = traj ? [] : String(code).split("+").map(s => s.trim()).filter(k => CURVES[k]);
   if (!traj && !keys.length) return null;
@@ -167,7 +178,7 @@ function buildGraph(spec, idx, c0) {
   const cv = document.createElement("canvas"); box.appendChild(cv);
   const info = document.createElement("div"); info.className = "info"; if (cd) card.appendChild(info);
   document.getElementById("graphs").appendChild(card);
-  const G_ = {idx, c0, traj, keys, tg, cd, nm, cv, card, info, hover: null, sel: null,
+  const G_ = {idx, c0, traj, keys, tg, cd, nm, win, cv, card, info, hover: null, sel: null,
               tans: [], eraser: false, minor: false, hotTan: -1, box, zoom: 1};
   if (P.zm) {                                    // zoom : agrandit les carreaux, on se deplace avec l'ascenseur
     const ZL = [1, 1.5, 2, 3];
@@ -218,11 +229,22 @@ function layout(g) {
     if (ymin < 0 && ymin - lo * s < 0.15 * s) lo--;
     if (hi * s - ymax < 0.15 * s) hi++;
   } else {
-    sx = pickStep(T, 9); xlo = 0; nx = Math.max(2, Math.ceil(T / sx - 1e-9));
-    if (nx * sx - T < 0.1 * sx) nx++;
+    const ta = g.win ? g.win[0] : (PR ? -PR : 0), tb = g.win ? g.win[1] : T;
+    g.ta = ta; g.tb = tb; g.tf = (tb - ta) < 0.05 ? 1000 : 1;   // fenetre courte -> temps en ms
+    const A = ta * g.tf, B = tb * g.tf;
+    sx = pickStep(B - A, 9); xlo = Math.floor(A / sx + 1e-9); nx = Math.max(2, Math.ceil(B / sx - 1e-9) - xlo);
+    if ((xlo + nx) * sx - B < 0.1 * sx) nx++;
     let vmin = 0, vmax = 0;
-    for (const k of g.keys) for (let i = 0; i <= 200; i++) {
-      const v = CURVES[k].f(T * i / 200); vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
+    for (const k of g.keys) for (let i = 0; i <= 400; i++) {
+      const v = CURVES[k].f(ta + (tb - ta) * i / 400); vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
+    /* points d'aimantation : dates de la chronophotographie, ou grille fine dans une fenetre choisie */
+    if (g.win) {
+      const st = sx / 2 / g.tf, set = new Set();
+      for (let t = Math.ceil(ta / st - 1e-9) * st; t <= tb + 1e-12; t += st) set.add(+t.toFixed(9));
+      for (const t of [-PR, 0]) if (t >= ta && t <= tb) set.add(t);
+      g.snap = [...set].sort((u, v) => u - v);
+      g.dots = [-PR, 0].filter((t, i) => t >= ta && t <= tb && (i === 1 || PR));
+    } else { g.snap = TK; g.dots = TK; }
     if (vmax - vmin < 1e-9) { vmin = -1; vmax = 1; }
     sy = pickStep(vmax - vmin, 5);
     lo = Math.floor(vmin / sy + 1e-9); hi = Math.ceil(vmax / sy - 1e-9);
@@ -233,6 +255,7 @@ function layout(g) {
   const ny = Math.max(2, hi - lo);
   const sq = Math.min(plotW / nx, HMAX * g.zoom / ny);
   const CH = Math.round(MT + ny * sq + MB);
+  if (g.traj) { g.snap = TK; g.tf = 1; }
   Object.assign(g, {CW, CH, sx, sy, xlo, nx, ny, lo, hi, sq, pW: nx * sq, pH: ny * sq});
   const dpr = window.devicePixelRatio || 1;
   g.cv.width = Math.round(CW * dpr); g.cv.height = Math.round(CH * dpr);
@@ -287,7 +310,7 @@ function drawStatic(g) {
   ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(12, CH); ctx.stroke();
 
   /* --- axes --- */
-  const x0 = X(g, 0), yAx = Y(g, 0), xEnd = ML + g.pW, yTop = MT, yBot = MT + g.pH;
+  const x0 = Math.min(Math.max(X(g, 0), ML), ML + g.pW), yAx = Y(g, 0), xEnd = ML + g.pW, yTop = MT, yBot = MT + g.pH;
   ctx.strokeStyle = "#222"; ctx.lineWidth = 2;
   wline(ctx, ML - 4, yAx, xEnd + 14, yAx, 0.9, 11 + g.idx);
   wline(ctx, x0, yBot + 4, x0, yTop - 14, 0.9, 23 + g.idx);
@@ -308,9 +331,10 @@ function drawStatic(g) {
   ctx.font = fs + "px " + FONT;
   const wl = ctx.measureText(fmtTick(g.nx * g.sx, g.sx)).width + 8;
   const ex = Math.max(1, Math.ceil(wl / sq)), ey = Math.max(1, Math.ceil(20 / sq));
-  for (let i = 1; i <= g.nx; i++) {
+  for (let i = 0; i <= g.nx; i++) {
+    if (g.xlo + i === 0) continue;
     const x = ML + i * sq; wline(ctx, x, yAx - 4, x, yAx + 4, 0.3, 100 + i);
-    if (i % ex === 0) drawText(ctx, fmtTick((g.xlo + i) * g.sx, g.sx), x, yAx + 17, fs, "center");
+    if ((g.xlo + i) % ex === 0) drawText(ctx, fmtTick((g.xlo + i) * g.sx, g.sx), x, yAx + 17, fs, "center");
   }
   for (let j = g.lo; j <= g.hi; j++) {
     if (j === 0) continue;
@@ -323,7 +347,7 @@ function drawStatic(g) {
   let xName, yName, title;
   if (g.traj) { xName = "x (m)"; yName = "y (m)"; title = "Trajectoire : y = f(x)"; }
   else {
-    xName = "t (s)";
+    xName = g.tf === 1000 ? "t (ms)" : "t (s)";
     const fams = [...new Set(g.keys.map(k => CURVES[k].fam))];
     if (g.keys.length === 1) yName = CURVES[g.keys[0]].n + " (" + CURVES[g.keys[0]].u + ")";
     else if (fams.length === 1 && FAMNAME[fams[0]]) yName = FAMNAME[fams[0]];
@@ -372,12 +396,15 @@ function drawStatic(g) {
   } else {
     g.keys.forEach((k, ci) => {
       const C = CURVES[k], pts = [];
-      for (let i = 0; i <= 240; i++) { const t = T * i / 240; pts.push([X(g, t), Y(g, C.f(t))]); }
+      const brk = [-PR, 0].filter(t => t > g.ta && t < g.tb);
+      const ts = []; for (let i = 0; i <= 240; i++) ts.push(g.ta + (g.tb - g.ta) * i / 240);
+      ts.push(...brk); ts.sort((u, v) => u - v);              // coins nets aux changements de phase
+      for (const t of ts) pts.push([X(g, t * g.tf), Y(g, C.f(t))]);
       ctx.strokeStyle = COLORS[ci % 6]; ctx.lineWidth = 2.4; wpath(ctx, pts, 0.8, 700 + ci * 7); ctx.stroke();
       if (P.pt) {
         ctx.fillStyle = COLORS[ci % 6];
-        for (let kk = 0; kk <= NK; kk++) { ctx.beginPath();
-          ctx.arc(X(g, TK[kk]), Y(g, C.f(TK[kk])), 3.2, 0, 6.2832); ctx.fill(); }
+        for (const t of g.dots) { ctx.beginPath();
+          ctx.arc(X(g, t * g.tf), Y(g, C.f(t)), 3.2, 0, 6.2832); ctx.fill(); }
       }
     });
   }
@@ -386,19 +413,19 @@ function drawStatic(g) {
 
 /* point (pixel) du point k de la courbe ci */
 function ptOf(g, ci, k) {
-  const t = TK[k];
+  const t = g.snap[k];
   if (g.traj) return [X(g, VX * t), Y(g, Y0 + VY * t - G * t * t / 2)];
-  return [X(g, t), Y(g, CURVES[g.keys[ci]].f(t))];
+  return [X(g, t * g.tf), Y(g, CURVES[g.keys[ci]].f(t))];
 }
 
 /* tangente au point k de la courbe ci : point + direction (pixels) */
 function tanOf(g, ci, k) {
-  const [px, py] = ptOf(g, ci, k), t = TK[k];
+  const [px, py] = ptOf(g, ci, k), t = g.snap[k];
   let dx, dy;
   if (g.traj) {
     if (Math.abs(VX) < 1e-9) { dx = 0; dy = 1; }
     else { dx = 1; dy = -(VY - G * t) / VX; }               // repere orthonorme
-  } else { dx = 1; dy = -CURVES[g.keys[ci]].d(t) * g.sx / g.sy; }
+  } else { dx = 1; dy = -CURVES[g.keys[ci]].d(t) / g.tf * g.sx / g.sy; }
   const L = Math.hypot(dx, dy);
   return [px, py, dx / L, dy / L];
 }
@@ -411,11 +438,11 @@ function drawTan(ctx, g, tan, color, width, dash, seed) {
 }
 function subHtml(str) { return str.replace(/([A-Za-z])_([A-Za-z0-9]+)/g, "$1<sub>$2</sub>"); }
 function coordHtml(g, h) {
-  const t = TK[h.k];
+  const t = g.snap[h.k];
   if (g.traj) return "<b>M<sub>" + h.k + "</sub></b> (t = " + fmt4(t) + " s) : x = " + fmt4(VX * t) +
                      " m ; y = " + fmt4(Y0 + VY * t - G * t * t / 2) + " m";
   const C = CURVES[g.keys[h.ci]];
-  return "t = " + fmt4(t) + " s ; " + (g.nm ? subHtml(C.n) + " = " + fmt4(C.f(t)) + " " + C.u
+  return "t = " + fmt4(t * g.tf) + (g.tf === 1000 ? " ms ; " : " s ; ") + (g.nm ? subHtml(C.n) + " = " + fmt4(C.f(t)) + " " + C.u
                                             : "ordonn&eacute;e : " + fmt4(C.f(t)));
 }
 
@@ -474,7 +501,7 @@ function onMove(g, ev) {
   if (g.eraser) { const i = nearestTan(g, mx, my); if (i !== g.hotTan) { g.hotTan = i; render(g); } return; }
   let best = null, bd = SNAP;
   const nc = g.traj ? 1 : g.keys.length;
-  for (let ci = 0; ci < nc; ci++) for (let k = 0; k <= NK; k++) {
+  for (let ci = 0; ci < nc; ci++) for (let k = 0; k < g.snap.length; k++) {
     const [px, py] = ptOf(g, ci, k), d = Math.hypot(px - mx, py - my);
     if (d < bd) { bd = d; best = {ci, k}; }
   }
@@ -493,8 +520,8 @@ const graphs = [];
 function buildAll() {
   graphs.length = 0;
   const gd = document.getElementById("graphs"); gd.innerHTML = "";
-  if (!(P.v > 0) || !(P.g > 0) || !(P.h >= 0) || !(P.al > 0 && P.al < 90)) {
-    gd.innerHTML = '<div id="msg">Param&egrave;tres impossibles (v &gt; 0, g &gt; 0, h &ge; 0, 0 &lt; &alpha; &lt; 90&deg;).</div>'; return; }
+  if (!(P.v > 0) || !(P.g > 0) || !(P.h >= 0) || !(P.al > 0 && P.al <= 90) || !(P.pr >= 0)) {
+    gd.innerHTML = '<div id="msg">Param&egrave;tres impossibles (v &gt; 0, g &gt; 0, h &ge; 0, 0 &lt; &alpha; &le; 90&deg;, pr &ge; 0).</div>'; return; }
   let GR = Array.isArray(P.gr) ? P.gr : [];
   if (P.sh) GR = shuffled(GR, Math.round(P.sh));
   let cnum = 1;
@@ -554,6 +581,9 @@ function grRow(spec) {
   h += `<label>noms <select data-o="nm"><option value=""${nmv === "" ? " selected" : ""}>comme global</option>` +
        `<option value="1"${nmv === "1" ? " selected" : ""}>affich&eacute;s</option>` +
        `<option value="0"${nmv === "0" ? " selected" : ""}>masqu&eacute;s</option></select></label>`;
+  const t1 = spec.length > 5 ? spec[4] : "", t2 = spec.length > 5 ? spec[5] : "";
+  h += `<label>fen&ecirc;tre t de <input type="number" data-o="t1" step="any" style="width:70px" value="${t1}"> &agrave; ` +
+       `<input type="number" data-o="t2" step="any" style="width:70px" value="${t2}"> s (vide = auto)</label>`;
   h += `<button type="button" data-del="1">&#10005; supprimer</button>`;
   div.innerHTML = h;
   div.querySelectorAll("input[data-c]").forEach(cb => cb.addEventListener("change", () => {
@@ -565,7 +595,7 @@ function grRow(spec) {
   return div;
 }
 const NUMS = [["v", "v<sub>0</sub> (m/s)", 0.1], ["al", "&alpha; (&deg;)", 1], ["h", "h (m)", 0.1],
-              ["g", "g (N/kg)", 0.01], ["tau", "&Delta;t (s, 0 = auto)", 0.01],
+              ["g", "g (N/kg)", 0.01], ["tau", "&Delta;t (s, 0 = auto)", 0.01], ["pr", "dur&eacute;e propulsion (s, 0 = aucune)", 0.0001],
               ["sh", "m&eacute;lange (0 = non, graine &gt; 0, -1 = &agrave; chaque chargement)", 1]];
 const BOOLS = [["o", "origine au sol"], ["nm", "noms des grandeurs"], ["pt", "points t<sub>k</sub> sur les graphiques en t"],
                ["cv", "courbe de la trajectoire"], ["ch", "croix de chronophotographie"], ["lab", "noms M<sub>k</sub>"], ["mn", "bouton graduations secondaires"], ["zm", "boutons zoom"]];
@@ -596,10 +626,13 @@ function applyPanel() {
     if (!ks.length) return;
     const spec = [ks.includes("traj") ? "traj" : ks.join("+"),
                   div.querySelector('[data-o="tg"]').checked ? 1 : 0, div.querySelector('[data-o="cd"]').checked ? 1 : 0];
-    const nmv = div.querySelector('[data-o="nm"]').value; if (nmv !== "") spec.push(+nmv);
+    const nmv = div.querySelector('[data-o="nm"]').value;
+    const t1 = parseFloat(div.querySelector('[data-o="t1"]').value), t2 = parseFloat(div.querySelector('[data-o="t2"]').value);
+    if (!isNaN(t1) && !isNaN(t2)) spec.push(nmv === "" ? null : +nmv, t1, t2);
+    else if (nmv !== "") spec.push(+nmv);
     P.gr.push(spec);
   });
-  const out = {}; for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn", "zm", "gr"]) out[k] = P[k];
+  const out = {}; for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn", "zm", "pr", "gr"]) out[k] = P[k];
   document.getElementById("e_py").value = "params = " + JSON.stringify(out).replace(/,"/g, ', "').replace(/:/g, ": ");
   document.getElementById("e_url").value = location.href.split("?")[0] + "?p=" + encodeP(out);
   computePhys(); buildAll();
