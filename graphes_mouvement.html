@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Graphiques du mouvement</title>
+<style>
+html,body{margin:0;padding:0;background:#fbfaf4;overflow-x:hidden;overflow-y:auto;}
+body{font-family:'Comic Sans MS','Comic Neue','Chalkboard SE',cursive;color:#222;}
+#wrap{max-width:900px;margin:0 auto;padding:8px;box-sizing:border-box;}
+.card{margin:0 0 16px 0;}
+canvas{display:block;width:100%;touch-action:none;border:2px solid #222;
+  border-radius:6px 11px 5px 12px / 10px 5px 12px 6px;background:#fdfdf8;}
+#msg{color:#b00;padding:10px;}
+.tools{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 4px 0;}
+.tools button{font-family:inherit;font-size:14px;background:#fffef6;border:2px solid #222;cursor:pointer;
+  border-radius:7px 3px 8px 4px / 4px 8px 3px 7px;padding:3px 10px;}
+.tools button.on{background:#ffe08a;}
+.info{min-height:22px;margin:4px 2px 0 2px;font-size:15px;}
+#panel{border:2px solid #222;border-radius:8px 4px 10px 5px / 5px 10px 4px 8px;background:#fffef6;
+  padding:8px 12px;margin:0 0 16px 0;font-size:14px;}
+#panel h3{margin:2px 0 8px 0;font-size:17px;}
+#panel .row{margin:5px 0;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;}
+#panel input[type=number]{width:64px;font:inherit;}
+#panel input.out{width:100%;font-family:monospace;font-size:12px;box-sizing:border-box;}
+#panel .grow{border-top:1px dashed #999;padding-top:5px;}
+#panel button,#panel select{font:inherit;cursor:pointer;}
+#panel label{white-space:nowrap;}
+</style>
+</head>
+<body>
+<div id="wrap"><div id="graphs"></div></div>
+<script>
+"use strict";
+/* ============ Parametres (JSON -> XOR -> base64url dans ?p=) ============ */
+const KEY = "PBayle-GraphMvt#2026";
+const FONT = "'Comic Sans MS','Comic Neue','Chalkboard SE',cursive";
+const COLORS = ["#1f5fbf", "#d62728", "#2ca02c", "#8e44ad", "#ff8c00", "#8b4513"];
+const TAN_COLOR = "#d0007a";
+
+function decodeP(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s), k = new TextEncoder().encode(KEY);
+  const b = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i) ^ k[i % k.length];
+  return JSON.parse(new TextDecoder().decode(b));
+}
+const DEF = {v: 10, al: 45, h: 2, g: 9.81, tau: 0, o: 1, pt: 1, cv: 1, ch: 1, lab: 1, nm: 1, sh: 0, mn: 1,
+             gr: [["traj", 0, 0]]};
+function getParams() {
+  const q = new URLSearchParams(location.search);
+  const P = Object.assign({}, DEF);
+  if (q.get("p")) { try { Object.assign(P, decodeP(q.get("p"))); } catch (e) { console.log("p invalide", e); } }
+  for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn"])
+    if (q.has(k)) P[k] = parseFloat(q.get(k));            // parametres en clair prioritaires
+  if (q.has("gr")) { try { P.gr = JSON.parse(q.get("gr")); } catch (e) {} }
+  return P;
+}
+const EXPERT = location.search.length <= 1;              // lance sans parametre -> mode expert
+const P = getParams();
+if (EXPERT) P.gr = [["traj", 1, 1], ["vx+vy", 1, 1], ["x", 0, 1], ["y", 0, 1]];
+
+/* ============ Physique : tir parabolique sans frottements ============ */
+let AR, VX, VY, G, Y0, T, TAU, NK, TK;
+const TAUS = [0.02, 0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 1, 2];
+function autoTau() { let b = TAUS[0]; for (const t of TAUS) if (Math.floor(T / t + 1e-9) >= 8) b = t; return b; }
+function computePhys() {
+  AR = P.al * Math.PI / 180; VX = P.v * Math.cos(AR); VY = P.v * Math.sin(AR); G = P.g;
+  Y0 = P.o ? P.h : 0;                                      // o=1 : origine au sol
+  T = (VY + Math.sqrt(VY * VY + 2 * G * P.h)) / G;         // duree du vol
+  TAU = P.tau > 0 ? P.tau : autoTau();
+  NK = Math.floor(T / TAU - 1e-9);                         // points M0..M_NK
+  TK = []; for (let k = 0; k <= NK; k++) TK.push(k * TAU);
+}
+computePhys();
+
+const CURVES = {
+  x:  {f: t => VX * t,                    d: t => VX,         n: "x",   u: "m",    fam: "pos"},
+  y:  {f: t => Y0 + VY * t - G * t * t / 2, d: t => VY - G * t, n: "y",   u: "m",    fam: "pos"},
+  vx: {f: t => VX,                        d: t => 0,          n: "v_x", u: "m/s",  fam: "v"},
+  vy: {f: t => VY - G * t,                d: t => -G,         n: "v_y", u: "m/s",  fam: "v"},
+  ax: {f: t => 0,                         d: t => 0,          n: "a_x", u: "m/s²", fam: "a"},
+  ay: {f: t => -G,                        d: t => 0,          n: "a_y", u: "m/s²", fam: "a"}
+};
+const FAMNAME = {v: "v (m/s)", a: "a (m/s²)"};
+
+/* ============ Outils ============ */
+const NS = []; for (let e = -4; e <= 4; e++) for (const m of [1, 2, 5]) NS.push(m * Math.pow(10, e));
+function pickStep(range, maxN) {
+  for (const s of NS) if (Math.ceil(range / s - 1e-9) <= maxN) return s;
+  return NS[NS.length - 1];
+}
+function fmtTick(v, step) {
+  const dec = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+  let s = v.toFixed(dec); if (/^-0(,|\.|$)/.test(s) && Math.abs(v) < step / 2) s = s.slice(1);
+  return s.replace(".", ",");
+}
+function fmt4(v) {                                          // 4 chiffres significatifs
+  if (Math.abs(v) < 1e-10) v = 0;
+  return v.toPrecision(4).replace("e+", "E").replace("e", "E").replace(".", ",");
+}
+function rng(seed) {
+  return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+/* trait a main levee : ondulation douce perpendiculaire, deterministe (seed) */
+function wpath(ctx, pts, amp, seed) {
+  const r = rng(seed), p1 = r() * 6.28, p2 = r() * 6.28, f1 = 30 + r() * 15, f2 = 9 + r() * 6;
+  ctx.beginPath(); let s = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+    const L = Math.hypot(x2 - x1, y2 - y1); if (L === 0) continue;
+    const nx = -(y2 - y1) / L, ny = (x2 - x1) / L, n = Math.max(1, Math.ceil(L / 6));
+    for (let j = (i === 0 ? 0 : 1); j <= n; j++) {
+      const u = j / n, ss = s + L * u;
+      const o = amp * (Math.sin(ss / f1 + p1) + 0.45 * Math.sin(ss / f2 + p2));
+      const x = x1 + (x2 - x1) * u + nx * o, y = y1 + (y2 - y1) * u + ny * o;
+      if (i === 0 && j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    s += L;
+  }
+}
+function wline(ctx, x1, y1, x2, y2, amp, seed) { wpath(ctx, [[x1, y1], [x2, y2]], amp, seed); ctx.stroke(); }
+/* texte avec indices : "v_x (m/s)" -> v + x en indice */
+function segs(str) {
+  const out = [], re = /([A-Za-z])_([A-Za-z0-9]+)/g; let last = 0, m;
+  while ((m = re.exec(str))) {
+    if (m.index > last) out.push({t: str.slice(last, m.index), sub: false});
+    out.push({t: m[1], sub: false}); out.push({t: m[2], sub: true}); last = re.lastIndex;
+  }
+  if (last < str.length) out.push({t: str.slice(last), sub: false});
+  return out;
+}
+function textW(ctx, str, size) {
+  let w = 0;
+  for (const g of segs(str)) { ctx.font = (g.sub ? size * 0.7 : size) + "px " + FONT; w += ctx.measureText(g.t).width; }
+  return w;
+}
+function drawText(ctx, str, x, y, size, align, color, bold) {
+  const w = textW(ctx, str, size);
+  let cx = align === "center" ? x - w / 2 : align === "right" ? x - w : x;
+  ctx.fillStyle = color || "#222"; ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+  for (const g of segs(str)) {
+    const sz = g.sub ? size * 0.7 : size;
+    ctx.font = (bold && !g.sub ? "bold " : "") + sz + "px " + FONT;
+    ctx.fillText(g.t, cx, g.sub ? y + size * 0.28 : y); cx += ctx.measureText(g.t).width;
+  }
+  return w;
+}
+
+/* ============ Construction d'un graphique ============ */
+const ML = 70, MR = 26, MT = 48, MB = 44, HMAX = 470;
+
+function buildGraph(spec, idx, c0) {
+  const [code, tg, cd] = [spec[0], !!spec[1], !!spec[2]];
+  const nm = spec.length > 3 ? !!spec[3] : !!P.nm;
+  const traj = code === "traj";
+  const keys = traj ? [] : String(code).split("+").map(s => s.trim()).filter(k => CURVES[k]);
+  if (!traj && !keys.length) return null;
+  const card = document.createElement("div"); card.className = "card";
+  const tools = document.createElement("div"); tools.className = "tools"; card.appendChild(tools);
+  const cv = document.createElement("canvas"); card.appendChild(cv);
+  const info = document.createElement("div"); info.className = "info"; if (cd) card.appendChild(info);
+  document.getElementById("graphs").appendChild(card);
+  const G_ = {idx, c0, traj, keys, tg, cd, nm, cv, card, info, hover: null, sel: null,
+              tans: [], eraser: false, minor: false, hotTan: -1};
+  if (tg) {
+    const bg = document.createElement("button"); bg.type = "button"; bg.textContent = "\u{1F9FD} Gomme";
+    bg.addEventListener("click", () => { G_.eraser = !G_.eraser; bg.classList.toggle("on", G_.eraser);
+      cv.style.cursor = G_.eraser ? "cell" : "default"; G_.hover = null; G_.hotTan = -1; render(G_); });
+    tools.appendChild(bg);
+  }
+  if (P.mn) {
+    const bm = document.createElement("button"); bm.type = "button"; bm.textContent = "\u25A6 Graduations secondaires";
+    bm.addEventListener("click", () => { G_.minor = !G_.minor; bm.classList.toggle("on", G_.minor);
+      drawStatic(G_); render(G_); });
+    tools.appendChild(bm);
+  }
+  if (!tools.children.length) tools.remove();
+  layout(G_);
+  return G_;
+}
+
+function layout(g) {
+  const CW = Math.max(320, g.card.clientWidth - 4);
+  const plotW = CW - ML - MR;
+  let sx, sy, xlo, nx, lo, hi;
+  if (g.traj) {
+    const xmax = VX * T; let ymin = Infinity, ymax = -Infinity;
+    for (let i = 0; i <= 200; i++) { const t = T * i / 200, y = Y0 + VY * t - G * t * t / 2;
+      ymin = Math.min(ymin, y); ymax = Math.max(ymax, y); }
+    ymin = Math.min(0, ymin); ymax = Math.max(0, ymax);
+    const s = pickStep(Math.max(xmax, ymax - ymin, 1e-6), 9); sx = sy = s;
+    xlo = 0; nx = Math.max(2, Math.ceil(xmax / s - 1e-9));
+    if (nx * s - xmax < 0.15 * s) nx++;
+    lo = Math.floor(ymin / s + 1e-9); hi = Math.ceil(ymax / s - 1e-9);
+    if (ymin < 0 && ymin - lo * s < 0.15 * s) lo--;
+    if (hi * s - ymax < 0.15 * s) hi++;
+  } else {
+    sx = pickStep(T, 9); xlo = 0; nx = Math.max(2, Math.ceil(T / sx - 1e-9));
+    if (nx * sx - T < 0.1 * sx) nx++;
+    let vmin = 0, vmax = 0;
+    for (const k of g.keys) for (let i = 0; i <= 200; i++) {
+      const v = CURVES[k].f(T * i / 200); vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
+    if (vmax - vmin < 1e-9) { vmin = -1; vmax = 1; }
+    sy = pickStep(vmax - vmin, 5);
+    lo = Math.floor(vmin / sy + 1e-9); hi = Math.ceil(vmax / sy - 1e-9);
+    if (vmin < 0 && vmin - lo * sy < 0.15 * sy) lo--;
+    if (hi * sy - vmax < 0.15 * sy) hi++;
+  }
+  nx += 2; hi += 1; lo -= 1;                    // marge autour de la courbe : place pour lire 2 points eloignes d'une tangente
+  const ny = Math.max(2, hi - lo);
+  const sq = Math.min(plotW / nx, HMAX / ny);
+  const CH = Math.round(MT + ny * sq + MB);
+  Object.assign(g, {CW, CH, sx, sy, xlo, nx, ny, lo, hi, sq, pW: nx * sq, pH: ny * sq});
+  const dpr = window.devicePixelRatio || 1;
+  g.cv.width = Math.round(CW * dpr); g.cv.height = Math.round(CH * dpr);
+  g.cv.style.height = CH + "px";
+  g.dpr = dpr;
+  g.off = document.createElement("canvas"); g.off.width = g.cv.width; g.off.height = g.cv.height;
+  drawStatic(g); render(g);
+}
+
+const X = (g, xv) => ML + (xv / g.sx - g.xlo) * g.sq;
+const Y = (g, yv) => MT + (g.hi - yv / g.sy) * g.sq;
+
+function drawStatic(g) {
+  const ctx = g.off.getContext("2d");
+  ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
+  const {CW, CH, sq} = g;
+  ctx.fillStyle = "#fdfdf8"; ctx.fillRect(0, 0, CW, CH);
+  /* --- fond Seyes : lignes fines tous les sq/4, fortes tous les sq (flou si graduations secondaires) --- */
+  ctx.save();
+  if (g.minor) { ctx.filter = "blur(2px)"; ctx.globalAlpha = 0.4; }
+  const q = sq / 4;
+  ctx.lineWidth = 1;
+  let j0 = Math.floor(-MT / q) - 1;
+  for (let j = j0; MT + j * q <= CH; j++) {
+    const y = MT + j * q; if (y < 0) continue;
+    ctx.strokeStyle = (j % 4 === 0) ? "#b49ddb" : "#c7dcf0";
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CW, y); ctx.stroke();
+  }
+  ctx.strokeStyle = "#b49ddb";
+  for (let i = Math.floor(-ML / sq) - 1; ML + i * sq <= CW; i++) {
+    const x = ML + i * sq; if (x < 0) continue;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CH); ctx.stroke();
+  }
+  ctx.restore();
+  /* --- graduations secondaires : quadrillage millimetre dans la zone du graphique --- */
+  if (g.minor) {
+    const nd = sq >= 35 ? 5 : 2, m = sq / nd;
+    for (let i = 0; i <= g.nx * nd; i++) {
+      const x = ML + i * m;
+      ctx.strokeStyle = i % nd === 0 ? "#8a8a8a" : "#d4d4d4";
+      ctx.lineWidth = i % nd === 0 ? 1.1 : 0.8;
+      ctx.beginPath(); ctx.moveTo(x, MT); ctx.lineTo(x, MT + g.pH); ctx.stroke();
+    }
+    for (let j = 0; j <= g.ny * nd; j++) {
+      const y = MT + j * m;
+      ctx.strokeStyle = j % nd === 0 ? "#8a8a8a" : "#d4d4d4";
+      ctx.lineWidth = j % nd === 0 ? 1.1 : 0.8;
+      ctx.beginPath(); ctx.moveTo(ML, y); ctx.lineTo(ML + g.pW, y); ctx.stroke();
+    }
+  }
+  ctx.strokeStyle = "#e05a5a"; ctx.lineWidth = 1.5;                 // marge rouge
+  ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(12, CH); ctx.stroke();
+
+  /* --- axes --- */
+  const x0 = X(g, 0), yAx = Y(g, 0), xEnd = ML + g.pW, yTop = MT, yBot = MT + g.pH;
+  ctx.strokeStyle = "#222"; ctx.lineWidth = 2;
+  wline(ctx, ML - 4, yAx, xEnd + 14, yAx, 0.9, 11 + g.idx);
+  wline(ctx, x0, yBot + 4, x0, yTop - 14, 0.9, 23 + g.idx);
+  ctx.fillStyle = "#222";
+  ctx.beginPath(); ctx.moveTo(xEnd + 18, yAx); ctx.lineTo(xEnd + 6, yAx - 5); ctx.lineTo(xEnd + 7, yAx + 5); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x0, yTop - 18); ctx.lineTo(x0 - 5, yTop - 6); ctx.lineTo(x0 + 5, yTop - 7); ctx.fill();
+
+  /* --- graduations --- */
+  if (g.minor) {                                            // petites graduations sur les axes
+    const nd = sq >= 35 ? 5 : 2, m = sq / nd; ctx.strokeStyle = "#222"; ctx.lineWidth = 1;
+    for (let i = 1; i <= g.nx * nd; i++) if (i % nd) { const x = ML + i * m, a = 2.8;
+      ctx.beginPath(); ctx.moveTo(x, yAx - a); ctx.lineTo(x, yAx + a); ctx.stroke(); }
+    for (let j = 0; j <= g.ny * nd; j++) if (j % nd) { const y = MT + j * m, a = 2.8;
+      ctx.beginPath(); ctx.moveTo(x0 - a, y); ctx.lineTo(x0 + a, y); ctx.stroke(); }
+  }
+  ctx.lineWidth = 1.6;
+  const fs = 13;
+  ctx.font = fs + "px " + FONT;
+  const wl = ctx.measureText(fmtTick(g.nx * g.sx, g.sx)).width + 8;
+  const ex = Math.max(1, Math.ceil(wl / sq)), ey = Math.max(1, Math.ceil(20 / sq));
+  for (let i = 1; i <= g.nx; i++) {
+    const x = ML + i * sq; wline(ctx, x, yAx - 4, x, yAx + 4, 0.3, 100 + i);
+    if (i % ex === 0) drawText(ctx, fmtTick((g.xlo + i) * g.sx, g.sx), x, yAx + 17, fs, "center");
+  }
+  for (let j = g.lo; j <= g.hi; j++) {
+    if (j === 0) continue;
+    const y = Y(g, j * g.sy); wline(ctx, x0 - 4, y, x0 + 4, y, 0.3, 200 + j);
+    if (j % ey === 0) drawText(ctx, fmtTick(j * g.sy, g.sy), x0 - 8, y + 5, fs, "right");
+  }
+  drawText(ctx, "0", x0 - 8, yAx + 17, fs, "right");
+
+  /* --- noms des axes et titre --- */
+  let xName, yName, title;
+  if (g.traj) { xName = "x (m)"; yName = "y (m)"; title = "Trajectoire : y = f(x)"; }
+  else {
+    xName = "t (s)";
+    const fams = [...new Set(g.keys.map(k => CURVES[k].fam))];
+    if (g.keys.length === 1) yName = CURVES[g.keys[0]].n + " (" + CURVES[g.keys[0]].u + ")";
+    else if (fams.length === 1 && FAMNAME[fams[0]]) yName = FAMNAME[fams[0]];
+    else yName = g.keys.map(k => CURVES[k].n + " (" + CURVES[k].u + ")").join(" ; ");
+    title = g.keys.map(k => CURVES[k].n + " = f(t)").join("   et   ");
+  }
+  if (!g.nm) {                                   // titres generiques numerotes : courbe 1, courbe 2...
+    const n = g.traj ? 1 : g.keys.length;
+    title = n === 1 ? "Courbe " + g.c0
+                    : "Courbes " + Array.from({length: n}, (_, i) => g.c0 + i).join(", ").replace(/, (\d+)$/, " et $1");
+    if (!g.traj) yName = "";
+  }
+  drawText(ctx, xName, xEnd + 16, yAx - 10, 15, "right", "#222", true);
+  drawText(ctx, yName, x0 + 10, yTop - 4, 15, "left", "#222", true);
+  drawText(ctx, title, CW - MR, 22, 17, "right", "#222", true);
+
+  /* --- legende si plusieurs courbes --- */
+  if (!g.traj && g.keys.length > 1) {
+    let lx = CW - MR, ly = 40;
+    for (let i = g.keys.length - 1; i >= 0; i--) {
+      const lab = g.nm ? CURVES[g.keys[i]].n : "courbe " + (g.c0 + i), w = textW(ctx, lab, 14);
+      drawText(ctx, lab, lx, ly, 14, "right", COLORS[i % 6], true);
+      ctx.strokeStyle = COLORS[i % 6]; ctx.lineWidth = 3;
+      wline(ctx, lx - w - 34, ly - 5, lx - w - 8, ly - 5, 0.6, 300 + i);
+      lx -= w + 50;
+    }
+  }
+
+  /* --- courbes --- */
+  ctx.save(); ctx.beginPath(); ctx.rect(ML - 2, MT - 2, g.pW + 4, g.pH + 4); ctx.clip();
+  if (g.traj) {
+    if (P.cv) {
+      const pts = []; for (let i = 0; i <= 240; i++) { const t = T * i / 240;
+        pts.push([X(g, VX * t), Y(g, Y0 + VY * t - G * t * t / 2)]); }
+      ctx.strokeStyle = COLORS[0]; ctx.lineWidth = 2.2; wpath(ctx, pts, 0.8, 400); ctx.stroke();
+    }
+    if (P.ch) {
+      ctx.strokeStyle = "#111"; ctx.lineWidth = 2;
+      for (let k = 0; k <= NK; k++) {
+        const t = TK[k], px = X(g, VX * t), py = Y(g, Y0 + VY * t - G * t * t / 2), a = 5;
+        wline(ctx, px - a, py - a, px + a, py + a, 0.3, 500 + k);
+        wline(ctx, px - a, py + a, px + a, py - a, 0.3, 600 + k);
+        if (P.lab) drawText(ctx, "M_" + k, px + 5, py - 8, 12, "left", "#333");
+      }
+    }
+  } else {
+    g.keys.forEach((k, ci) => {
+      const C = CURVES[k], pts = [];
+      for (let i = 0; i <= 240; i++) { const t = T * i / 240; pts.push([X(g, t), Y(g, C.f(t))]); }
+      ctx.strokeStyle = COLORS[ci % 6]; ctx.lineWidth = 2.4; wpath(ctx, pts, 0.8, 700 + ci * 7); ctx.stroke();
+      if (P.pt) {
+        ctx.fillStyle = COLORS[ci % 6];
+        for (let kk = 0; kk <= NK; kk++) { ctx.beginPath();
+          ctx.arc(X(g, TK[kk]), Y(g, C.f(TK[kk])), 3.2, 0, 6.2832); ctx.fill(); }
+      }
+    });
+  }
+  ctx.restore();
+}
+
+/* point (pixel) du point k de la courbe ci */
+function ptOf(g, ci, k) {
+  const t = TK[k];
+  if (g.traj) return [X(g, VX * t), Y(g, Y0 + VY * t - G * t * t / 2)];
+  return [X(g, t), Y(g, CURVES[g.keys[ci]].f(t))];
+}
+
+/* tangente au point k de la courbe ci : point + direction (pixels) */
+function tanOf(g, ci, k) {
+  const [px, py] = ptOf(g, ci, k), t = TK[k];
+  let dx, dy;
+  if (g.traj) {
+    if (Math.abs(VX) < 1e-9) { dx = 0; dy = 1; }
+    else { dx = 1; dy = -(VY - G * t) / VX; }               // repere orthonorme
+  } else { dx = 1; dy = -CURVES[g.keys[ci]].d(t) * g.sx / g.sy; }
+  const L = Math.hypot(dx, dy);
+  return [px, py, dx / L, dy / L];
+}
+function drawTan(ctx, g, tan, color, width, dash, seed) {
+  const [px, py, ux, uy] = tan, D = 3000;
+  ctx.save(); ctx.beginPath(); ctx.rect(ML - 2, MT - 2, g.pW + 4, g.pH + 4); ctx.clip();
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash || []);
+  ctx.beginPath(); ctx.moveTo(px - ux * D, py - uy * D); ctx.lineTo(px + ux * D, py + uy * D); ctx.stroke();
+  ctx.restore();
+}
+function subHtml(str) { return str.replace(/([A-Za-z])_([A-Za-z0-9]+)/g, "$1<sub>$2</sub>"); }
+function coordHtml(g, h) {
+  const t = TK[h.k];
+  if (g.traj) return "<b>M<sub>" + h.k + "</sub></b> (t = " + fmt4(t) + " s) : x = " + fmt4(VX * t) +
+                     " m ; y = " + fmt4(Y0 + VY * t - G * t * t / 2) + " m";
+  const C = CURVES[g.keys[h.ci]];
+  return "t = " + fmt4(t) + " s ; " + (g.nm ? subHtml(C.n) + " = " + fmt4(C.f(t)) + " " + C.u
+                                            : "ordonn&eacute;e : " + fmt4(C.f(t)));
+}
+
+function render(g) {
+  const ctx = g.cv.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(g.off, 0, 0);
+  ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
+  /* tangentes posees (traits fins et nets pour mesurer le coefficient directeur a la main) */
+  g.tans.forEach((tk, i) => {
+    const tan = tanOf(g, tk.ci, tk.k);
+    drawTan(ctx, g, tan, i === g.hotTan ? "#ff3b30" : TAN_COLOR, i === g.hotTan ? 3 : 1.6, i === g.hotTan ? [6, 4] : null);
+    ctx.fillStyle = TAN_COLOR; ctx.beginPath(); ctx.arc(tan[0], tan[1], 3.5, 0, 6.2832); ctx.fill();
+  });
+  const h = g.hover;
+  if (h && !g.eraser) {
+    const [px, py] = ptOf(g, h.ci, h.k);
+    if (g.tg) drawTan(ctx, g, tanOf(g, h.ci, h.k), "rgba(208,0,122,0.55)", 1.4, [7, 5]);   // apercu
+    ctx.strokeStyle = g.tg ? TAN_COLOR : "#111"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(px, py, 8, 0, 6.2832); ctx.stroke();
+  }
+  /* coordonnees sous le graphique : ne masquent jamais la courbe */
+  if (g.cd) {
+    const sh = (h && !g.eraser) ? h : g.sel;
+    g.info.innerHTML = sh ? coordHtml(g, sh) : "<span style='color:#888'>Approche la souris d'un point pour lire ses coordonn&eacute;es.</span>";
+  }
+}
+
+/* ============ Aimantation de la souris ============ */
+const SNAP = 28;
+function mousePos(g, ev) {
+  const r = g.cv.getBoundingClientRect();
+  return [(ev.clientX - r.left) * g.CW / r.width, (ev.clientY - r.top) * g.CH / r.height];
+}
+function nearestTan(g, mx, my) {
+  let best = -1, bd = 12;
+  g.tans.forEach((tk, i) => { const [px, py, ux, uy] = tanOf(g, tk.ci, tk.k);
+    const d = Math.abs((mx - px) * uy - (my - py) * ux); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+function onDown(g, ev) {
+  if (g.eraser) {
+    const [mx, my] = mousePos(g, ev), i = nearestTan(g, mx, my);
+    if (i >= 0) { g.tans.splice(i, 1); g.hotTan = -1; render(g); }
+    return;
+  }
+  onMove(g, ev);
+  const h = g.hover; if (!h) return;
+  if (g.tg && !g.tans.some(t => t.ci === h.ci && t.k === h.k)) g.tans.push({ci: h.ci, k: h.k});
+  if (g.cd) g.sel = {ci: h.ci, k: h.k};
+  render(g);
+}
+function onMove(g, ev) {
+  if (!g.tg && !g.cd) return;
+  const [mx, my] = mousePos(g, ev);
+  if (g.eraser) { const i = nearestTan(g, mx, my); if (i !== g.hotTan) { g.hotTan = i; render(g); } return; }
+  let best = null, bd = SNAP;
+  const nc = g.traj ? 1 : g.keys.length;
+  for (let ci = 0; ci < nc; ci++) for (let k = 0; k <= NK; k++) {
+    const [px, py] = ptOf(g, ci, k), d = Math.hypot(px - mx, py - my);
+    if (d < bd) { bd = d; best = {ci, k}; }
+  }
+  const same = (best && g.hover && best.ci === g.hover.ci && best.k === g.hover.k) || (!best && !g.hover);
+  if (!same) { g.hover = best; render(g); }
+}
+
+/* ============ Lancement ============ */
+/* sh : 0 = ordre donne, >0 = ordre melange avec cette graine (reproductible), -1 = melange a chaque chargement */
+function shuffled(arr, seed) {
+  const a = arr.slice(), r = seed < 0 ? Math.random : rng(seed);
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+const graphs = [];
+function buildAll() {
+  graphs.length = 0;
+  const gd = document.getElementById("graphs"); gd.innerHTML = "";
+  if (!(P.v > 0) || !(P.g > 0) || !(P.h >= 0) || !(P.al > 0 && P.al < 90)) {
+    gd.innerHTML = '<div id="msg">Param&egrave;tres impossibles (v &gt; 0, g &gt; 0, h &ge; 0, 0 &lt; &alpha; &lt; 90&deg;).</div>'; return; }
+  let GR = Array.isArray(P.gr) ? P.gr : [];
+  if (P.sh) GR = shuffled(GR, Math.round(P.sh));
+  let cnum = 1;
+  GR.forEach(spec => {
+    if (!Array.isArray(spec)) spec = [spec, 0, 0];
+    const g = buildGraph(spec, graphs.length, cnum);
+    if (g) { graphs.push(g); cnum += g.traj ? 1 : g.keys.length; }
+  });
+  if (!graphs.length) { gd.innerHTML = '<div id="msg">Aucun graphique demand&eacute;.</div>'; return; }
+  for (const g of graphs) {
+    g.cv.addEventListener("pointermove", ev => onMove(g, ev));
+    g.cv.addEventListener("pointerdown", ev => onDown(g, ev));
+    g.cv.addEventListener("pointerleave", () => { if (g.hover || g.hotTan >= 0) { g.hover = null; g.hotTan = -1; render(g); } });
+  }
+}
+
+/* ============ Mode expert : panneau de tous les reglages (seulement sans parametre) ============ */
+function encodeP(obj) {
+  const raw = new TextEncoder().encode(JSON.stringify(obj)), k = new TextEncoder().encode(KEY);
+  let bin = ""; for (let i = 0; i < raw.length; i++) bin += String.fromCharCode(raw[i] ^ k[i % k.length]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+const CKEYS = ["x", "y", "vx", "vy", "ax", "ay", "traj"];
+const CLABEL = {x: "x(t)", y: "y(t)", vx: "v<sub>x</sub>(t)", vy: "v<sub>y</sub>(t)", ax: "a<sub>x</sub>(t)",
+                ay: "a<sub>y</sub>(t)", traj: "trajectoire y=f(x)"};
+function grRow(spec) {
+  const div = document.createElement("div"); div.className = "row grow";
+  const keys = spec[0] === "traj" ? ["traj"] : String(spec[0]).split("+");
+  let h = "<b>Graphique</b>";
+  for (const k of CKEYS) h += `<label><input type="checkbox" data-c="${k}"${keys.includes(k) ? " checked" : ""}> ${CLABEL[k]}</label>`;
+  h += `<label><input type="checkbox" data-o="tg"${spec[1] ? " checked" : ""}> tangente</label>`;
+  h += `<label><input type="checkbox" data-o="cd"${spec[2] ? " checked" : ""}> coordonn&eacute;es</label>`;
+  const nmv = spec.length > 3 ? String(spec[3]) : "";
+  h += `<label>noms <select data-o="nm"><option value=""${nmv === "" ? " selected" : ""}>comme global</option>` +
+       `<option value="1"${nmv === "1" ? " selected" : ""}>affich&eacute;s</option>` +
+       `<option value="0"${nmv === "0" ? " selected" : ""}>masqu&eacute;s</option></select></label>`;
+  h += `<button type="button" data-del="1">&#10005; supprimer</button>`;
+  div.innerHTML = h;
+  div.querySelectorAll("input[data-c]").forEach(cb => cb.addEventListener("change", () => {
+    if (!cb.checked) return;                                // trajectoire seule, jamais combinee
+    if (cb.dataset.c === "traj") div.querySelectorAll("input[data-c]").forEach(o => { if (o !== cb) o.checked = false; });
+    else div.querySelector('input[data-c="traj"]').checked = false;
+  }));
+  div.querySelector("[data-del]").addEventListener("click", () => { div.remove(); applyPanel(); });
+  return div;
+}
+const NUMS = [["v", "v<sub>0</sub> (m/s)", 0.1], ["al", "&alpha; (&deg;)", 1], ["h", "h (m)", 0.1],
+              ["g", "g (N/kg)", 0.01], ["tau", "&Delta;t (s, 0 = auto)", 0.01],
+              ["sh", "m&eacute;lange (0 = non, graine &gt; 0, -1 = &agrave; chaque chargement)", 1]];
+const BOOLS = [["o", "origine au sol"], ["nm", "noms des grandeurs"], ["pt", "points t<sub>k</sub> sur les graphiques en t"],
+               ["cv", "courbe de la trajectoire"], ["ch", "croix de chronophotographie"], ["lab", "noms M<sub>k</sub>"], ["mn", "bouton graduations secondaires"]];
+function buildPanel() {
+  const pn = document.createElement("div"); pn.id = "panel";
+  let h = "<h3>Mode expert : tous les r&eacute;glages</h3><div class='row'>";
+  for (const [k, lab, st] of NUMS) h += `<label>${lab} <input type="number" id="e_${k}" step="${st}" value="${P[k]}"></label>`;
+  h += "</div><div class='row'>";
+  for (const [k, lab] of BOOLS) h += `<label><input type="checkbox" id="e_${k}"${P[k] ? " checked" : ""}> ${lab}</label>`;
+  h += "</div><div id='e_gr'></div><div class='row'><button type='button' id='e_add'>+ ajouter un graphique</button></div>";
+  h += "<div class='row' style='display:block'>Param&egrave;tres Python :<input class='out' id='e_py' readonly></div>";
+  h += "<div class='row' style='display:block'>Lien de test :<input class='out' id='e_url' readonly></div>";
+  pn.innerHTML = h;
+  document.getElementById("wrap").insertBefore(pn, document.getElementById("graphs"));
+  const eg = document.getElementById("e_gr");
+  for (const spec of P.gr) eg.appendChild(grRow(spec));
+  document.getElementById("e_add").addEventListener("click", () => { eg.appendChild(grRow(["vy", 0, 0])); applyPanel(); });
+  pn.addEventListener("input", applyPanel); pn.addEventListener("change", applyPanel);
+  pn.querySelectorAll("input.out").forEach(i => i.addEventListener("focus", () => i.select()));
+  applyPanel();
+}
+function applyPanel() {
+  for (const [k] of NUMS) { const v = parseFloat(document.getElementById("e_" + k).value); P[k] = isNaN(v) ? DEF[k] : v; }
+  for (const [k] of BOOLS) P[k] = document.getElementById("e_" + k).checked ? 1 : 0;
+  P.gr = [];
+  document.querySelectorAll("#e_gr .grow").forEach(div => {
+    const ks = [...div.querySelectorAll("input[data-c]:checked")].map(c => c.dataset.c);
+    if (!ks.length) return;
+    const spec = [ks.includes("traj") ? "traj" : ks.join("+"),
+                  div.querySelector('[data-o="tg"]').checked ? 1 : 0, div.querySelector('[data-o="cd"]').checked ? 1 : 0];
+    const nmv = div.querySelector('[data-o="nm"]').value; if (nmv !== "") spec.push(+nmv);
+    P.gr.push(spec);
+  });
+  const out = {}; for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn", "gr"]) out[k] = P[k];
+  document.getElementById("e_py").value = "params = " + JSON.stringify(out).replace(/,"/g, ', "').replace(/:/g, ": ");
+  document.getElementById("e_url").value = location.href.split("?")[0] + "?p=" + encodeP(out);
+  computePhys(); buildAll();
+}
+if (EXPERT) buildPanel(); else buildAll();
+let rt = null;
+window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => graphs.forEach(layout), 120); });
+</script>
+</body>
+</html>
