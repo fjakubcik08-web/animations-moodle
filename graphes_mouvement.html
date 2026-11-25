@@ -9,13 +9,15 @@ html,body{margin:0;padding:0;background:#fbfaf4;overflow-x:hidden;overflow-y:aut
 body{font-family:'Comic Sans MS','Comic Neue','Chalkboard SE',cursive;color:#222;}
 #wrap{max-width:900px;margin:0 auto;padding:8px;box-sizing:border-box;}
 .card{margin:0 0 16px 0;}
-canvas{display:block;width:100%;touch-action:none;border:2px solid #222;
+.cvbox{overflow-x:auto;overflow-y:hidden;}
+canvas{display:block;touch-action:none;border:2px solid #222;
   border-radius:6px 11px 5px 12px / 10px 5px 12px 6px;background:#fdfdf8;}
 #msg{color:#b00;padding:10px;}
 .tools{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 4px 0;}
 .tools button{font-family:inherit;font-size:14px;background:#fffef6;border:2px solid #222;cursor:pointer;
   border-radius:7px 3px 8px 4px / 4px 8px 3px 7px;padding:3px 10px;}
 .tools button.on{background:#ffe08a;}
+.tools button:disabled{opacity:0.35;cursor:default;}
 .info{min-height:22px;margin:4px 2px 0 2px;font-size:15px;}
 #panel{border:2px solid #222;border-radius:8px 4px 10px 5px / 5px 10px 4px 8px;background:#fffef6;
   padding:8px 12px;margin:0 0 16px 0;font-size:14px;}
@@ -46,13 +48,13 @@ function decodeP(s) {
   for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i) ^ k[i % k.length];
   return JSON.parse(new TextDecoder().decode(b));
 }
-const DEF = {v: 10, al: 45, h: 2, g: 9.81, tau: 0, o: 1, pt: 1, cv: 1, ch: 1, lab: 1, nm: 1, sh: 0, mn: 1,
+const DEF = {v: 10, al: 45, h: 2, g: 9.81, tau: 0, o: 1, pt: 1, cv: 1, ch: 1, lab: 1, nm: 1, sh: 0, mn: 1, zm: 1,
              gr: [["traj", 0, 0]]};
 function getParams() {
   const q = new URLSearchParams(location.search);
   const P = Object.assign({}, DEF);
   if (q.get("p")) { try { Object.assign(P, decodeP(q.get("p"))); } catch (e) { console.log("p invalide", e); } }
-  for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn"])
+  for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn", "zm"])
     if (q.has(k)) P[k] = parseFloat(q.get(k));            // parametres en clair prioritaires
   if (q.has("gr")) { try { P.gr = JSON.parse(q.get("gr")); } catch (e) {} }
   return P;
@@ -161,11 +163,28 @@ function buildGraph(spec, idx, c0) {
   if (!traj && !keys.length) return null;
   const card = document.createElement("div"); card.className = "card";
   const tools = document.createElement("div"); tools.className = "tools"; card.appendChild(tools);
-  const cv = document.createElement("canvas"); card.appendChild(cv);
+  const box = document.createElement("div"); box.className = "cvbox"; card.appendChild(box);
+  const cv = document.createElement("canvas"); box.appendChild(cv);
   const info = document.createElement("div"); info.className = "info"; if (cd) card.appendChild(info);
   document.getElementById("graphs").appendChild(card);
   const G_ = {idx, c0, traj, keys, tg, cd, nm, cv, card, info, hover: null, sel: null,
-              tans: [], eraser: false, minor: false, hotTan: -1};
+              tans: [], eraser: false, minor: false, hotTan: -1, box, zoom: 1};
+  if (P.zm) {                                    // zoom : agrandit les carreaux, on se deplace avec l'ascenseur
+    const ZL = [1, 1.5, 2, 3];
+    const bp = document.createElement("button"), bmn = document.createElement("button");
+    bp.type = bmn.type = "button"; bp.textContent = "\u{1F50D} Zoom +"; bmn.textContent = "\u{1F50D} Zoom \u2212";
+    const setZ = dir => {
+      const i = ZL.indexOf(G_.zoom) + dir; if (i < 0 || i >= ZL.length) return;
+      const fx = (box.scrollLeft + box.clientWidth / 2) / Math.max(1, box.scrollWidth);
+      const r = cv.getBoundingClientRect(), fy = (innerHeight / 2 - r.top) / Math.max(1, r.height);
+      G_.zoom = ZL[i]; layout(G_);
+      box.scrollLeft = fx * box.scrollWidth - box.clientWidth / 2;
+      const r2 = cv.getBoundingClientRect(); window.scrollBy(0, r2.top + fy * r2.height - innerHeight / 2);
+      bp.disabled = i === ZL.length - 1; bmn.disabled = i === 0;
+    };
+    bp.addEventListener("click", () => setZ(1)); bmn.addEventListener("click", () => setZ(-1));
+    bmn.disabled = true; tools.appendChild(bp); tools.appendChild(bmn);
+  }
   if (tg) {
     const bg = document.createElement("button"); bg.type = "button"; bg.textContent = "\u{1F9FD} Gomme";
     bg.addEventListener("click", () => { G_.eraser = !G_.eraser; bg.classList.toggle("on", G_.eraser);
@@ -184,7 +203,7 @@ function buildGraph(spec, idx, c0) {
 }
 
 function layout(g) {
-  const CW = Math.max(320, g.card.clientWidth - 4);
+  const CW = Math.round(Math.max(320, g.card.clientWidth - 4) * g.zoom);
   const plotW = CW - ML - MR;
   let sx, sy, xlo, nx, lo, hi;
   if (g.traj) {
@@ -212,12 +231,12 @@ function layout(g) {
   }
   nx += 2; hi += 1; lo -= 1;                    // marge autour de la courbe : place pour lire 2 points eloignes d'une tangente
   const ny = Math.max(2, hi - lo);
-  const sq = Math.min(plotW / nx, HMAX / ny);
+  const sq = Math.min(plotW / nx, HMAX * g.zoom / ny);
   const CH = Math.round(MT + ny * sq + MB);
   Object.assign(g, {CW, CH, sx, sy, xlo, nx, ny, lo, hi, sq, pW: nx * sq, pH: ny * sq});
   const dpr = window.devicePixelRatio || 1;
   g.cv.width = Math.round(CW * dpr); g.cv.height = Math.round(CH * dpr);
-  g.cv.style.height = CH + "px";
+  g.cv.style.height = CH + "px"; g.cv.style.width = CW + "px";
   g.dpr = dpr;
   g.off = document.createElement("canvas"); g.off.width = g.cv.width; g.off.height = g.cv.height;
   drawStatic(g); render(g);
@@ -526,7 +545,7 @@ const NUMS = [["v", "v<sub>0</sub> (m/s)", 0.1], ["al", "&alpha; (&deg;)", 1], [
               ["g", "g (N/kg)", 0.01], ["tau", "&Delta;t (s, 0 = auto)", 0.01],
               ["sh", "m&eacute;lange (0 = non, graine &gt; 0, -1 = &agrave; chaque chargement)", 1]];
 const BOOLS = [["o", "origine au sol"], ["nm", "noms des grandeurs"], ["pt", "points t<sub>k</sub> sur les graphiques en t"],
-               ["cv", "courbe de la trajectoire"], ["ch", "croix de chronophotographie"], ["lab", "noms M<sub>k</sub>"], ["mn", "bouton graduations secondaires"]];
+               ["cv", "courbe de la trajectoire"], ["ch", "croix de chronophotographie"], ["lab", "noms M<sub>k</sub>"], ["mn", "bouton graduations secondaires"], ["zm", "boutons zoom"]];
 function buildPanel() {
   const pn = document.createElement("div"); pn.id = "panel";
   let h = "<h3>Mode expert : tous les r&eacute;glages</h3><div class='row'>";
@@ -557,7 +576,7 @@ function applyPanel() {
     const nmv = div.querySelector('[data-o="nm"]').value; if (nmv !== "") spec.push(+nmv);
     P.gr.push(spec);
   });
-  const out = {}; for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn", "gr"]) out[k] = P[k];
+  const out = {}; for (const k of ["v", "al", "h", "g", "tau", "o", "pt", "cv", "ch", "lab", "nm", "sh", "mn", "zm", "gr"]) out[k] = P[k];
   document.getElementById("e_py").value = "params = " + JSON.stringify(out).replace(/,"/g, ', "').replace(/:/g, ": ");
   document.getElementById("e_url").value = location.href.split("?")[0] + "?p=" + encodeP(out);
   computePhys(); buildAll();
