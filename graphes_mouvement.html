@@ -188,7 +188,7 @@ function buildGraph(spec, idx, c0) {
   if (tg) {
     const bg = document.createElement("button"); bg.type = "button"; bg.textContent = "\u{1F9FD} Gomme";
     bg.addEventListener("click", () => { G_.eraser = !G_.eraser; bg.classList.toggle("on", G_.eraser);
-      cv.style.cursor = G_.eraser ? "cell" : "default"; G_.hover = null; G_.hotTan = -1; render(G_); });
+      cv.style.cursor = G_.eraser ? "cell" : "crosshair"; G_.hover = null; G_.hotTan = -1; render(G_); });
     tools.appendChild(bg);
   }
   if (P.mn) {
@@ -505,9 +505,32 @@ function buildAll() {
   });
   if (!graphs.length) { gd.innerHTML = '<div id="msg">Aucun graphique demand&eacute;.</div>'; return; }
   for (const g of graphs) {
-    g.cv.addEventListener("pointermove", ev => onMove(g, ev));
-    g.cv.addEventListener("pointerdown", ev => onDown(g, ev));
-    g.cv.addEventListener("pointerleave", () => { if (g.hover || g.hotTan >= 0) { g.hover = null; g.hotTan = -1; render(g); } });
+    /* glisser = deplacer le graphique (zoom) ou la page ; clic sans glisser = poser une tangente / gommer */
+    g.cv.style.cursor = "crosshair";
+    g.cv.addEventListener("pointerdown", ev => {
+      g.drag = {x0: ev.clientX, y0: ev.clientY, ly: ev.clientY, sl: g.box.scrollLeft, moved: false};
+      try { g.cv.setPointerCapture(ev.pointerId); } catch (e) {}
+      if (ev.pointerType !== "mouse") onMove(g, ev);
+    });
+    g.cv.addEventListener("pointermove", ev => {
+      const d = g.drag;
+      if (!d) { onMove(g, ev); return; }
+      if (!d.moved && Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) > 6) {
+        d.moved = true; g.cv.style.cursor = "grabbing"; g.hover = null; g.hotTan = -1; render(g); }
+      if (d.moved) {
+        g.box.scrollLeft = d.sl - (ev.clientX - d.x0);
+        window.scrollBy(0, -(ev.clientY - d.ly)); d.ly = ev.clientY;
+      }
+    });
+    const endDrag = (ev, click) => {
+      const d = g.drag; g.drag = null;
+      try { g.cv.releasePointerCapture(ev.pointerId); } catch (e) {}
+      g.cv.style.cursor = g.eraser ? "cell" : "crosshair";
+      if (d && !d.moved && click) onDown(g, ev);
+    };
+    g.cv.addEventListener("pointerup", ev => endDrag(ev, true));
+    g.cv.addEventListener("pointercancel", ev => endDrag(ev, false));
+    g.cv.addEventListener("pointerleave", () => { if (!g.drag && (g.hover || g.hotTan >= 0)) { g.hover = null; g.hotTan = -1; render(g); } });
   }
 }
 
