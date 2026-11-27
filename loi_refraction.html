@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loi de la réfraction – calcul guidé</title>
+<style>
+  html,body{margin:0;padding:0;background:#fffdf6;overflow-x:hidden;overflow-y:auto;}
+  body{font-family:'Comic Sans MS','Comic Neue','Chalkboard SE',cursive;color:#222;font-size:16px;}
+  #box{max-width:760px;margin:8px auto;padding:12px 16px;background:#fff;border:3px solid #111;
+       border-radius:14px 9px 16px 8px;box-shadow:5px 5px 0 #111;}
+  h1{font-size:19px;margin:0 0 8px;color:#1f4e8c;}
+  .data{margin:4px 0 10px;padding:6px 10px;background:#eef6ea;border:2px dashed #2f6b2f;border-radius:10px 7px 11px 6px;}
+  textarea{font-family:inherit;font-size:17px;line-height:1.7;width:100%;box-sizing:border-box;min-height:190px;padding:8px 10px;
+       border:2px solid #333;border-radius:10px 7px 11px 6px;background:#fffef9;resize:vertical;}
+  textarea.ok{border-color:#2e9b4f;} textarea.ko{border-color:#c0392b;}
+  #prev{margin:6px 0 0;font-size:15px;color:#555;}
+  #prev div{min-height:1.3em;}
+  .codes{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center;}
+  #codes input.code{width:140px;}
+  .lab{font-weight:bold;color:#1f4e8c;}
+  input[type=text]{font-family:inherit;font-size:16px;padding:5px 8px;border:2px solid #333;border-radius:8px 6px 9px 5px;
+       background:#fffef9;width:100%;box-sizing:border-box;}
+  input.code{font-family:Consolas,monospace;font-size:14px;background:#eef3fa;color:#1f4e8c;text-align:center;}
+  input.ok{border-color:#2e9b4f;background:#eaf8ee;} input.ko{border-color:#c0392b;background:#fdecea;}
+  .err{color:#c0392b;}
+  .keys{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px;}
+  button{font-family:inherit;font-size:15px;font-weight:bold;padding:4px 12px;cursor:pointer;color:#111;background:#ffd400;
+         border:3px solid #111;border-radius:4px;box-shadow:3px 3px 0 #111;transition:transform .08s,box-shadow .08s;}
+  button.k{background:#4fc3f7;font-size:14px;padding:3px 10px;}
+  button.ph{background:#fff3b0;font-size:14px;padding:4px 10px;}
+  #phr{margin-top:12px;}
+  button:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 #111;}
+  button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #111;}
+  #go{background:#e3262f;color:#fff;text-shadow:1px 1px 0 #111;margin-top:8px;}
+  .meas{display:flex;gap:8px;align-items:center;margin:6px 0 4px;}
+  .meas input{width:120px;}
+  .hint{font-size:13px;color:#777;}
+</style>
+</head>
+<body>
+<div id="box">
+  <h1>Loi de la réfraction : calcul pas à pas – comme en cours</h1>
+  <div class="data" id="data"></div>
+  <div class="meas" id="measRow"></div>
+  <textarea id="txt" spellcheck="false" autocomplete="off" placeholder="Rédige ton calcul comme sur ta copie, une étape par ligne…"></textarea>
+  <div id="prev"></div>
+  <div class="keys" id="phr"></div>
+  <div class="keys" id="keys"></div>
+  <div class="hint">Une étape par ligne, chacune commence par une phrase. Sous la zone, tu vois le calcul compris par la machine. Angles en degrés ; virgule ou point acceptés.</div>
+  <button id="go">Valider</button>
+  <div class="codes" id="codes"></div>
+</div>
+
+<script>
+"use strict";
+/* ============ Paramètres (JSON -> XOR -> base64url) ============ */
+const KEY="PBayle-LoiRefr#2nde";
+function decodeP(p){
+  try{p=p.replace(/-/g,'+').replace(/_/g,'/');while(p.length%4)p+='=';
+    const b=atob(p);let s='';for(let i=0;i<b.length;i++)s+=String.fromCharCode(b.charCodeAt(i)^KEY.charCodeAt(i%KEY.length));
+    return JSON.parse(s);}catch(e){return {};}
+}
+const Q=new URLSearchParams(location.search);
+const P=Object.assign({u:"n1",k:{},fb:1,s:"demo",sk:0,t:1},Q.get('p')?decodeP(Q.get('p')):{});
+if(Q.get('u'))P.u=Q.get('u');
+if(Q.get('fb')!==null)P.fb=+Q.get('fb');
+if(Q.get('t')!==null)P.t=+Q.get('t');
+const VARS=["n1","n2","i1","i2"];
+const ISANGLE=P.u[0]==='i';
+const NSTEP=4;   // loi / remplacement / expression numérique / valeur
+
+/* ============ Hash (FNV-1a 32 bits -> base36, 6 car.) ============ */
+function hash6(s){let h=2166136261>>>0;
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}
+  return h.toString(36).toUpperCase().padStart(6,'0').slice(0,6);}
+
+/* ============ Analyseur d'expressions ============ */
+function norm(s){
+  return s.toLowerCase().replace(/₁/g,'1').replace(/₂/g,'2')
+    .replace(/sin\s*(\^\s*\(?\s*-\s*1\s*\)?|⁻¹|-1)/g,'asin').replace(/arcsin/g,'asin')
+    .replace(/[×·]/g,'*').replace(/÷/g,'/').replace(/−/g,'-').replace(/\s+/g,'');
+}
+function tokenize(s){
+  const t=[];let i=0;
+  while(i<s.length){
+    const c=s[i];
+    if(/[0-9]/.test(c)){let m=s.slice(i).match(/^\d+([.,]\d+)?/)[0];t.push({t:'num',v:parseFloat(m.replace(',','.'))});i+=m.length;}
+    else if(/[a-z]/.test(c)){let m=s.slice(i).match(/^(asin|sin|[a-z]\d*)/)[0];
+      if(m==='asin'||m==='sin')t.push({t:'fn',v:m});
+      else if(VARS.includes(m))t.push({t:'var',v:m});
+      else throw new Error('« '+m+' » inconnu');
+      i+=m.length;}
+    else if('+-*/^()'.includes(c)){t.push({t:'op',v:c});i++;}
+    else throw new Error('caractère « '+c+' » non reconnu');
+  }
+  return t;
+}
+function parse(str){
+  const tk=tokenize(str);let p=0;
+  const peek=()=>tk[p],eat=()=>tk[p++];
+  const startsPrimary=x=>x&&(x.t==='num'||x.t==='var'||x.t==='fn'||(x.t==='op'&&x.v==='('));
+  function expr(){let a=term();while(peek()&&peek().t==='op'&&'+-'.includes(peek().v)){const o=eat().v,b=term(),A=a;a=o==='+'?e=>A(e)+b(e):e=>A(e)-b(e);}return a;}
+  function term(){let a=unary();
+    for(;;){const x=peek();
+      if(x&&x.t==='op'&&(x.v==='*'||x.v==='/')){eat();const b=unary(),A=a;a=x.v==='*'?e=>A(e)*b(e):e=>A(e)/b(e);}
+      else if(startsPrimary(x)){const b=pow(),A=a;a=e=>A(e)*b(e);}       // multiplication implicite
+      else break;}
+    return a;}
+  function unary(){const x=peek();if(x&&x.t==='op'&&x.v==='-'){eat();const a=unary();return e=>-a(e);}
+    if(x&&x.t==='op'&&x.v==='+'){eat();return unary();}return pow();}
+  function pow(){const a=primary();const x=peek();if(x&&x.t==='op'&&x.v==='^'){eat();const b=unary();return e=>Math.pow(a(e),b(e));}return a;}
+  function primary(){const x=eat();
+    if(!x)throw new Error('expression incomplète');
+    if(x.t==='num')return ()=>x.v;
+    if(x.t==='var')return e=>e[x.v];
+    if(x.t==='fn'){const a=pow();
+      return x.v==='sin'?e=>Math.sin(a(e)*Math.PI/180):e=>Math.asin(a(e))*180/Math.PI;}
+    if(x.t==='op'&&x.v==='('){const a=expr();const y=eat();if(!y||y.v!==')')throw new Error('parenthèse manquante');return a;}
+    throw new Error('« '+x.v+' » mal placé');}
+  const f=expr();if(p<tk.length)throw new Error('« '+tk[p].v+' » en trop');
+  return {f,tokens:tk};
+}
+function parseEq(s){
+  const n=norm(s);if(!n)throw new Error('ligne vide');
+  const parts=n.split('=');if(parts.length!==2)throw new Error('il faut un seul signe =');
+  if(!parts[0]||!parts[1])throw new Error('un membre est vide');
+  const L=parse(parts[0]),R=parse(parts[1]);
+  const vars=new Set([...L.tokens,...R.tokens].filter(t=>t.t==='var').map(t=>t.v));
+  const nsin=[...L.tokens,...R.tokens].filter(t=>t.t==='fn'&&t.v==='sin').length;
+  return {L:L.f,R:R.f,vars,nsin,Lt:L.tokens,Rt:R.tokens};
+}
+const isNum=v=>typeof v==='number'&&isFinite(v);
+
+/* ============ Physique ============ */
+const S=d=>Math.sin(d*Math.PI/180),AS=x=>Math.asin(x)*180/Math.PI;
+function solve(u,e){
+  if(u==='n1')return e.n2*S(e.i2)/S(e.i1);
+  if(u==='n2')return e.n1*S(e.i1)/S(e.i2);
+  if(u==='i1'){const x=e.n2*S(e.i2)/e.n1;return Math.abs(x)<=1?AS(x):NaN;}
+  const x=e.n1*S(e.i1)/e.n2;return Math.abs(x)<=1?AS(x):NaN;
+}
+function rel(eq,env){const l=eq.L(env),r=eq.R(env);return Math.abs(l-r)/(Math.abs(l)+Math.abs(r)+1e-12);}
+
+/* ============ Vérification des étapes ============ */
+function checkLaw(eq){
+  if(VARS.some(v=>!eq.vars.has(v)))return 'il manque une grandeur';
+  let seed=1;const r=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
+  for(let k=0;k<6;k++){
+    const e={n2:1+0.6*r(),i1:10+50*r(),i2:10+50*r()};e.n1=solve('n1',e);
+    if(rel(eq,e)>1e-6)return false;
+    if(rel(eq,Object.assign({},e,{n1:e.n1*1.07}))<1e-4)return false;
+    const e2=Object.assign({},e,{i2:e.i2+3});if(rel(eq,e2)<1e-4)return false;
+  }
+  return true;
+}
+let ENV=null;   // valeurs que l'élève a substituées (déduites de l'étape 2)
+const strip=t=>t.filter(x=>!(x.t==='op'&&'*()'.includes(x.v)));
+function align(t1,t2,env){          // t1 : loi littérale, t2 : même loi avec des nombres
+  const a=strip(t1),b=strip(t2);if(a.length!==b.length)return false;
+  for(let i=0;i<a.length;i++){
+    const x=a[i],y=b[i];
+    if(x.t==='var'&&x.v!==P.u&&y.t==='num'){
+      if(env[x.v]!==undefined&&Math.abs(env[x.v]-y.v)>1e-9)return false;env[x.v]=y.v;}
+    else if(x.t!==y.t||x.v!==y.v)return false;
+  }
+  return true;
+}
+function checkSubst(eq,eq0){
+  ENV=null;
+  if(!eq0||checkLaw(eq0)!==true)return 'la loi de l\'étape 1 n\'est pas correcte';
+  if(eq.vars.size!==1||!eq.vars.has(P.u))return 'seule l\'inconnue '+pretty(P.u)+' doit rester';
+  let env={};
+  if(!(align(eq0.Lt,eq.Lt,env)&&align(eq0.Rt,eq.Rt,env))){env={};
+    if(!(align(eq0.Lt,eq.Rt,env)&&align(eq0.Rt,eq.Lt,env)))return 'garde la même écriture qu\'à l\'étape 1 en remplaçant chaque grandeur par sa valeur';}
+  const need=VARS.filter(v=>v!==P.u);if(need.some(v=>env[v]===undefined))return false;
+  for(const [k,v] of Object.entries(P.k)){        // données imposées par l'énoncé
+    if(k===P.u||env[k]===undefined)continue;
+    if(k[0]==='i'?Math.abs(env[k]-v)>0.05:Math.abs(env[k]-v)/Math.abs(v)>1e-3)return false;}
+  if(!isNum(solve(P.u,env)))return 'aucun rayon réfracté avec ces valeurs';
+  ENV=env;return true;
+}
+function numOnly(toks){return toks.length===1&&toks[0].t==='num'?toks[0].v:(toks.length===2&&toks[0].v==='-'&&toks[1].t==='num'?-toks[1].v:null);}
+function isVar(toks,v){return toks.length===1&&toks[0].t==='var'&&toks[0].v===v;}
+function isSinVar(toks,v){const s=toks.map(t=>t.v).join('');return s==='sin'+v||s==='sin('+v+')';}
+function sides(eq){ // remet l'inconnue (ou sin(inconnue)) à gauche
+  const lv=eq.Lt.some(t=>t.t==='var');return lv?{lhs:eq.Lt,rhs:eq.Rt,R:eq.R}:{lhs:eq.Rt,rhs:eq.Lt,R:eq.L};}
+function checkExpr(eq){              // étape 3 : n1 = expression numérique  |  sin(i2) = expr  (ou i2 = sin⁻¹(expr))
+  if(!ENV)return 'l\'étape 2 n\'est pas correcte';
+  const u=solve(P.u,ENV);if(!isNum(u))return false;
+  const {lhs,rhs,R}=sides(eq);
+  if(rhs.some(t=>t.t==='var'))return 'à droite, uniquement des nombres';
+  if(numOnly(rhs)!==null)return 'écris l\'expression numérique (le calcul), pas le résultat';
+  const val=R({});if(!isNum(val))return false;
+  if(isVar(lhs,P.u)){
+    if(!ISANGLE)return Math.abs(val-u)/Math.abs(u)<1e-3;
+    return rhs.some(t=>t.t==='fn'&&t.v==='asin')&&Math.abs(val-u)<0.1;}
+  if(ISANGLE&&isSinVar(lhs,P.u))return Math.abs(val-S(u))<1e-3;
+  return ISANGLE?'écris sin('+pretty(P.u)+') = …':'écris '+pretty(P.u)+' = …';
+}
+function checkResult(eq){            // étape 4 : valeur
+  if(!ENV)return 'l\'étape 2 n\'est pas correcte';
+  const u=solve(P.u,ENV);if(!isNum(u))return false;
+  let lhs=eq.Lt,rhs=eq.Rt;
+  if(numOnly(lhs)!==null&&numOnly(rhs)===null){[lhs,rhs]=[rhs,lhs];}
+  const val=numOnly(rhs);if(val===null)return 'le résultat doit être un nombre';
+  if(!isVar(lhs,P.u))return 'écris '+pretty(P.u)+' = …';
+  return ISANGLE?Math.abs(val-u)<0.1:Math.abs(val-u)/Math.abs(u)<1e-3;
+}
+
+/* ============ Interface ============ */
+const pretty=v=>v.replace('1','₁').replace('2','₂');
+function prettyExpr(s){
+  try{return norm(s).replace(/asin/g,'arcsin').replace(/([ni])([12])/g,(m,a,b)=>a+(b==='1'?'₁':'₂'))
+        .replace(/\*/g,' × ').replace(/\//g,' / ').replace(/=/g,' = ').replace(/(\d)\.(\d)/g,'$1,$2');}catch(e){return '';}
+}
+const fmt=x=>String(x).replace('.',',');
+const unit=v=>v[0]==='i'?' °':'';
+document.getElementById('data').innerHTML=(P.sk&&Object.keys(P.k).length?'<b>Données :</b> '+Object.entries(P.k).map(([k,v])=>pretty(k)+' = '+fmt(v)+unit(k)).join(' ; ')+' &nbsp;—&nbsp; ':'')
+  +'<b>Grandeur à calculer :</b> '+pretty(P.u);
+document.getElementById('measRow').remove();
+const TA=document.getElementById('txt'),PREV=document.getElementById('prev'),CODES=document.getElementById('codes');
+CODES.insertAdjacentHTML('beforeend','<span class="lab">Code à recopier :</span><input type="text" class="code" id="code" readonly>');
+document.querySelectorAll('input.code').forEach(el=>el.addEventListener('focus',()=>el.select()));
+/* Extrait la partie calcul d'une ligne rédigée ("D'après la loi de Snell-Descartes : n1 sin(i1) = ...").
+   Une ligne sans signe = (ou ≈) est un commentaire : elle est ignorée. */
+const MATHSTART=/(^|[^a-zà-ÿ])(n\s?[12₁₂]|i\s?[12₁₂]|a?sin|arcsin|\d|\()/i;
+function extractMath(line){
+  let t=line.replace(/≈|≃/g,'=');
+  if(!t.includes('='))return null;
+  t=t.replace(/^\s*(\d+\s*[).:-]|[-•*>①②③④])\s*/,'');                 // numérotation
+  let pre='';
+  if(t.includes(':')){const j=t.lastIndexOf(':');if(t.slice(0,j).indexOf('=')<0){pre=t.slice(0,j);t=t.slice(j+1);}}
+  const m=t.match(MATHSTART);if(!m)return null;
+  pre+=' '+t.slice(0,m.index+m[1].length);
+  t=t.slice(m.index+m[1].length);
+  t=t.replace(/\((?![^()]*\b(a?sin|arcsin)\b)[^()]*[a-zà-ÿ]{3,}[^()]*\)/gi,'');
+  t=t.replace(/\s+(?!(a?sin|arcsin)\b)[a-zà-ÿ]{2,}[\s\S]*$/i,'');
+  t=t.replace(/°|degrés?/gi,'').trim();
+  if(!t.includes('='))return null;
+  return {m:t,pre:pre.trim()};
+}
+const hasText=x=>(x.pre.match(/[a-zà-ÿ]{2,}/gi)||[]).join('').length>=4;   // au moins un vrai mot
+const rawLines=()=>TA.value.split('\n').map(l=>l.trim()).filter(l=>l!=='');
+const items=()=>rawLines().map(extractMath).filter(x=>x!==null);
+const lines=()=>items().map(x=>x.m);
+function showPrev(msgs){PREV.innerHTML=lines().map((l,k)=>'<div><b>'+(k+1)+')</b> '+prettyExpr(l)+(msgs&&msgs[k]?' <span class="err">('+msgs[k]+')</span>':'')+'</div>').join('');}
+TA.addEventListener('input',()=>{showPrev();TA.classList.remove('ok','ko');});
+let lastInput=TA;
+const KEYS=[['n₁','n1'],['n₂','n2'],['i₁','i1'],['i₂','i2'],['sin( )','sin('],['arcsin( )','arcsin('],['×','*'],['÷','/'],['=','='],['(','('],[')',')']];
+const U=pretty(P.u);
+const STEPS_TXT=["D'après la loi de Snell-Descartes : ","On remplace par les valeurs : ","On pose le calcul : "];
+const phrDiv=document.getElementById('phr');
+STEPS_TXT.forEach(ins=>{const b=document.createElement('button');b.className='ph';b.textContent=ins.trim();
+  b.onclick=()=>{const el=TA,a=el.selectionStart??el.value.length;
+    const before=el.value.slice(0,a),nl=(before===''||before.endsWith('\n'))?'':'\n';lastInput=TA;insert(nl+ins);};
+  phrDiv.appendChild(b);});
+[["↵ ligne suivante","\n"]].forEach(([lab,ins])=>{const b=document.createElement('button');b.className='ph';b.textContent=lab;
+  b.onclick=()=>{lastInput=TA;insert(ins);};phrDiv.appendChild(b);});
+function insert(ins){const el=lastInput;if(!el)return;const a=el.selectionStart??el.value.length,z=el.selectionEnd??a;
+  const fn=/sin\($/.test(ins),sel=el.value.slice(a,z);          // sin( ) : parenthèse fermée, curseur dedans
+  const txt=fn?ins+sel+')':ins,pos=fn?a+ins.length+sel.length:a+ins.length;
+  el.value=el.value.slice(0,a)+txt+el.value.slice(z);el.focus();el.setSelectionRange(pos,pos);
+  el.dispatchEvent(new Event('input'));}
+const keysDiv=document.getElementById('keys');
+KEYS.forEach(([lab,ins])=>{const b=document.createElement('button');b.className='k';b.textContent=lab;
+  b.onclick=()=>insert(ins);
+  keysDiv.appendChild(b);});
+
+document.getElementById('go').onclick=()=>{
+  const IT=items(),L=IT.map(x=>x.m);let eq0=null,allOk=true,mask='';const msgs=[];ENV=null;
+  for(let k=0;k<NSTEP;k++){
+    const txt=L[k]||'';let ok=false,msg='';
+    try{
+      const eq=parseEq(txt);if(k===0)eq0=eq;
+      let r;
+      if(k===0)r=checkLaw(eq);
+      else if(k===1)r=checkSubst(eq,eq0);
+      else if(k===2)r=checkExpr(eq);
+      else r=checkResult(eq);
+      if(typeof r==='string'){msg=r;ok=false;}else ok=r;
+    }catch(e){msg=e.message;if(k===1)ENV=null;}
+    if(!txt)msg='étape manquante';
+    else if(P.t&&!hasText(IT[k])){ok=false;msg='rédige : commence la ligne par une phrase';}
+    msgs.push(msg);allOk=allOk&&ok;mask+=ok?'1':'0';
+  }
+  const out=document.getElementById('code');
+  out.value='R-'+hash6(P.s+'|'+mask);
+  out.classList.remove('ok','ko');if(P.fb)out.classList.add(allOk?'ok':'ko');
+  if(L.length>NSTEP)msgs[NSTEP]='ligne en trop';
+  showPrev(P.fb?msgs:null);
+  TA.classList.remove('ok','ko');if(P.fb)TA.classList.add(allOk?'ok':'ko');
+};
+</script>
+</body>
+</html>
