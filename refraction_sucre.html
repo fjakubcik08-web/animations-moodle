@@ -288,7 +288,12 @@ function drawBench(){
   else if(st.anim&&st.anim.type==='drain')lab='vidange…';
   else if(st.flask>=0)lab='cuve : '+FLASKS[st.flask].label;
   txt(lab,cx+Rc*0.45,cy+Rc*0.45,13,BLUE);
-  txt(P.sn?'gaz : n₂ = '+String(N2).replace('.',','):'gaz',cx-72,cy-62,14,'#2f6b2f');
+  // étiquette du gaz : sn=0 -> "n = …" (neutre), sn=1 -> "n₂ = …", sn=2 -> pas de valeur
+  const gl=P.sn==2?'gaz':'gaz : '+(P.sn==1?'n₂':'n')+' = '+String(N2).replace('.',',');
+  ctx.font='bold 14px '+FONT;const gw=ctx.measureText(gl).width+16;
+  ctx.beginPath();wrect(cx-80-gw/2,cy-76,gw,26,0.8);ctx.fillStyle='rgba(235,250,230,0.95)';ctx.fill();
+  ctx.strokeStyle='#2f6b2f';ctx.lineWidth=2;ctx.stroke();
+  ctx.font='bold 14px '+FONT;ctx.fillStyle='#2f6b2f';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(gl,cx-80,cy-63);
 
   // rayons (angles comptés depuis la verticale)
   const t1=rad(st.i1);
