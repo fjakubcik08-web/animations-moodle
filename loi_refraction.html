@@ -11,7 +11,7 @@
        border-radius:14px 9px 16px 8px;box-shadow:5px 5px 0 #111;}
   h1{font-size:19px;margin:0 0 8px;color:#1f4e8c;}
   .data{margin:4px 0 10px;padding:6px 10px;background:#eef6ea;border:2px dashed #2f6b2f;border-radius:10px 7px 11px 6px;}
-  textarea{font-family:inherit;font-size:17px;line-height:1.7;width:100%;box-sizing:border-box;min-height:190px;padding:8px 10px;
+  textarea{font-family:inherit;font-size:17px;line-height:1.7;width:100%;box-sizing:border-box;min-height:240px;padding:8px 10px;
        border:2px solid #333;border-radius:10px 7px 11px 6px;background:#fffef9;resize:vertical;}
   textarea.ok{border-color:#2e9b4f;} textarea.ko{border-color:#c0392b;}
   #prev{margin:6px 0 0;font-size:15px;color:#555;}
@@ -30,6 +30,7 @@
   button.k{background:#4fc3f7;font-size:14px;padding:3px 10px;}
   button.ph{background:#fff3b0;font-size:14px;padding:4px 10px;}
   #phr{margin-top:12px;}
+  button.cn{background:#ffe0cc;font-size:13px;padding:3px 10px;}
   button:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 #111;}
   button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #111;}
   #go{background:#e3262f;color:#fff;text-shadow:1px 1px 0 #111;margin-top:8px;}
@@ -255,8 +256,16 @@ STEPS_TXT.forEach(ins=>{const b=document.createElement('button');b.className='ph
   b.onclick=()=>{const el=TA,a=el.selectionStart??el.value.length;
     const before=el.value.slice(0,a),nl=(before===''||before.endsWith('\n'))?'':'\n';lastInput=TA;insert(nl+ins);};
   phrDiv.appendChild(b);});
+// connecteurs logiques (en début de ligne)
+const conDiv=document.createElement('div');conDiv.className='keys';conDiv.id='con';
+conDiv.innerHTML='<span class="hint" style="align-self:center">Connecteurs :</span>';
+phrDiv.after(conDiv);
+["Donc ","Ainsi ","Alors ","On obtient : ","Finalement "].forEach(ins=>{const b=document.createElement('button');b.className='ph cn';b.textContent=ins.trim();
+  b.onclick=()=>{const el=TA,a=el.selectionStart??el.value.length;
+    const before=el.value.slice(0,a),nl=(before===''||before.endsWith('\n'))?'':'\n';lastInput=TA;insert(nl+ins);};
+  conDiv.appendChild(b);});
 [["↵ ligne suivante","\n"]].forEach(([lab,ins])=>{const b=document.createElement('button');b.className='ph';b.textContent=lab;
-  b.onclick=()=>{lastInput=TA;insert(ins);};phrDiv.appendChild(b);});
+  b.onclick=()=>{lastInput=TA;insert(ins);};conDiv.appendChild(b);});
 function insert(ins){const el=lastInput;if(!el)return;const a=el.selectionStart??el.value.length,z=el.selectionEnd??a;
   const fn=/sin\($/.test(ins),sel=el.value.slice(a,z);          // sin( ) : parenthèse fermée, curseur dedans
   const txt=fn?ins+sel+')':ins,pos=fn?a+ins.length+sel.length:a+ins.length;
