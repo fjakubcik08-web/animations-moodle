@@ -657,7 +657,13 @@ tbody tr.row-sel td { background: #eef3fc; }
       <canvas id="overlay-canvas"></canvas>
     </div>
 
-    <div style="flex-shrink:0;display:flex;justify-content:flex-end;padding:2px 4px;">
+    <div style="flex-shrink:0;display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:2px 4px;">
+      <span id="magnet-hint" style="font-size:10px;color:#888;">◀ ▶ : réglage fin (Maj : ×10)</span>
+      <button id="magnet-btn" onclick="toggleMagnet()" title="Le réticule colle à la courbe"
+        style="padding:4px 12px;background:#b03a2e;color:#fff;border:none;border-radius:4px;
+               cursor:pointer;font-size:12px;font-weight:bold;">
+        🧲 Aimant : ON
+      </button>
       <button onclick="openCodesDlg()"
         style="padding:4px 12px;background:#0F6E56;color:#fff;border:none;border-radius:4px;
                cursor:pointer;font-size:12px;font-weight:bold;">
@@ -2861,16 +2867,37 @@ function exportJPG() {
 }
 
 // ══════════════════════════════════════════
-//  CURSEUR GRAPHE
+//  CURSEUR GRAPHE (réticule, avec aimant)
 // ══════════════════════════════════════════
+let magnetOn = true;
+function toggleMagnet() {
+  magnetOn = !magnetOn;
+  const b = document.getElementById('magnet-btn');
+  b.textContent = '🧲 Aimant : ' + (magnetOn ? 'ON' : 'OFF');
+  b.style.background = magnetOn ? '#b03a2e' : '#888';
+  document.getElementById('magnet-hint').style.visibility = magnetOn ? 'visible' : 'hidden';
+  if (window._reticleRedraw) window._reticleRedraw();
+}
+// Nombre de décimales adapté à l'échelle : 1 chiffre de plus que la résolution d'un pixel
+function fmtRes(v, perPx) {
+  if (!isFinite(v)) return '';
+  if (Math.abs(v) >= 1e6 || (Math.abs(v) < 1e-4 && v !== 0)) return v.toExponential(4).replace('.', ',');
+  const d = Math.max(0, Math.min(8, Math.ceil(-Math.log10(perPx)) + 1));
+  return v.toFixed(d).replace('.', ',');
+}
 (function() {
   let ov, octx;
+  let state = null;   // { dataX, dataY(libre), si:index courbe verrouillée ou null }
   function init() {
     ov = document.getElementById('overlay-canvas');
-    if (!ov) return;
+    if (!ov || ov._retInit) return;
+    ov._retInit = true;
     octx = ov.getContext('2d');
+    ov.tabIndex = 0; ov.style.outline = 'none';
     ov.addEventListener('mousemove', onMove);
-    ov.addEventListener('mouseleave', () => octx.clearRect(0, 0, ov.width, ov.height));
+    ov.addEventListener('mouseenter', () => ov.focus({ preventScroll: true }));
+    ov.addEventListener('mouseleave', () => { if (!magnetOn) { state = null; octx.clearRect(0, 0, ov.width, ov.height); } });
+    ov.addEventListener('keydown', onKey);
     ov.addEventListener('contextmenu', e => {
       e.preventDefault();
       if (!chartScale || !chartSeries) return;
@@ -2884,59 +2911,148 @@ function exportJPG() {
       m.style.left = e.clientX+'px'; m.style.top = e.clientY+'px';
       m.style.display = 'block';
     });
+    window._reticleRedraw = () => { if (state) draw(); };
   }
+
+  // ---- courbes « aimantables » : séries (segments ou points) + courbes de tendance ----
+  function curves() {
+    const out = [];
+    if (!chartSeries) return out;
+    chartSeries.forEach((pts, si) => {
+      if (!pts || !pts.length) return;
+      const st = getSerieStyle(si);
+      out.push({ kind: st.line === 'none' ? 'points' : 'poly', si, pts });
+    });
+    Object.entries(trendlines || {}).forEach(([siStr, tl]) => {
+      if (!tl || tl.removed) return;
+      const si = +siStr; const pts = chartSeries[si]; if (!pts) return;
+      let f = null;
+      if (tl.type === 'inverse' && tl.k !== undefined) f = x => tl.k / x;
+      else if (tl.type === 'polynomial' && tl.coeffs) f = x => tl.coeffs.reduce((s, c, i) => s + c * Math.pow(x, i), 0);
+      else if (tl.slope !== undefined) f = x => tl.slope * x + tl.intercept;
+      if (!f) return;
+      const xs = pts.filter(([x]) => x !== 0).map(p => p[0]);
+      if (!xs.length) return;
+      out.push({ kind: 'func', si: 'T' + si, f, x0: Math.min(...xs) - (tl.bwd || 0), x1: Math.max(...xs) + (tl.fwd || 0) });
+    });
+    return out;
+  }
+  // y de la courbe c à l'abscisse x (null si hors domaine)
+  function yAt(c, x) {
+    if (c.kind === 'func') return (x >= c.x0 && x <= c.x1) ? c.f(x) : null;
+    if (c.kind === 'poly') {
+      const p = c.pts;
+      for (let i = 1; i < p.length; i++) {
+        const [xa, ya] = p[i-1], [xb, yb] = p[i];
+        if ((x >= xa && x <= xb) || (x >= xb && x <= xa)) {
+          if (xb === xa) return ya;
+          return ya + (yb - ya) * (x - xa) / (xb - xa);
+        }
+      }
+      return null;
+    }
+    return null;
+  }
+  // Accroche : renvoie {x, y, si} ou null
+  function snap(dataX, px, py, lockSi) {
+    const { M, xMin, xMax, yMin, yMax, W, H } = chartScale;
+    const toPx = x => M.left + (x - xMin) / (xMax - xMin) * W;
+    const toPy = y => M.top + (1 - (y - yMin) / (yMax - yMin)) * H;
+    let best = null, bestD = Infinity;
+    curves().forEach(c => {
+      if (lockSi !== undefined && lockSi !== null && c.si !== lockSi) return;
+      if (c.kind === 'points') {
+        c.pts.forEach(([x, y]) => {
+          const d = Math.hypot(toPx(x) - px, toPy(y) - py);
+          if (d < bestD) { bestD = d; best = { x, y, si: c.si, pt: true }; }
+        });
+      } else {
+        const y = yAt(c, dataX);
+        if (y === null || !isFinite(y)) return;
+        const d = Math.abs(toPy(y) - py);
+        if (d < bestD) { bestD = d; best = { x: dataX, y, si: c.si }; }
+      }
+    });
+    if (lockSi !== undefined && lockSi !== null) return best;
+    return bestD < 60 ? best : null;
+  }
+
   function onMove(e) {
     if (!chartScale) return;
     const rect = ov.getBoundingClientRect();
     const px = (e.clientX - rect.left) * (ov.width / rect.width);
     const py = (e.clientY - rect.top)  * (ov.height / rect.height);
     const { M, xMin, xMax, yMin, yMax, W, H } = chartScale;
-    octx.clearRect(0, 0, ov.width, ov.height);
-    if (px < M.left || px > M.left + W || py < M.top || py > M.top + H) return;
-
+    if (px < M.left || px > M.left + W || py < M.top || py > M.top + H) {
+      if (!magnetOn) { state = null; octx.clearRect(0, 0, ov.width, ov.height); }
+      return;
+    }
     const dataX = xMin + (px - M.left) / W * (xMax - xMin);
-    const dataY = yMax - (py - M.top)  / H * (yMax - yMin);
+    const dataY = yMax - (py - M.top) / H * (yMax - yMin);
+    state = { dataX, dataY, px, py, si: null };
+    if (magnetOn) { const s = snap(dataX, px, py); if (s) state.si = s.si; }
+    draw();
+  }
 
-    // Lignes du réticule
+  function onKey(e) {
+    if (!state || !chartScale || !magnetOn) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const { xMin, xMax, W } = chartScale;
+    const step = (xMax - xMin) / W / 4 * (e.shiftKey ? 10 : 1);   // 1/4 de pixel (×10 avec Maj)
+    state.dataX = Math.max(xMin, Math.min(xMax, state.dataX + (e.key === 'ArrowRight' ? step : -step)));
+    draw(true);
+  }
+
+  function draw(fromKey) {
+    if (!chartScale || !state) return;
+    const { M, xMin, xMax, yMin, yMax, W, H } = chartScale;
+    const toPx = x => M.left + (x - xMin) / (xMax - xMin) * W;
+    const toPy = y => M.top + (1 - (y - yMin) / (yMax - yMin)) * H;
+    let X = state.dataX, Y = state.dataY, snapped = null;
+    if (magnetOn) {
+      snapped = fromKey && state.si !== null ? snap(X, toPx(X), toPy(Y), state.si) : snap(X, toPx(X), state.py);
+      if (snapped) { X = snapped.x; Y = snapped.y; state.si = snapped.si; if (!snapped.pt) state.dataX = X; }
+    }
+    const px = toPx(X), py = toPy(Y);
+    octx.clearRect(0, 0, ov.width, ov.height);
+    if (px < M.left - 1 || px > M.left + W + 1 || py < M.top - 1 || py > M.top + H + 1) return;
+
     octx.save();
-    octx.strokeStyle = 'rgba(80,80,80,0.5)';
+    octx.strokeStyle = snapped ? 'rgba(176,58,46,0.75)' : 'rgba(80,80,80,0.5)';
     octx.lineWidth = 1;
     octx.setLineDash([4, 3]);
-    octx.beginPath(); octx.moveTo(px, M.top);    octx.lineTo(px, M.top + H); octx.stroke();
-    octx.beginPath(); octx.moveTo(M.left, py);   octx.lineTo(M.left + W, py); octx.stroke();
+    octx.beginPath(); octx.moveTo(px, M.top);  octx.lineTo(px, M.top + H); octx.stroke();
+    octx.beginPath(); octx.moveTo(M.left, py); octx.lineTo(M.left + W, py); octx.stroke();
     octx.setLineDash([]);
+    octx.beginPath(); octx.arc(px, py, snapped ? 4.5 : 3, 0, Math.PI * 2);
+    octx.fillStyle = snapped ? '#b03a2e' : 'rgba(80,80,80,0.7)'; octx.fill();
+    if (snapped) { octx.strokeStyle = '#fff'; octx.lineWidth = 1.5; octx.stroke(); }
 
-    // Point central
-    octx.beginPath(); octx.arc(px, py, 3, 0, Math.PI * 2);
-    octx.fillStyle = 'rgba(80,80,80,0.7)'; octx.fill();
-
-    // Bulle de coordonnées — feature 1 : unités
-    const xCol2 = chartScale.xCol;
-    const yCols2 = chartScale.yCols;
+    // Bulle de coordonnées (unités + décimales adaptées à l'échelle)
+    const xCol2 = chartScale.xCol, yCols2 = chartScale.yCols;
     const xName = colNames[xCol2] || 'x';
     const xUnit = colUnits[xCol2] ? ' ' + colUnits[xCol2] : '';
-    // Unité Y : affichée si une seule courbe OU toutes les colonnes Y ont la même unité
     const yUnits = yCols2.map(c => colUnits[c] || '');
     const sameYUnit = yUnits.every(u => u === yUnits[0]);
-    const showYUnit = sameYUnit && yUnits[0];
-    const yUnit = showYUnit ? ' ' + yUnits[0] : '';
-    const label = `${xName} = ${fmt(dataX)}${xUnit}   y = ${fmt(dataY)}${yUnit}`;
-    octx.font = '11px Arial';
+    const yUnit = (sameYUnit && yUnits[0]) ? ' ' + yUnits[0] : '';
+    let yName = 'y';
+    if (snapped && typeof snapped.si === 'number') yName = colNames[yCols2[snapped.si]] || 'y';
+    else if (yCols2.length === 1) yName = colNames[yCols2[0]] || 'y';
+    const perX = (xMax - xMin) / W, perY = (yMax - yMin) / H;
+    const label = (snapped ? '🧲 ' : '') + `${xName} = ${fmtRes(X, perX)}${xUnit}   ${yName} = ${fmtRes(Y, perY)}${yUnit}`;
+    octx.font = '12px Arial';
     const tw = octx.measureText(label).width;
-    const bw = tw + 12, bh = 20;
-    let bx = px + 10, by = py - 26;
+    const bw = tw + 12, bh = 22;
+    let bx = px + 10, by = py - 28;
     if (bx + bw > M.left + W) bx = px - bw - 10;
     if (by < M.top) by = py + 8;
-
-    octx.fillStyle = 'rgba(255,255,255,0.92)';
-    octx.strokeStyle = 'rgba(80,80,80,0.4)';
-    octx.lineWidth = 0.5;
-    octx.beginPath();
-    octx.roundRect(bx, by, bw, bh, 3);
-    octx.fill(); octx.stroke();
-
-    octx.fillStyle = '#333';
-    octx.fillText(label, bx + 6, by + 13);
+    octx.fillStyle = 'rgba(255,255,255,0.95)';
+    octx.strokeStyle = snapped ? 'rgba(176,58,46,0.6)' : 'rgba(80,80,80,0.4)';
+    octx.lineWidth = snapped ? 1 : 0.5;
+    octx.beginPath(); octx.roundRect(bx, by, bw, bh, 3); octx.fill(); octx.stroke();
+    octx.fillStyle = '#222';
+    octx.fillText(label, bx + 6, by + 15);
     octx.restore();
   }
   document.addEventListener('DOMContentLoaded', init);
